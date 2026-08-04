@@ -1,0 +1,59 @@
+services:
+  timescaledb:
+    image: timescale/timescaledb:2.17.2-pg16
+    container_name: level2-timescaledb
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-level2}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-level2_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-level2}
+    ports:
+      - "5432:5432"
+    volumes:
+      - timeseries:/var/lib/postgresql/data
+      - ./timescaledb/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-level2} -d ${POSTGRES_DB:-level2}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  telegraf:
+    image: telegraf:1.32
+    container_name: level2-telegraf
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      PLC_OPC_ENDPOINT: ${PLC_OPC_ENDPOINT:-opc.tcp://192.168.0.1:4840}
+      POSTGRES_USER: ${POSTGRES_USER:-level2}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-level2_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-level2}
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    # Host network не нужен: VM Bridged до PLC, Docker bridge до timescaledb
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: level2-grafana
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin_change_me}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      POSTGRES_USER: ${POSTGRES_USER:-level2}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-level2_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-level2}
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+
+volumes:
+  timeseries:
+  grafana_data:
