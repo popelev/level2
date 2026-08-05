@@ -13,8 +13,8 @@
 
 ## Перед запуском
 
-1. В TIA: OPC UA Server на S7-1500, security **None**, 1–2 тестовых тега.
-2. На Windows: **UaExpert** → `opc.tcp://<IP-PLC>:4840` → скопировать **NodeId**.
+1. В TIA: OPC UA Server на S7-1500, 1–2 тестовых тега.
+2. На Windows: **UaExpert** → `opc.tcp://<IP-PLC>:4840` с тем же **логином/паролем** и Security, что разрешены на PLC → скопировать **NodeId**.
 3. С VM: `ping <IP-PLC>` должен проходить (для PLC сеть VM = Bridged).
 
 ## Команды на Ubuntu VM
@@ -27,8 +27,11 @@ nano .env
 
 В `.env` укажите:
 
-- `PLC_OPC_ENDPOINT=opc.tcp://192.168.x.x:4840` — IP вашего PLC
+- `PLC_OPC_ENDPOINT=opc.tcp://10.14.10.16:4840` — IP вашего PLC
+- `OPC_UA_USERNAME` / `OPC_UA_PASSWORD` — **те же**, что в UaExpert
 - пароли БД и Grafana (можно оставить примеры для лабы)
+
+Если в UaExpert Security не `None` — в `telegraf/telegraf.conf` поставьте те же `security_policy` и `security_mode`.
 
 Затем NodeId в конфиге Telegraf:
 

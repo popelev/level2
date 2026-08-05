@@ -26,7 +26,9 @@ services:
       timescaledb:
         condition: service_healthy
     environment:
-      PLC_OPC_ENDPOINT: ${PLC_OPC_ENDPOINT:-opc.tcp://192.168.0.1:4840}
+      PLC_OPC_ENDPOINT: ${PLC_OPC_ENDPOINT:-opc.tcp://10.14.10.16:4840}
+      OPC_UA_USERNAME: ${OPC_UA_USERNAME:-}
+      OPC_UA_PASSWORD: ${OPC_UA_PASSWORD:-}
       POSTGRES_USER: ${POSTGRES_USER:-level2}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-level2_change_me}
       POSTGRES_DB: ${POSTGRES_DB:-level2}
