@@ -7,6 +7,7 @@ services:
       dockerfile: deploy/platform/Dockerfile
     container_name: level2-collector
     restart: unless-stopped
+    user: "1000:1000"
     env_file:
       - .env
     environment:
@@ -18,11 +19,12 @@ services:
       SPOOL_DIR: /var/lib/level2/spool
       UI_DIR: /usr/share/level2/ui
     volumes:
-      - ./config.yaml:/etc/level2/config.yaml
+      # whole dir so Excel import can rewrite config.yaml (+ .tmp)
+      - ./:/etc/level2/cfg
       - collector_spool:/var/lib/level2/spool
     ports:
       - "8080:8080"
-    command: ["-config", "/etc/level2/config.yaml"]
+    command: ["-config", "/etc/level2/cfg/config.yaml"]
     networks:
       - smoke_default
 
