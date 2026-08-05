@@ -20,5 +20,8 @@ cd level2/deploy/smoke
 ## Структура
 
 ```
-deploy/smoke/     # временный стенд Telegraf + Timescale + Grafana
+deploy/smoke/       # Telegraf smoke (работает)
+deploy/platform/    # Go collector M1 (PLC-off scaffold)
+cmd/collector/
+internal/
 ```

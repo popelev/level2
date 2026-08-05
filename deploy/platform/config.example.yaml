@@ -1,0 +1,27 @@
+# Level2 collector (M1) — OPC UA leaf tags → TimescaleDB
+#
+# Secrets via env: DATABASE_URL, PLC_OPC_ENDPOINT, OPC_UA_USERNAME, OPC_UA_PASSWORD
+
+listen: ":8080"
+
+database:
+  url: "postgres://level2:level2_change_me@timescaledb:5432/level2?sslmode=disable"
+
+devices:
+  - id: s7_1500
+    endpoint: "opc.tcp://10.14.10.16:4840"
+    username: ""
+    password: ""
+    security: "None"
+    tags:
+      - id: opc_measure_rvalue
+        node_id: "ns=4;i=4208"
+        datatype: float64
+        enabled: true
+        interval_ms: 1000
+      # Example string leaf — replace node_id when you have a real String NodeId from UaExpert.
+      # - id: demo_unit
+      #   node_id: "ns=4;i=XXXX"
+      #   datatype: string
+      #   enabled: false
+      #   interval_ms: 1000
