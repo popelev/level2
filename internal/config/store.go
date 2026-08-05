@@ -246,6 +246,50 @@ func (s *Store) DeleteDevice(id string) error {
 	return nil
 }
 
+// ApplyProject merges or replaces devices from a project snapshot.
+// Passwords are never taken from the project file; existing passwords are kept on match.
+func (s *Store) ApplyProject(devices []core.Device, replace bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	prevPass := map[string]string{}
+	for _, d := range s.file.Devices {
+		prevPass[d.ID] = d.Password
+	}
+	if replace {
+		s.file.Devices = nil
+	}
+	byID := map[string]int{}
+	for i, d := range s.file.Devices {
+		byID[d.ID] = i
+	}
+	for _, d := range devices {
+		if d.ID == "" || d.Endpoint == "" {
+			continue
+		}
+		if d.Security == "" {
+			d.Security = "None"
+		}
+		d.Password = prevPass[d.ID]
+		if d.Tags == nil {
+			d.Tags = []core.Tag{}
+		}
+		if i, ok := byID[d.ID]; ok {
+			if !replace && len(d.Tags) == 0 {
+				d.Tags = s.file.Devices[i].Tags
+			}
+			s.file.Devices[i] = d
+		} else {
+			s.file.Devices = append(s.file.Devices, d)
+			byID[d.ID] = len(s.file.Devices) - 1
+		}
+	}
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.gen.Add(1)
+	return nil
+}
+
 func (s *Store) saveLocked() error {
 	out := *s.file
 	out.Devices = append([]core.Device(nil), s.file.Devices...)

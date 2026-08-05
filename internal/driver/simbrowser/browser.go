@@ -93,6 +93,24 @@ func (b *Browser) BrowseChildren(_ context.Context, parentNodeID string) ([]core
 	return out, nil
 }
 
+// ProbeNode reports whether nodeID exists in the demo tree.
+func (b *Browser) ProbeNode(_ context.Context, nodeID string) (exists bool, isLeaf bool, err error) {
+	if nodeID == "" {
+		return false, false, fmt.Errorf("empty node id")
+	}
+	if _, ok := b.children[nodeID]; ok {
+		return true, false, nil
+	}
+	for _, kids := range b.children {
+		for _, n := range kids {
+			if n.NodeID == nodeID {
+				return true, n.IsLeaf, nil
+			}
+		}
+	}
+	return false, false, nil
+}
+
 func (b *Browser) ExpandStructure(ctx context.Context, parentNodeID, parentTagID string, maxDepth int) ([]core.ExpandedTag, error) {
 	if maxDepth <= 0 {
 		maxDepth = 8

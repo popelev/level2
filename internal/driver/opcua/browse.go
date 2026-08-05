@@ -60,6 +60,51 @@ func (d *Driver) BrowseChildren(ctx context.Context, parentNodeID string) ([]cor
 	return out, nil
 }
 
+// ProbeNode checks NodeClass via OPC UA Read (exists / is Variable).
+func (d *Driver) ProbeNode(ctx context.Context, nodeID string) (exists bool, isLeaf bool, err error) {
+	d.mu.Lock()
+	c := d.client
+	d.mu.Unlock()
+	if c == nil {
+		return false, false, fmt.Errorf("not connected")
+	}
+	parsed, err := core.ParseNodeID(nodeID)
+	if err != nil {
+		return false, false, err
+	}
+	nid, err := d.toUANodeID(ctx, parsed)
+	if err != nil {
+		return false, false, err
+	}
+	req := &ua.ReadRequest{
+		NodesToRead: []*ua.ReadValueID{{
+			NodeID:      nid,
+			AttributeID: ua.AttributeIDNodeClass,
+		}},
+	}
+	resp, err := c.Read(ctx, req)
+	if err != nil {
+		return false, false, err
+	}
+	if len(resp.Results) == 0 || resp.Results[0] == nil {
+		return false, false, nil
+	}
+	r := resp.Results[0]
+	if r.Status != ua.StatusOK {
+		return false, false, nil
+	}
+	nc, ok := r.Value.Value().(ua.NodeClass)
+	if !ok {
+		// some stacks return int32
+		if v, ok2 := r.Value.Value().(int32); ok2 {
+			nc = ua.NodeClass(v)
+		} else {
+			return true, false, nil
+		}
+	}
+	return true, nc == ua.NodeClassVariable, nil
+}
+
 // ExpandStructure walks hierarchical children and returns leaf Variable tags.
 func (d *Driver) ExpandStructure(ctx context.Context, parentNodeID, parentTagID string, maxDepth int) ([]core.ExpandedTag, error) {
 	if maxDepth <= 0 {

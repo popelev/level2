@@ -92,6 +92,7 @@ func Parse(r io.Reader) (Result, error) {
 		out.Tags = append(out.Tags, core.Tag{
 			ID:         tagID,
 			NodeID:     rec.NodeID,
+			Path:       joinPath(rec.Area, rec.Path),
 			DataType:   dt,
 			Enabled:    true,
 			IntervalMs: 1000,
@@ -150,6 +151,18 @@ func sanitizeID(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.ReplaceAll(s, " ", "_")
 	return s
+}
+
+func joinPath(parts ...string) string {
+	var segs []string
+	for _, p := range parts {
+		p = strings.Trim(strings.TrimSpace(p), "/")
+		if p == "" {
+			continue
+		}
+		segs = append(segs, p)
+	}
+	return strings.Join(segs, "/")
 }
 
 func mapDataType(typeName, typeCode string) core.ValueType {

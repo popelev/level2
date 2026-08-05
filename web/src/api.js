@@ -6,9 +6,12 @@ export async function getJSON(url) {
 
 export function formatValue(sample) {
   if (!sample) return '—'
-  if (sample.value_num != null) return Number(sample.value_num).toFixed(3)
-  if (sample.value_text != null) return sample.value_text
-  if (sample.value_bool != null) return String(sample.value_bool)
+  const num = sample.value_num ?? sample.ValueNum
+  const text = sample.value_text ?? sample.ValueText
+  const bool = sample.value_bool ?? sample.ValueBool
+  if (num != null) return Number(num).toFixed(3)
+  if (text != null) return text
+  if (bool != null) return String(bool)
   return '—'
 }
 
@@ -20,4 +23,8 @@ export function guessType(name) {
   if (n.startsWith('s') && (n.includes('unit') || n.includes('name') || n.includes('text'))) return 'string'
   if (n.startsWith('i') || n.includes('count')) return 'int64'
   return 'float64'
+}
+
+export function sanitizeId(s) {
+  return String(s || '').trim().replace(/\s+/g, '_')
 }

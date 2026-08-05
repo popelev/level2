@@ -41,6 +41,9 @@ func TestParse_TankhouseLike(t *testing.T) {
 	if res.Tags[0].DataType != "float64" || res.Tags[1].DataType != "bool" || res.Tags[2].DataType != "int64" {
 		t.Fatalf("types %#v", res.Tags)
 	}
+	if res.Tags[0].Path != "Area A/Path A" {
+		t.Fatalf("path=%q", res.Tags[0].Path)
+	}
 	if len(res.Errors) == 0 {
 		t.Fatal("expected error for bad node id")
 	}

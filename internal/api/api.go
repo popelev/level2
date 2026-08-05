@@ -89,6 +89,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/devices/{id}/tags/{tagId}", s.handleDeleteTag)
 	mux.HandleFunc("PUT /api/v1/tags/{id}/value", s.handleWriteNotImplemented)
 	mux.HandleFunc("GET /api/v1/ws/stream", s.handleWS)
+	s.mountProject(mux)
 }
 
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {

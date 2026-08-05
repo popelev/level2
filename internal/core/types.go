@@ -25,18 +25,19 @@ const (
 
 // Sample is one historian point.
 type Sample struct {
-	Time      time.Time
-	TagID     string
-	ValueNum  *float64
-	ValueText *string
-	ValueBool *bool
-	Quality   Quality
+	Time      time.Time `json:"time"`
+	TagID     string    `json:"tag_id"`
+	ValueNum  *float64  `json:"value_num,omitempty"`
+	ValueText *string   `json:"value_text,omitempty"`
+	ValueBool *bool     `json:"value_bool,omitempty"`
+	Quality   Quality   `json:"quality"`
 }
 
 // Tag describes a monitored leaf node.
 type Tag struct {
 	ID         string    `yaml:"id" json:"id"`
 	NodeID     string    `yaml:"node_id" json:"node_id"` // e.g. ns=4;i=4208
+	Path       string    `yaml:"path,omitempty" json:"path,omitempty"` // UI tree folders, e.g. Area/Path
 	DataType   ValueType `yaml:"datatype" json:"datatype"`
 	Enabled    bool      `yaml:"enabled" json:"enabled"`
 	IntervalMs int       `yaml:"interval_ms" json:"interval_ms"`

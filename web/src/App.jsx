@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { getJSON } from './api.js'
 import ServersPage from './pages/ServersPage.jsx'
 import MonitorPage from './pages/MonitorPage.jsx'
+import ProjectsPage from './pages/ProjectsPage.jsx'
 
 function currentPage() {
   const h = (location.hash || '#/servers').replace(/^#\/?/, '')
   if (h.startsWith('monitor') || h.startsWith('tags')) return 'monitor'
+  if (h.startsWith('project')) return 'projects'
   return 'servers'
 }
 
@@ -73,6 +75,13 @@ export default function App() {
         >
           Monitored tags
         </button>
+        <button
+          type="button"
+          className={page === 'projects' ? 'nav-btn active' : 'nav-btn'}
+          onClick={() => go('projects')}
+        >
+          Projects
+        </button>
       </nav>
 
       {err && <p className="err">{err}</p>}
@@ -86,6 +95,13 @@ export default function App() {
       )}
       {page === 'monitor' && (
         <MonitorPage
+          devices={devices}
+          onError={setErr}
+          onDevicesChanged={refreshStatus}
+        />
+      )}
+      {page === 'projects' && (
+        <ProjectsPage
           devices={devices}
           onError={setErr}
           onDevicesChanged={refreshStatus}
