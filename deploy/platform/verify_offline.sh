@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 cd ~/level2/deploy/platform
+sleep 4
 echo "=== healthz ==="
 curl -sf http://127.0.0.1:8080/healthz; echo
 echo "=== devices ==="
