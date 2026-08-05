@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildTagTree, collectLeaves } from '../tagTree.js'
-import { formatValue } from '../api.js'
+import { formatQuality, formatSampleTime, formatValue } from '../api.js'
+
+const TYPES = ['bool', 'int64', 'float64', 'string']
 
 function FolderRow({
   node,
@@ -26,7 +28,7 @@ function FolderRow({
   }, [someSel, allSel])
 
   return (
-    <div className={`tt-row folder${allSel ? ' selected' : ''}`} style={{ paddingLeft: 8 + depth * 14 }}>
+    <div className={`tt-row folder${allSel ? ' selected' : ''}`} style={{ ['--depth']: depth }}>
       <input
         ref={checkRef}
         type="checkbox"
@@ -34,13 +36,17 @@ function FolderRow({
         checked={allSel}
         onChange={(e) => onToggleSelect(leaves.map((tv) => tv.tag.id), e.target.checked)}
       />
-      <button type="button" className="tree-row-btn" onClick={onToggleOpen}>
+      <button type="button" className="tree-row-btn tt-tag" onClick={onToggleOpen}>
         <span className="chev">{open ? '▾' : '▸'}</span>
         <span className="icon fold" />
         <span className="name">{node.name}</span>
         <span className="muted small">({leaves.length})</span>
       </button>
-      <span className="tt-val muted">—</span>
+      <span className="tt-meta muted">—</span>
+      <span className="tt-meta muted">—</span>
+      <span className="tt-meta muted">—</span>
+      <span className="tt-meta muted">—</span>
+      <span className="tt-meta muted">—</span>
       <input
         type="checkbox"
         title="Enable / disable all under folder"
@@ -72,18 +78,22 @@ function LeafRow({
   onToggleSelect,
   onSetEnabled,
   onRemove,
+  onUpdateTag,
 }) {
   const tv = node.tv
   const tag = tv.tag
   return (
-    <div className={`tt-row leaf${tag.enabled ? '' : ' dim'}${selected.has(tag.id) ? ' selected' : ''}`} style={{ paddingLeft: 8 + depth * 14 }}>
+    <div
+      className={`tt-row leaf${tag.enabled ? '' : ' dim'}${selected.has(tag.id) ? ' selected' : ''}`}
+      style={{ ['--depth']: depth }}
+    >
       <input
         type="checkbox"
         className="tree-check"
         checked={selected.has(tag.id)}
         onChange={(e) => onToggleSelect([tag.id], e.target.checked)}
       />
-      <div className="tt-label">
+      <div className="tt-label tt-tag">
         <span className="chev">·</span>
         <span className="icon var" />
         <div>
@@ -91,7 +101,34 @@ function LeafRow({
           <div className="mono small muted">{tag.node_id}</div>
         </div>
       </div>
-      <span className="tt-val mono">{formatValue(tv.sample)}</span>
+      <span className="tt-meta mono">{formatValue(tv.sample)}</span>
+      <span className={`tt-meta small ${formatQuality(tv.sample) === 'good' ? 'good' : formatQuality(tv.sample) === 'bad' ? 'badq' : 'muted'}`}>
+        {formatQuality(tv.sample)}
+      </span>
+      <span className="tt-meta mono small muted">{formatSampleTime(tv.sample, tv.updated_at)}</span>
+      <select
+        className="tt-select"
+        value={tag.datatype || 'float64'}
+        onChange={(e) => onUpdateTag({ ...tag, datatype: e.target.value })}
+        title="datatype"
+      >
+        {TYPES.map((t) => (
+          <option key={t} value={t}>{t}</option>
+        ))}
+      </select>
+      <input
+        className="tt-interval"
+        type="number"
+        min={100}
+        step={100}
+        defaultValue={tag.interval_ms || 1000}
+        key={`${tag.id}-${tag.interval_ms}`}
+        onBlur={(e) => {
+          const v = Number(e.target.value)
+          if (v > 0 && v !== tag.interval_ms) onUpdateTag({ ...tag, interval_ms: v })
+        }}
+        title="interval_ms"
+      />
       <input
         type="checkbox"
         checked={!!tag.enabled}
@@ -105,17 +142,12 @@ function LeafRow({
   )
 }
 
-function TreeBranch({
-  node,
-  depth,
-  openMap,
-  setOpenMap,
-  selected,
-  onToggleSelect,
-  onSetEnabled,
-  onRemove,
-}) {
-  const open = openMap[node.key] !== false // default open
+function TreeBranch(props) {
+  const {
+    node, depth, openMap, setOpenMap, selected,
+    onToggleSelect, onSetEnabled, onRemove, onUpdateTag,
+  } = props
+  const open = openMap[node.key] !== false
   if (node.type === 'leaf') {
     return (
       <LeafRow
@@ -125,6 +157,7 @@ function TreeBranch({
         onToggleSelect={onToggleSelect}
         onSetEnabled={onSetEnabled}
         onRemove={onRemove}
+        onUpdateTag={onUpdateTag}
       />
     )
   }
@@ -151,6 +184,7 @@ function TreeBranch({
           onToggleSelect={onToggleSelect}
           onSetEnabled={onSetEnabled}
           onRemove={onRemove}
+          onUpdateTag={onUpdateTag}
         />
       ))}
     </>
@@ -163,21 +197,27 @@ export default function TagTreeTable({
   onToggleSelect,
   onSetEnabled,
   onRemove,
+  onUpdateTag,
 }) {
   const [openMap, setOpenMap] = useState({})
   const tree = useMemo(() => buildTagTree(tagValues), [tagValues])
 
   if (tagValues.length === 0) {
-    return <p className="muted">No monitored tags</p>
+    return <p className="muted">No monitored tags — select leaves in Address Space or import Excel</p>
   }
 
   return (
     <div className="tag-tree-table">
       <div className="tt-head">
-        <span className="tt-col-tag">Tag</span>
-        <span className="tt-col-val">Value</span>
-        <span className="tt-col-on">On</span>
-        <span className="tt-col-act" />
+        <span />
+        <span>Tag</span>
+        <span>Value</span>
+        <span>Quality</span>
+        <span>Time</span>
+        <span>Type</span>
+        <span>ms</span>
+        <span>On</span>
+        <span />
       </div>
       {tree.map((n) => (
         <TreeBranch
@@ -190,6 +230,7 @@ export default function TagTreeTable({
           onToggleSelect={onToggleSelect}
           onSetEnabled={onSetEnabled}
           onRemove={onRemove}
+          onUpdateTag={onUpdateTag}
         />
       ))}
     </div>

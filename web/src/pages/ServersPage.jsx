@@ -123,6 +123,15 @@ export default function ServersPage({ devices, onChanged, onError }) {
               </div>
               <div className="row">
                 <button type="button" onClick={() => openEdit(selected)}>Edit</button>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => {
+                    location.hash = `#/monitor?device=${encodeURIComponent(selected.id)}`
+                  }}
+                >
+                  Open in Monitor
+                </button>
               </div>
             </div>
           )}
@@ -160,8 +169,12 @@ export default function ServersPage({ devices, onChanged, onError }) {
                   type="password"
                   value={editForm.password}
                   onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                  placeholder={devices.some((d) => d.id === editForm.id) ? 'leave empty to keep' : ''}
                 />
               </label>
+              {devices.some((d) => d.id === editForm.id) && (
+                <p className="hint">Empty password keeps the existing secret.</p>
+              )}
               <label>
                 Security
                 <select

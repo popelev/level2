@@ -15,6 +15,22 @@ export function formatValue(sample) {
   return '—'
 }
 
+export function formatQuality(sample) {
+  if (!sample) return '—'
+  const q = sample.quality ?? sample.Quality
+  if (q === 0 || q === '0') return 'good'
+  if (q == null) return '—'
+  return 'bad'
+}
+
+export function formatSampleTime(sample, updatedAt) {
+  const t = sample?.time ?? sample?.Time ?? updatedAt
+  if (!t) return '—'
+  const d = new Date(t)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleTimeString()
+}
+
 export const ROOT_ID = 'ns=0;i=84'
 
 export function guessType(name) {

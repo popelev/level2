@@ -4,6 +4,13 @@ import ServersPage from './pages/ServersPage.jsx'
 import MonitorPage from './pages/MonitorPage.jsx'
 import ProjectsPage from './pages/ProjectsPage.jsx'
 
+function deviceFromHash() {
+  const h = location.hash || ''
+  const q = h.indexOf('?')
+  if (q < 0) return ''
+  return new URLSearchParams(h.slice(q + 1)).get('device') || ''
+}
+
 function currentPage() {
   const h = (location.hash || '#/servers').replace(/^#\/?/, '')
   if (h.startsWith('monitor') || h.startsWith('tags')) return 'monitor'
@@ -13,6 +20,7 @@ function currentPage() {
 
 export default function App() {
   const [page, setPage] = useState(currentPage)
+  const [monitorDevice, setMonitorDevice] = useState(deviceFromHash)
   const [health, setHealth] = useState('…')
   const [ready, setReady] = useState('…')
   const [devices, setDevices] = useState([])
@@ -30,7 +38,10 @@ export default function App() {
   }
 
   useEffect(() => {
-    const onHash = () => setPage(currentPage())
+    const onHash = () => {
+      setPage(currentPage())
+      setMonitorDevice(deviceFromHash())
+    }
     window.addEventListener('hashchange', onHash)
     refreshStatus().catch((e) => setErr(String(e.message || e)))
     const t = setInterval(() => {
@@ -42,9 +53,10 @@ export default function App() {
     }
   }, [])
 
-  const go = (name) => {
-    location.hash = `#/${name}`
+  const go = (name, query) => {
+    location.hash = query ? `#/${name}?${query}` : `#/${name}`
     setPage(name)
+    if (name === 'monitor') setMonitorDevice(deviceFromHash())
   }
 
   return (
@@ -95,7 +107,9 @@ export default function App() {
       )}
       {page === 'monitor' && (
         <MonitorPage
+          key={monitorDevice || 'default'}
           devices={devices}
+          initialDeviceId={monitorDevice}
           onError={setErr}
           onDevicesChanged={refreshStatus}
         />

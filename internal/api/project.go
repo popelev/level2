@@ -109,12 +109,27 @@ func (s *Server) handleProjectImport(w http.ResponseWriter, r *http.Request) {
 }
 
 type validateRow struct {
-	DeviceID string `json:"device_id"`
-	TagID    string `json:"id"`
-	NodeID   string `json:"node_id"`
-	DataType string `json:"datatype"`
-	Status   string `json:"status"`
-	Detail   string `json:"detail,omitempty"`
+	DeviceID     string `json:"device_id"`
+	TagID        string `json:"id"`
+	NodeID       string `json:"node_id"`
+	DataType     string `json:"datatype"`
+	ActualType   string `json:"actual_datatype,omitempty"`
+	Status       string `json:"status"`
+	Detail       string `json:"detail,omitempty"`
+}
+
+func inferSampleType(s core.Sample) string {
+	if s.ValueBool != nil {
+		return string(core.ValueBool)
+	}
+	if s.ValueText != nil {
+		return string(core.ValueString)
+	}
+	if s.ValueNum != nil {
+		// historian stores ints as float too — treat as float64 unless whole
+		return string(core.ValueFloat64)
+	}
+	return ""
 }
 
 func (s *Server) handleProjectValidate(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +196,25 @@ func (s *Server) handleProjectValidate(w http.ResponseWriter, r *http.Request) {
 				row.Status = "not_variable"
 			} else {
 				row.Status = "ok"
+				if s.Live != nil {
+					if sample, ok := s.Live.Get(t.ID); ok {
+						actual := inferSampleType(sample)
+						row.ActualType = actual
+						if actual != "" && string(t.DataType) == string(core.ValueBool) && actual != string(core.ValueBool) {
+							row.Status = "type_mismatch"
+							row.Detail = "expected bool, sample is " + actual
+						} else if actual != "" && string(t.DataType) == string(core.ValueString) && actual != string(core.ValueString) {
+							row.Status = "type_mismatch"
+							row.Detail = "expected string, sample is " + actual
+						} else if actual == string(core.ValueBool) && t.DataType != core.ValueBool {
+							row.Status = "type_mismatch"
+							row.Detail = "sample is bool, tag is " + string(t.DataType)
+						} else if actual == string(core.ValueString) && t.DataType != core.ValueString {
+							row.Status = "type_mismatch"
+							row.Detail = "sample is string, tag is " + string(t.DataType)
+						}
+					}
+				}
 			}
 			rows = append(rows, row)
 			counts[row.Status]++

@@ -235,6 +235,7 @@ export default function ProjectsPage({ devices, onError, onDevicesChanged }) {
                     <th>Tag</th>
                     <th>NodeId</th>
                     <th>Type</th>
+                    <th>Actual</th>
                     <th>Status</th>
                   </tr>
                 </thead>
@@ -245,7 +246,8 @@ export default function ProjectsPage({ devices, onError, onDevicesChanged }) {
                       <td className="mono">{r.id}</td>
                       <td className="mono small">{r.node_id}</td>
                       <td>{r.datatype}</td>
-                      <td className={r.status === 'ok' ? 'good' : 'badq'}>{r.status}</td>
+                      <td className="muted">{r.actual_datatype || '—'}</td>
+                      <td className={r.status === 'ok' ? 'good' : 'badq'} title={r.detail || ''}>{r.status}</td>
                     </tr>
                   ))}
                 </tbody>

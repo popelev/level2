@@ -4,7 +4,7 @@ import TagTreeTable from '../components/TagTreeTable.jsx'
 import { ROOT_ID, getJSON, guessType, sanitizeId } from '../api.js'
 import { normalizePath } from '../tagTree.js'
 
-export default function MonitorPage({ devices, onError, onDevicesChanged }) {
+export default function MonitorPage({ devices, onError, onDevicesChanged, initialDeviceId }) {
   const [deviceId, setDeviceId] = useState('')
   const [tags, setTags] = useState([])
   const [selectedNode, setSelectedNode] = useState(null)
@@ -21,11 +21,17 @@ export default function MonitorPage({ devices, onError, onDevicesChanged }) {
   const [dbSelected, setDbSelected] = useState(() => new Set())
 
   useEffect(() => {
+    if (initialDeviceId && devices.some((d) => d.id === initialDeviceId)) {
+      setDeviceId(initialDeviceId)
+      return
+    }
     if (!deviceId && devices[0]) setDeviceId(devices[0].id)
     if (deviceId && devices.length && !devices.some((d) => d.id === deviceId)) {
       setDeviceId(devices[0]?.id || '')
     }
-  }, [devices, deviceId])
+  }, [devices, deviceId, initialDeviceId])
+
+  const currentDevice = devices.find((d) => d.id === deviceId)
 
   const loadChildren = useCallback(async (nodeId) => {
     if (!deviceId) return []
@@ -265,6 +271,25 @@ export default function MonitorPage({ devices, onError, onDevicesChanged }) {
     }
   }
 
+  const updateTag = async (tag) => {
+    if (!deviceId || !tag?.id) return
+    onError('')
+    try {
+      const r = await fetch(
+        `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag.id)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tag),
+        },
+      )
+      if (!r.ok) throw new Error(await r.text())
+      await refreshTags(deviceId)
+    } catch (ex) {
+      onError(String(ex.message || ex))
+    }
+  }
+
   const importExcel = async (file) => {
     if (!deviceId || !file) return
     if (replaceTags && !window.confirm('Replace all monitored tags for this server?')) return
@@ -335,7 +360,14 @@ export default function MonitorPage({ devices, onError, onDevicesChanged }) {
         </div>
         <label className="server-pick">
           Server
-          <select value={deviceId} onChange={(e) => setDeviceId(e.target.value)}>
+          <select
+            value={deviceId}
+            onChange={(e) => {
+              const id = e.target.value
+              setDeviceId(id)
+              location.hash = `#/monitor?device=${encodeURIComponent(id)}`
+            }}
+          >
             {devices.map((d) => (
               <option key={d.id} value={d.id}>{d.id}</option>
             ))}
@@ -344,6 +376,10 @@ export default function MonitorPage({ devices, onError, onDevicesChanged }) {
       </div>
 
       {!deviceId && <p className="muted">Create a server on the Servers page first</p>}
+
+      {deviceId && currentDevice && !currentDevice.connected && (
+        <p className="err">Server “{deviceId}” is disconnected — Address Space / live values may be unavailable</p>
+      )}
 
       {deviceId && (
         <div className="monitor-layout">
@@ -505,6 +541,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged }) {
                 onToggleSelect={onDbToggleSelect}
                 onSetEnabled={setTagsEnabled}
                 onRemove={unmonitorTags}
+                onUpdateTag={updateTag}
               />
             </div>
           </section>
