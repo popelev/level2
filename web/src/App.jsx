@@ -229,8 +229,77 @@ export default function App() {
         if (!r.ok) throw new Error(await r.text())
         return r.json()
       })
-      // show expand result as temporary message / keep in selected
       setImportMsg(`Expand found ${rows.length} leaf nodes`)
+    } catch (ex) {
+      setErr(String(ex.message || ex))
+    }
+  }
+
+  const guessType = (name) => {
+    const n = String(name || '').toLowerCase()
+    if (n.startsWith('b') || n.includes('bool') || n.includes('auto') || n.endsWith('_run')) return 'bool'
+    if (n.startsWith('s') && (n.includes('unit') || n.includes('name') || n.includes('text'))) return 'string'
+    if (n.startsWith('i') || n.includes('count')) return 'int64'
+    return 'float64'
+  }
+
+  const isMonitored = (nodeId) => tags.some((t) => t.tag.node_id === nodeId)
+
+  const monitorSelectedNode = async () => {
+    if (!deviceId || !selectedNode?.is_leaf) return
+    setErr('')
+    const id = String(selectedNode.browse_name || selectedNode.node_id).replace(/\s+/g, '_')
+    try {
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          node_id: selectedNode.node_id,
+          datatype: guessType(selectedNode.browse_name),
+          enabled: true,
+          interval_ms: 1000,
+        }),
+      })
+      if (!r.ok) throw new Error(await r.text())
+      setImportMsg(`Monitoring ${id} → DB`)
+      await refreshTags(deviceId)
+      await refreshDevices()
+    } catch (ex) {
+      setErr(String(ex.message || ex))
+    }
+  }
+
+  const unmonitorTag = async (tagId) => {
+    if (!deviceId || !tagId) return
+    setErr('')
+    try {
+      const r = await fetch(
+        `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tagId)}`,
+        { method: 'DELETE' },
+      )
+      if (!r.ok && r.status !== 204) throw new Error(await r.text())
+      await refreshTags(deviceId)
+      await refreshDevices()
+    } catch (ex) {
+      setErr(String(ex.message || ex))
+    }
+  }
+
+  const setTagEnabled = async (tag, enabled) => {
+    if (!deviceId) return
+    setErr('')
+    try {
+      const r = await fetch(
+        `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag.id)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...tag, enabled }),
+        },
+      )
+      if (!r.ok) throw new Error(await r.text())
+      await refreshTags(deviceId)
     } catch (ex) {
       setErr(String(ex.message || ex))
     }
@@ -309,6 +378,28 @@ export default function App() {
               <div className="mono">{selectedNode.browse_name}</div>
               <div className="mono small muted">{selectedNode.node_id}</div>
               <div className="muted small">{selectedNode.is_leaf ? 'Variable' : 'Object / folder'}</div>
+              {selectedNode.is_leaf && deviceId && (
+                <div className="row tight" style={{ marginTop: 8 }}>
+                  <button type="button" onClick={monitorSelectedNode}>
+                    {isMonitored(selectedNode.node_id) ? 'Update in DB list' : 'Write to DB (monitor)'}
+                  </button>
+                  {isMonitored(selectedNode.node_id) && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        const t = tags.find((x) => x.tag.node_id === selectedNode.node_id)
+                        if (t) unmonitorTag(t.tag.id)
+                      }}
+                    >
+                      Stop writing
+                    </button>
+                  )}
+                </div>
+              )}
+              <p className="hint">
+                Address Space is browse-only. Only Monitored tags are polled and stored in TimescaleDB.
+              </p>
             </div>
           )}
         </section>
@@ -408,7 +499,7 @@ export default function App() {
 
           <section className="panel monitored">
             <div className="panel-head">
-              <h2>Monitored tags</h2>
+              <h2>Monitored tags → DB</h2>
               <input
                 className="search"
                 value={filter}
@@ -416,30 +507,48 @@ export default function App() {
                 placeholder="filter"
               />
             </div>
+            <p className="hint">
+              Only this list is polled and written to TimescaleDB. Disable stops writes without deleting.
+            </p>
             <div className="table-wrap compact">
               <table>
                 <thead>
                   <tr>
                     <th>Tag</th>
                     <th>Value</th>
-                    <th>Q</th>
+                    <th>On</th>
+                    <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {monitored.map((t) => (
-                    <tr key={t.tag.id}>
+                    <tr key={t.tag.id} className={t.tag.enabled ? '' : 'dim'}>
                       <td>
                         <div className="mono">{t.tag.id}</div>
                         <div className="mono small muted">{t.tag.node_id}</div>
                       </td>
                       <td className="mono">{formatValue(t.sample)}</td>
-                      <td className={t.sample?.quality === 0 ? 'good' : 'badq'}>
-                        {t.sample ? t.sample.quality : '—'}
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={!!t.tag.enabled}
+                          onChange={(e) => setTagEnabled(t.tag, e.target.checked)}
+                          title="enabled = write to DB"
+                        />
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="secondary small-btn"
+                          onClick={() => unmonitorTag(t.tag.id)}
+                        >
+                          Remove
+                        </button>
                       </td>
                     </tr>
                   ))}
                   {monitored.length === 0 && (
-                    <tr><td colSpan={3} className="muted">No monitored tags</td></tr>
+                    <tr><td colSpan={4} className="muted">No monitored tags</td></tr>
                   )}
                 </tbody>
               </table>

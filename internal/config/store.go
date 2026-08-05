@@ -102,6 +102,86 @@ func (s *Store) MergeTags(deviceID string, tags []core.Tag, replace bool) (added
 	return added, updated, nil
 }
 
+func (s *Store) deviceIndexLocked(deviceID string) (int, error) {
+	for i := range s.file.Devices {
+		if s.file.Devices[i].ID == deviceID {
+			return i, nil
+		}
+	}
+	return -1, fmt.Errorf("device %q not found", deviceID)
+}
+
+// UpsertTag creates or updates one monitored tag (written to DB when enabled).
+func (s *Store) UpsertTag(deviceID string, tag core.Tag) error {
+	if tag.ID == "" || tag.NodeID == "" {
+		return fmt.Errorf("tag id and node_id required")
+	}
+	if _, err := core.ParseNodeID(tag.NodeID); err != nil {
+		return err
+	}
+	if tag.IntervalMs <= 0 {
+		tag.IntervalMs = 1000
+	}
+	switch tag.DataType {
+	case core.ValueBool, core.ValueInt64, core.ValueFloat64, core.ValueString:
+	case "":
+		tag.DataType = core.ValueFloat64
+	default:
+		return fmt.Errorf("unsupported datatype %q", tag.DataType)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx, err := s.deviceIndexLocked(deviceID)
+	if err != nil {
+		return err
+	}
+	dev := &s.file.Devices[idx]
+	for i := range dev.Tags {
+		if dev.Tags[i].ID == tag.ID {
+			dev.Tags[i] = tag
+			if err := s.saveLocked(); err != nil {
+				return err
+			}
+			s.gen.Add(1)
+			return nil
+		}
+	}
+	dev.Tags = append(dev.Tags, tag)
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.gen.Add(1)
+	return nil
+}
+
+func (s *Store) DeleteTag(deviceID, tagID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx, err := s.deviceIndexLocked(deviceID)
+	if err != nil {
+		return err
+	}
+	dev := &s.file.Devices[idx]
+	out := dev.Tags[:0]
+	found := false
+	for _, t := range dev.Tags {
+		if t.ID == tagID {
+			found = true
+			continue
+		}
+		out = append(out, t)
+	}
+	if !found {
+		return fmt.Errorf("tag %q not found", tagID)
+	}
+	dev.Tags = out
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.gen.Add(1)
+	return nil
+}
+
 // UpsertDevice creates or updates a device (keeps existing tags on update unless cleared).
 func (s *Store) UpsertDevice(dev core.Device) error {
 	if dev.ID == "" {

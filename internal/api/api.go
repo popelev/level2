@@ -84,6 +84,9 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/browse", s.handleBrowse)
 	mux.HandleFunc("POST /api/v1/expand", s.handleExpand)
 	mux.HandleFunc("POST /api/v1/devices/{id}/tags/import", s.handleImportExcel)
+	mux.HandleFunc("POST /api/v1/devices/{id}/tags", s.handleUpsertTag)
+	mux.HandleFunc("PUT /api/v1/devices/{id}/tags/{tagId}", s.handleUpsertTag)
+	mux.HandleFunc("DELETE /api/v1/devices/{id}/tags/{tagId}", s.handleDeleteTag)
 	mux.HandleFunc("PUT /api/v1/tags/{id}/value", s.handleWriteNotImplemented)
 	mux.HandleFunc("GET /api/v1/ws/stream", s.handleWS)
 }
@@ -326,6 +329,41 @@ func (s *Server) handleImportExcel(w http.ResponseWriter, r *http.Request) {
 		"errors":    parsed.Errors,
 		"tags":      parsed.Tags,
 	})
+}
+
+func (s *Server) handleUpsertTag(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		http.Error(w, "config store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	deviceID := r.PathValue("id")
+	var tag core.Tag
+	if err := json.NewDecoder(r.Body).Decode(&tag); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if tid := r.PathValue("tagId"); tid != "" {
+		tag.ID = tid
+	}
+	if err := s.Cfg.UpsertTag(deviceID, tag); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, tag)
+}
+
+func (s *Server) handleDeleteTag(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		http.Error(w, "config store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	deviceID := r.PathValue("id")
+	tagID := r.PathValue("tagId")
+	if err := s.Cfg.DeleteTag(deviceID, tagID); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
