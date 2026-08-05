@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
+	"github.com/popelev/level2/internal/importexcel"
 	"github.com/popelev/level2/internal/store"
 )
 
@@ -22,6 +24,7 @@ type Server struct {
 	Devices  func() []core.Device
 	History  core.HistoryQuerier
 	Browser  core.Browser // optional; nil → 503 on browse/expand
+	Cfg      *config.Store
 	Hub      *Hub
 }
 
@@ -72,6 +75,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/devices", s.handleDevices)
 	mux.HandleFunc("GET /api/v1/browse", s.handleBrowse)
 	mux.HandleFunc("POST /api/v1/expand", s.handleExpand)
+	mux.HandleFunc("POST /api/v1/devices/{id}/tags/import", s.handleImportExcel)
 	mux.HandleFunc("PUT /api/v1/tags/{id}/value", s.handleWriteNotImplemented)
 	mux.HandleFunc("GET /api/v1/ws/stream", s.handleWS)
 }
@@ -184,6 +188,48 @@ func (s *Server) handleExpand(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleWriteNotImplemented(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "write to PLC not implemented yet", http.StatusNotImplemented)
+}
+
+func (s *Server) handleImportExcel(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		http.Error(w, "config store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	deviceID := r.PathValue("id")
+	if deviceID == "" {
+		http.Error(w, "device id required", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "multipart form required (file=*.xlsx)", http.StatusBadRequest)
+		return
+	}
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "missing file field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	parsed, err := importexcel.Parse(file)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	replace := r.URL.Query().Get("replace") == "1" || r.FormValue("replace") == "1"
+	added, updated, err := s.Cfg.MergeTags(deviceID, parsed.Tags, replace)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"device_id": deviceID,
+		"added":     added,
+		"updated":   updated,
+		"total":     len(parsed.Tags),
+		"errors":    parsed.Errors,
+		"tags":      parsed.Tags,
+	})
 }
 
 func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {

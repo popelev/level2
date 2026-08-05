@@ -22,7 +22,7 @@ func (d *Driver) BrowseChildren(ctx context.Context, parentNodeID string) ([]cor
 	if err != nil {
 		return nil, err
 	}
-	nid, err := toUANodeID(parsed)
+	nid, err := d.toUANodeID(ctx, parsed)
 	if err != nil {
 		return nil, err
 	}

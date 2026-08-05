@@ -22,8 +22,18 @@ func TestParseNodeID_String(t *testing.T) {
 	}
 }
 
+func TestParseNodeID_NamespaceURI(t *testing.T) {
+	p, err := ParseNodeID("nsu=http://Tankhouse_Data_2;i=2880")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.NamespaceURI != "http://Tankhouse_Data_2" || p.IdentifierType != "i" || p.Identifier != "2880" {
+		t.Fatalf("unexpected %#v", p)
+	}
+}
+
 func TestParseNodeID_Invalid(t *testing.T) {
-	cases := []string{"", "i=1", "ns=4", "ns=x;i=1", "ns=4;i=abc"}
+	cases := []string{"", "i=1", "ns=4", "ns=x;i=1", "ns=4;i=abc", "nsu=;i=1"}
 	for _, c := range cases {
 		if _, err := ParseNodeID(c); err == nil {
 			t.Fatalf("expected error for %q", c)

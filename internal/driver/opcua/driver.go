@@ -19,9 +19,10 @@ type Driver struct {
 	device core.Device
 	log    *slog.Logger
 
-	mu     sync.Mutex
-	client *opcua.Client
-	alive  atomic.Bool
+	mu      sync.Mutex
+	client  *opcua.Client
+	alive   atomic.Bool
+	nsCache map[string]uint16
 }
 
 func New(device core.Device, log *slog.Logger) *Driver {
@@ -59,6 +60,7 @@ func (d *Driver) Connect(ctx context.Context) error {
 	}
 	d.client = c
 	d.alive.Store(true)
+	d.nsCache = nil
 	d.log.Info("opcua connected", "endpoint", d.device.Endpoint, "device", d.device.ID)
 	return nil
 }
@@ -163,7 +165,7 @@ func (d *Driver) pollOnce(ctx context.Context, tags []TagView, out chan<- core.S
 
 	nodes := make([]*ua.ReadValueID, len(tags))
 	for i, t := range tags {
-		nid, err := toUANodeID(t.Parsed)
+		nid, err := d.toUANodeID(ctx, t.Parsed)
 		if err != nil {
 			return err
 		}
@@ -196,7 +198,58 @@ func (d *Driver) pollOnce(ctx context.Context, tags []TagView, out chan<- core.S
 	return nil
 }
 
+func (d *Driver) toUANodeID(ctx context.Context, p core.ParsedNodeID) (*ua.NodeID, error) {
+	ns := p.Namespace
+	if p.NamespaceURI != "" {
+		idx, err := d.namespaceIndex(ctx, p.NamespaceURI)
+		if err != nil {
+			return nil, err
+		}
+		ns = idx
+	}
+	switch p.IdentifierType {
+	case "i":
+		var id uint32
+		_, err := fmt.Sscanf(p.Identifier, "%d", &id)
+		if err != nil {
+			return nil, err
+		}
+		return ua.NewNumericNodeID(ns, id), nil
+	case "s":
+		return ua.NewStringNodeID(ns, p.Identifier), nil
+	default:
+		return nil, fmt.Errorf("identifier type %q not supported", p.IdentifierType)
+	}
+}
+
+func (d *Driver) namespaceIndex(ctx context.Context, uri string) (uint16, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.nsCache != nil {
+		if idx, ok := d.nsCache[uri]; ok {
+			return idx, nil
+		}
+	}
+	if d.client == nil {
+		return 0, fmt.Errorf("not connected")
+	}
+	arr, err := d.client.NamespaceArray(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("namespace array: %w", err)
+	}
+	d.nsCache = make(map[string]uint16, len(arr))
+	for i, u := range arr {
+		d.nsCache[u] = uint16(i)
+	}
+	idx, ok := d.nsCache[uri]
+	if !ok {
+		return 0, fmt.Errorf("namespace uri %q not found on server", uri)
+	}
+	return idx, nil
+}
+
 func toUANodeID(p core.ParsedNodeID) (*ua.NodeID, error) {
+	// used by browse helpers without URI resolution
 	switch p.IdentifierType {
 	case "i":
 		var id uint32

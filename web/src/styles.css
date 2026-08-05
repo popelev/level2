@@ -138,6 +138,27 @@ body {
   display: grid;
   gap: 6px;
 }
+.import-box {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+input[type="file"] {
+  font-size: 0.78rem;
+  padding: 6px;
+}
+input[type="checkbox"] {
+  width: auto;
+  min-width: 0;
+  flex: none;
+}
 
 .table-wrap { overflow: auto; }
 .table-wrap.compact { max-height: 220px; }

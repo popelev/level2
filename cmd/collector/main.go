@@ -35,6 +35,7 @@ func main() {
 		log.Error("config", "err", err)
 		os.Exit(1)
 	}
+	cfgStore := config.NewStore(*cfgPath, cfg)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
@@ -73,26 +74,10 @@ func main() {
 			os.Exit(1)
 		}
 		drivers = append(drivers, demo)
-		var allTags []core.Tag
-		for _, d := range cfg.Devices {
-			allTags = append(allTags, d.Tags...)
-		}
-		go func() {
-			for {
-				if ctx.Err() != nil {
-					return
-				}
-				err := demo.Subscribe(ctx, allTags, raw)
-				if ctx.Err() != nil {
-					return
-				}
-				log.Warn("demo subscribe ended", "err", err)
-				time.Sleep(time.Second)
-			}
-		}()
+		go runDemo(ctx, log, demo, cfgStore, raw)
 		log.Info("PLC-off demo mode: sim browser + synthetic samples (no OPC dial)")
 	} else {
-		for _, dev := range cfg.Devices {
+		for _, dev := range cfgStore.Devices() {
 			d := opcuaDriver.New(dev, log.With("device", dev.ID))
 			connectCtx, connectCancel := context.WithTimeout(ctx, 3*time.Second)
 			if err := d.Connect(connectCtx); err != nil {
@@ -103,8 +88,7 @@ func main() {
 				primaryBrowser = d
 			}
 			drivers = append(drivers, d)
-			devCopy := dev
-			go runDevice(ctx, log, devCopy, d, raw)
+			go runDevice(ctx, log, cfgStore, dev.ID, d, raw)
 		}
 	}
 
@@ -117,14 +101,9 @@ func main() {
 		Hub:     hub,
 		History: hist,
 		Browser: primaryBrowser,
-		Tags: func() []core.Tag {
-			var tags []core.Tag
-			for _, d := range cfg.Devices {
-				tags = append(tags, d.Tags...)
-			}
-			return tags
-		},
-		Devices: func() []core.Device { return cfg.Devices },
+		Cfg:     cfgStore,
+		Tags:    cfgStore.AllTags,
+		Devices: cfgStore.Devices,
 	}
 
 	mux := http.NewServeMux()
@@ -170,7 +149,26 @@ func main() {
 	log.Info("collector stopped")
 }
 
-func runDevice(ctx context.Context, log *slog.Logger, device core.Device, drv *opcuaDriver.Driver, samples chan<- core.Sample) {
+func runDemo(ctx context.Context, log *slog.Logger, demo *mock.Driver, cfgStore *config.Store, samples chan<- core.Sample) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		gen := cfgStore.Gen()
+		tags := cfgStore.AllTags()
+		subCtx, cancel := context.WithCancel(ctx)
+		go watchConfig(subCtx, cancel, cfgStore, gen)
+		err := demo.Subscribe(subCtx, tags, samples)
+		cancel()
+		if ctx.Err() != nil {
+			return
+		}
+		log.Info("demo subscribe reload", "err", err, "tags", len(tags))
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+func runDevice(ctx context.Context, log *slog.Logger, cfgStore *config.Store, deviceID string, drv *opcuaDriver.Driver, samples chan<- core.Sample) {
 	bo := backoff.New(2*time.Second, 30*time.Second)
 	for {
 		if ctx.Err() != nil {
@@ -179,7 +177,7 @@ func runDevice(ctx context.Context, log *slog.Logger, device core.Device, drv *o
 		if !drv.Connected() {
 			if err := drv.Connect(ctx); err != nil {
 				wait := bo.Next()
-				log.Warn("waiting opc", "device", device.ID, "err", err, "backoff", wait.String())
+				log.Warn("waiting opc", "device", deviceID, "err", err, "backoff", wait.String())
 				select {
 				case <-ctx.Done():
 					return
@@ -189,17 +187,42 @@ func runDevice(ctx context.Context, log *slog.Logger, device core.Device, drv *o
 			}
 			bo.Reset()
 		}
-		err := drv.Subscribe(ctx, device.Tags, samples)
+		gen := cfgStore.Gen()
+		tags, err := cfgStore.DeviceTags(deviceID)
+		if err != nil {
+			log.Error("device tags", "err", err)
+			return
+		}
+		subCtx, cancel := context.WithCancel(ctx)
+		go watchConfig(subCtx, cancel, cfgStore, gen)
+		err = drv.Subscribe(subCtx, tags, samples)
+		cancel()
 		if ctx.Err() != nil {
 			return
 		}
-		log.Warn("subscribe ended", "device", device.ID, "err", err)
+		log.Warn("subscribe ended", "device", deviceID, "err", err)
 		_ = drv.Disconnect(ctx)
 		wait := bo.Next()
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(wait):
+		}
+	}
+}
+
+func watchConfig(ctx context.Context, cancel context.CancelFunc, cfgStore *config.Store, gen uint64) {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if cfgStore.Gen() != gen {
+				cancel()
+				return
+			}
 		}
 	}
 }
@@ -257,7 +280,6 @@ func replaySpool(ctx context.Context, log *slog.Logger, hist core.Historian, sp 
 				continue
 			}
 			metrics.SpoolDepth.Set(float64(len(files)))
-			// oldest first by name (nanosecond timestamps)
 			path := files[0]
 			for _, f := range files[1:] {
 				if filepath.Base(f) < filepath.Base(path) {

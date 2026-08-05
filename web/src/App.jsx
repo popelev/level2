@@ -37,6 +37,9 @@ export default function App() {
   const [err, setErr] = useState('')
   const [liveMsg, setLiveMsg] = useState(null)
   const [filter, setFilter] = useState('')
+  const [importBusy, setImportBusy] = useState(false)
+  const [importMsg, setImportMsg] = useState('')
+  const [replaceTags, setReplaceTags] = useState(false)
 
   const selectedDevice = useMemo(
     () => devices.find((d) => d.id === deviceId) || null,
@@ -177,6 +180,34 @@ export default function App() {
     }
   }
 
+  const importExcel = async (file) => {
+    if (!deviceId || !file) return
+    setImportBusy(true)
+    setImportMsg('')
+    setErr('')
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const q = replaceTags ? '?replace=1' : ''
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/import${q}`, {
+        method: 'POST',
+        body: fd,
+      })
+      const text = await r.text()
+      if (!r.ok) throw new Error(text || r.status)
+      const data = JSON.parse(text)
+      setImportMsg(
+        `Импорт: +${data.added} / ~${data.updated} (всего ${data.total})` +
+          (data.errors?.length ? `; предупреждений: ${data.errors.length}` : ''),
+      )
+      await refresh(deviceId)
+    } catch (e) {
+      setErr(String(e.message || e))
+    } finally {
+      setImportBusy(false)
+    }
+  }
+
   const statusPill = useMemo(() => {
     if (ready === 'ready') return <span className="pill ok">ready</span>
     return <span className="pill bad">{ready}</span>
@@ -228,6 +259,32 @@ export default function App() {
             <div className="device-meta">
               <div><span className="muted">security</span> {selectedDevice.security}</div>
               <div className="mono small">{selectedDevice.endpoint}</div>
+              <div className="import-box">
+                <div className="muted">Импорт OPC-нод из Excel</div>
+                <p className="hint">
+                  Колонки: Area, Path, Signal, MeasurePoint NodeId, DataType, DataType Name
+                </p>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={replaceTags}
+                    onChange={(e) => setReplaceTags(e.target.checked)}
+                  />
+                  заменить все теги устройства
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  disabled={importBusy || !deviceId}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]
+                    e.target.value = ''
+                    if (f) importExcel(f)
+                  }}
+                />
+                {importBusy && <div className="muted">Импорт…</div>}
+                {importMsg && <div className="good">{importMsg}</div>}
+              </div>
             </div>
           )}
         </aside>

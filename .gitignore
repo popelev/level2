@@ -10,3 +10,6 @@ Thumbs.db
 __pycache__/
 deploy/smoke/telegraf/opcua/*.pem
 deploy/smoke/telegraf/opcua/*.key
+
+.tmp-opcua*
+*.xlsx.tmp
