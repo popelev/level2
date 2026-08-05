@@ -34,6 +34,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-level2}
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+      - telegraf_opcua_certs:/etc/telegraf/opcua
     # Host network не нужен: VM Bridged до PLC, Docker bridge до timescaledb
 
   grafana:
@@ -59,3 +60,4 @@ services:
 volumes:
   timeseries:
   grafana_data:
+  telegraf_opcua_certs:

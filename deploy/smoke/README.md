@@ -31,7 +31,8 @@ nano .env
 - `OPC_UA_USERNAME` / `OPC_UA_PASSWORD` — **те же**, что в UaExpert
 - пароли БД и Grafana (можно оставить примеры для лабы)
 
-Если в UaExpert Security не `None` — в `telegraf/telegraf.conf` поставьте те же `security_policy` и `security_mode`.
+Если в UaExpert Security **Basic256Sha256** + **Sign & Encrypt** — в `telegraf.conf` уже так настроено.
+Telegraf при первом старте создаст клиентский сертификат; его нужно **доверять на S7-1500** (см. ниже «Сертификаты»).
 
 Затем NodeId в конфиге Telegraf:
 
@@ -82,11 +83,35 @@ docker compose down
 
 Данные БД сохраняются в Docker volume `smoke_timeseries` (пока не сделаете `down -v`).
 
+## Сертификаты (Sign & Encrypt)
+
+UaExpert и Telegraf при **Sign & Encrypt** используют клиентский сертификат. PLC должен ему **доверять**.
+
+1. Запустите Telegraf один раз (он создаст cert):
+   ```bash
+   docker compose up -d telegraf
+   docker compose logs telegraf
+   ```
+2. Скопируйте сертификат на хост VM:
+   ```bash
+   docker cp level2-telegraf:/etc/telegraf/opcua/cert.pem ~/telegraf-opcua-cert.pem
+   ```
+3. На Windows (TIA / Online): OPC UA → Certificates / Trusted clients — **импортировать** `telegraf-opcua-cert.pem` и поместить в **Trusted**.
+   (Либо Online: отклоненные сертификаты → Move to trusted.)
+4. Перезапуск Telegraf:
+   ```bash
+   docker compose restart telegraf
+   docker compose logs -f telegraf
+   ```
+
+Без шага «доверия» на PLC типичны ошибки вроде `BadSecurityChecksFailed` / `BadCertificateUntrusted`.
+
 ## Если Telegraf не коннектится
 
 | Симптом | Что проверить |
 |---------|----------------|
 | timeout / dial | IP PLC, Bridged, `ping`, порт 4840 |
-| Bad security | В TIA и telegraf: None / Anonymous |
+| BadIdentityTokenInvalid | Логин/пароль в `.env` как в UaExpert |
+| BadSecurityChecksFailed / Untrusted | Доверие к сертификату Telegraf на S7-1500 (см. выше) |
 | Bad NodeId | Скопировать NodeId ещё раз из UaExpert |
-| UaExpert ок, Telegraf нет | Тот же endpoint строкой, логи: `docker compose logs telegraf` |
+| UaExpert ок, Telegraf нет | Тот же endpoint, Security, user; логи: `docker compose logs telegraf` |
