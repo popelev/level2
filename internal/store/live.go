@@ -42,21 +42,30 @@ func (l *Live) All() []core.Sample {
 
 // SnapshotTags returns configured tags merged with live values.
 func (l *Live) SnapshotTags(tags []core.Tag) []TagValue {
+	return l.SnapshotDevices([]core.Device{{Tags: tags}})
+}
+
+// SnapshotDevices flattens device tags and attaches live samples + device_id.
+func (l *Live) SnapshotDevices(devices []core.Device) []TagValue {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	out := make([]TagValue, 0, len(tags))
-	for _, t := range tags {
-		tv := TagValue{Tag: t}
-		if s, ok := l.byID[t.ID]; ok {
-			tv.Sample = &s
-			tv.UpdatedAt = s.Time
+	out := make([]TagValue, 0)
+	for _, d := range devices {
+		for _, t := range d.Tags {
+			tv := TagValue{DeviceID: d.ID, Tag: t}
+			if s, ok := l.byID[t.ID]; ok {
+				cp := s
+				tv.Sample = &cp
+				tv.UpdatedAt = s.Time
+			}
+			out = append(out, tv)
 		}
-		out = append(out, tv)
 	}
 	return out
 }
 
 type TagValue struct {
+	DeviceID  string       `json:"device_id"`
 	Tag       core.Tag     `json:"tag"`
 	Sample    *core.Sample `json:"sample,omitempty"`
 	UpdatedAt time.Time    `json:"updated_at,omitempty"`

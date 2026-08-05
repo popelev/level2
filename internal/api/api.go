@@ -77,8 +77,19 @@ func (s *Server) Mount(mux *http.ServeMux) {
 }
 
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
-	tags := s.Tags()
-	writeJSON(w, http.StatusOK, s.Live.SnapshotTags(tags))
+	deviceID := r.URL.Query().Get("device_id")
+	devs := s.Devices()
+	if deviceID != "" {
+		filtered := make([]core.Device, 0, 1)
+		for _, d := range devs {
+			if d.ID == deviceID {
+				filtered = append(filtered, d)
+				break
+			}
+		}
+		devs = filtered
+	}
+	writeJSON(w, http.StatusOK, s.Live.SnapshotDevices(devs))
 }
 
 func (s *Server) handleTagValue(w http.ResponseWriter, r *http.Request) {
