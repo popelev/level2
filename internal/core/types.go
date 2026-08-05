@@ -67,3 +67,30 @@ type Historian interface {
 	WriteBatch(ctx context.Context, samples []Sample) error
 	Close(ctx context.Context) error
 }
+
+// HistoryQuerier is optional historian capability for the API.
+type HistoryQuerier interface {
+	QueryHistory(ctx context.Context, tagID string, from, to time.Time, limit int) ([]Sample, error)
+}
+
+// Browser expands / browses OPC address space (optional driver capability).
+type Browser interface {
+	BrowseChildren(ctx context.Context, parentNodeID string) ([]BrowseNode, error)
+	ExpandStructure(ctx context.Context, parentNodeID, parentTagID string, maxDepth int) ([]ExpandedTag, error)
+}
+
+// BrowseNode is duplicated lightly in core for API decoupling from driver package.
+type BrowseNode struct {
+	NodeID      string `json:"node_id"`
+	BrowseName  string `json:"browse_name"`
+	DisplayName string `json:"display_name"`
+	NodeClass   string `json:"node_class"`
+	IsLeaf      bool   `json:"is_leaf"`
+}
+
+type ExpandedTag struct {
+	ID         string    `json:"id"`
+	NodeID     string    `json:"node_id"`
+	BrowsePath string    `json:"browse_path"`
+	DataType   ValueType `json:"datatype"`
+}

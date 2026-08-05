@@ -91,7 +91,14 @@ func (d *Driver) Subscribe(ctx context.Context, tags []core.Tag, out chan<- core
 		return fmt.Errorf("no enabled tags")
 	}
 
+	// Multi-tag: poll all enabled tags on the shortest interval (M2).
 	interval := time.Duration(enabled[0].IntervalMs) * time.Millisecond
+	for _, t := range enabled[1:] {
+		iv := time.Duration(t.IntervalMs) * time.Millisecond
+		if iv > 0 && iv < interval {
+			interval = iv
+		}
+	}
 	if interval <= 0 {
 		interval = time.Second
 	}

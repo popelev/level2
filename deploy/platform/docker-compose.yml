@@ -1,5 +1,4 @@
-# Collector connects to the same Timescale as smoke (external network) OR
-# run with: docker compose -f ../smoke/docker-compose.yml -f docker-compose.yml up -d
+# Collector connects to the same Timescale as smoke (external network).
 
 services:
   collector:
@@ -15,13 +14,20 @@ services:
       PLC_OPC_ENDPOINT: ${PLC_OPC_ENDPOINT:-opc.tcp://10.14.10.16:4840}
       OPC_UA_USERNAME: ${OPC_UA_USERNAME:-}
       OPC_UA_PASSWORD: ${OPC_UA_PASSWORD:-}
+      LEVEL2_SIM_BROWSER: ${LEVEL2_SIM_BROWSER:-1}
+      SPOOL_DIR: /var/lib/level2/spool
+      UI_DIR: /usr/share/level2/ui
     volumes:
       - ./config.yaml:/etc/level2/config.yaml:ro
+      - collector_spool:/var/lib/level2/spool
     ports:
       - "8080:8080"
     command: ["-config", "/etc/level2/config.yaml"]
     networks:
       - smoke_default
+
+volumes:
+  collector_spool:
 
 networks:
   smoke_default:

@@ -11,9 +11,11 @@ import (
 
 // File is the YAML configuration root.
 type File struct {
-	Listen    string         `yaml:"listen"`
-	Database  Database       `yaml:"database"`
-	Devices   []core.Device  `yaml:"devices"`
+	Listen   string        `yaml:"listen"`
+	Database Database      `yaml:"database"`
+	SpoolDir string        `yaml:"spool_dir"`
+	UIDir    string        `yaml:"ui_dir"`
+	Devices  []core.Device `yaml:"devices"`
 }
 
 type Database struct {
@@ -33,11 +35,23 @@ func Load(path string) (*File, error) {
 	if f.Listen == "" {
 		f.Listen = ":8080"
 	}
+	if f.SpoolDir == "" {
+		f.SpoolDir = "/var/lib/level2/spool"
+	}
+	if f.UIDir == "" {
+		f.UIDir = "/usr/share/level2/ui"
+	}
 	if u := os.Getenv("DATABASE_URL"); u != "" {
 		f.Database.URL = u
 	}
 	if f.Database.URL == "" {
 		return nil, fmt.Errorf("database.url is required (or DATABASE_URL env)")
+	}
+	if v := os.Getenv("SPOOL_DIR"); v != "" {
+		f.SpoolDir = v
+	}
+	if v := os.Getenv("UI_DIR"); v != "" {
+		f.UIDir = v
 	}
 	for i := range f.Devices {
 		d := &f.Devices[i]
