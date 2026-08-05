@@ -19,7 +19,7 @@ services:
       - ./config.yaml:/etc/level2/config.yaml:ro
     ports:
       - "8080:8080"
-    command: ["/collector", "-config", "/etc/level2/config.yaml"]
+    command: ["-config", "/etc/level2/config.yaml"]
     networks:
       - smoke_default
 

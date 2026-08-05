@@ -22,6 +22,7 @@ func ParseNodeID(raw string) (ParsedNodeID, error) {
 	parts := strings.Split(raw, ";")
 	var ns uint16
 	var idType, id string
+	hasNS := false
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
 		switch {
@@ -31,6 +32,7 @@ func ParseNodeID(raw string) (ParsedNodeID, error) {
 				return ParsedNodeID{}, fmt.Errorf("invalid namespace in %q: %w", raw, err)
 			}
 			ns = uint16(n)
+			hasNS = true
 		case strings.HasPrefix(p, "i="):
 			idType = "i"
 			id = p[2:]
@@ -46,6 +48,9 @@ func ParseNodeID(raw string) (ParsedNodeID, error) {
 		default:
 			return ParsedNodeID{}, fmt.Errorf("unsupported node id part %q in %q", p, raw)
 		}
+	}
+	if !hasNS {
+		return ParsedNodeID{}, fmt.Errorf("missing namespace in %q", raw)
 	}
 	if idType == "" || id == "" {
 		return ParsedNodeID{}, fmt.Errorf("missing identifier in %q", raw)

@@ -8,7 +8,7 @@ Build and unit-test without a real PLC:
 
 ```bash
 cd ~/level2
-docker run --rm -v "$PWD":/src -w /src golang:1.22 go test ./...
+docker run --rm -e GOTOOLCHAIN=auto -v "$PWD":/src -w /src golang:1.24 go test ./...
 ```
 
 ## Run next to smoke stack
