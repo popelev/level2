@@ -39,6 +39,61 @@ body {
 .brand { margin: 0 0 4px; font-size: 1.55rem; font-weight: 600; }
 .sub { margin: 0; color: var(--muted); font-size: 0.9rem; }
 
+.nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.nav-btn {
+  background: var(--bg0);
+  border: 1px solid var(--line);
+  padding: 8px 14px;
+}
+.nav-btn.active {
+  background: var(--sel);
+  border-color: #2f6b55;
+  color: var(--accent);
+}
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.page-head h2 { margin: 0 0 4px; font-size: 1.15rem; }
+
+.servers-layout,
+.monitor-layout {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 1000px) {
+  .servers-layout { grid-template-columns: 1fr 1fr; }
+  .monitor-layout { grid-template-columns: 1.2fr 1fr; align-items: start; }
+}
+
+.server-pick {
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.server-pick select { min-width: 200px; }
+
+.device-detail h3 { margin: 0 0 10px; }
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 0.88rem;
+}
+
 .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .pill {
   border: 1px solid var(--line);
@@ -54,9 +109,6 @@ body {
   display: grid;
   gap: 12px;
   grid-template-columns: 1fr;
-}
-@media (min-width: 1000px) {
-  .ua-layout { grid-template-columns: 1.35fr 0.9fr; align-items: start; }
 }
 .right-col { display: grid; gap: 12px; }
 
