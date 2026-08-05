@@ -24,11 +24,7 @@ func New(initial, max time.Duration) *Exp {
 }
 
 func (e *Exp) Next() time.Duration {
-	if e.attempt == 0 {
-		e.attempt = 1
-		return e.Initial
-	}
-	d := float64(e.Initial) * math.Pow(e.Factor, float64(e.attempt-1))
+	d := float64(e.Initial) * math.Pow(e.Factor, float64(e.attempt))
 	e.attempt++
 	if d > float64(e.Max) {
 		return e.Max
