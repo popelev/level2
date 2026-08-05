@@ -8,29 +8,82 @@ import (
 	"github.com/popelev/level2/internal/core"
 )
 
-// Browser is an in-memory OPC tree for PLC-off UI/API work (N5/N7).
+// Browser is an in-memory OPC tree shaped like a Siemens address space (PLC-off).
 type Browser struct {
 	children map[string][]core.BrowseNode
 }
 
 func NewDemo() *Browser {
 	b := &Browser{children: map[string][]core.BrowseNode{}}
+	root := "ns=0;i=84"
 	objects := "ns=0;i=85"
+	server := "ns=0;i=2253"
+	serverIf := "ns=4;i=1000"
+	deviceSet := "ns=2;i=5001"
+	plc := "ns=2;i=5002"
+	th1 := "ns=4;i=2000"
+	th2 := "ns=4;i=2100"
+	measure := "ns=4;i=4207"
+
+	b.children[root] = []core.BrowseNode{
+		folder(objects, "Objects"),
+		folder(server, "Server"),
+	}
 	b.children[objects] = []core.BrowseNode{
-		{NodeID: "ns=4;i=1000", BrowseName: "ServerInterfaces", DisplayName: "ServerInterfaces", NodeClass: "Object", IsLeaf: false},
+		folder(deviceSet, "DeviceSet"),
+		folder(serverIf, "ServerInterfaces"),
+		folder(plc, "L01-KE01"),
+		folder(server, "Server"),
 	}
-	b.children["ns=4;i=1000"] = []core.BrowseNode{
-		{NodeID: "ns=4;i=4207", BrowseName: "OPC_MeasurePoint", DisplayName: "OPC_MeasurePoint", NodeClass: "Object", IsLeaf: false},
+	b.children[deviceSet] = []core.BrowseNode{
+		folder(plc, "L01-KE01"),
 	}
-	b.children["ns=4;i=4207"] = []core.BrowseNode{
-		{NodeID: "ns=4;i=4208", BrowseName: "rValueOut", DisplayName: "rValueOut", NodeClass: "Variable", IsLeaf: true},
-		{NodeID: "ns=4;i=4209", BrowseName: "sUnit", DisplayName: "sUnit", NodeClass: "Variable", IsLeaf: true},
-		{NodeID: "ns=4;i=4210", BrowseName: "bValid", DisplayName: "bValid", NodeClass: "Variable", IsLeaf: true},
+	b.children[plc] = []core.BrowseNode{
+		folder(th1, "Tankhouse_Data_1"),
+		folder(th2, "Tankhouse_Data_2"),
+	}
+	b.children[serverIf] = []core.BrowseNode{
+		folder(th1, "Tankhouse_Data_1"),
+		folder(th2, "Tankhouse_Data_2"),
+	}
+	b.children[th1] = []core.BrowseNode{
+		folder(measure, "OPC_MeasurePoint"),
+		leaf("ns=4;i=4208", "rValueOut"),
+	}
+	b.children[th2] = []core.BrowseNode{
+		folder(measure, "OPC_MeasurePoint"),
+		leaf("ns=4;i=2880", "E2_ECE_300_CL_001"),
+		leaf("ns=4;i=4431", "APM_AUTO"),
+	}
+	b.children[measure] = []core.BrowseNode{
+		leaf("ns=4;i=4208", "rValueOut"),
+		leaf("ns=4;i=4209", "sUnit"),
+		leaf("ns=4;i=4210", "bValid"),
+	}
+	b.children[server] = []core.BrowseNode{
+		leaf("ns=0;i=2256", "ServerStatus"),
 	}
 	return b
 }
 
+func folder(id, name string) core.BrowseNode {
+	return core.BrowseNode{
+		NodeID: id, BrowseName: name, DisplayName: name,
+		NodeClass: "Object", IsLeaf: false,
+	}
+}
+
+func leaf(id, name string) core.BrowseNode {
+	return core.BrowseNode{
+		NodeID: id, BrowseName: name, DisplayName: name,
+		NodeClass: "Variable", IsLeaf: true,
+	}
+}
+
 func (b *Browser) BrowseChildren(_ context.Context, parentNodeID string) ([]core.BrowseNode, error) {
+	if parentNodeID == "" {
+		parentNodeID = "ns=0;i=84"
+	}
 	nodes, ok := b.children[parentNodeID]
 	if !ok {
 		return nil, fmt.Errorf("unknown node %s", parentNodeID)
@@ -93,7 +146,7 @@ func guess(browseName string) core.ValueType {
 	switch {
 	case strings.HasPrefix(n, "s") && (strings.Contains(n, "unit") || strings.Contains(n, "name") || strings.Contains(n, "text")):
 		return core.ValueString
-	case strings.HasPrefix(n, "b") || strings.Contains(n, "bool"):
+	case strings.HasPrefix(n, "b") || strings.Contains(n, "bool") || strings.Contains(n, "auto") || strings.HasSuffix(n, "_run"):
 		return core.ValueBool
 	case strings.HasPrefix(n, "i") || strings.Contains(n, "count"):
 		return core.ValueInt64

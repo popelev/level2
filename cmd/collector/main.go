@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 	"github.com/popelev/level2/internal/core"
 	"github.com/popelev/level2/internal/driver/mock"
 	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
-	"github.com/popelev/level2/internal/driver/simbrowser"
+	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/historian/timescale"
 	"github.com/popelev/level2/internal/metrics"
 	"github.com/popelev/level2/internal/spool"
@@ -58,38 +59,48 @@ func main() {
 	}
 
 	live := store.NewLive()
-	hub := api.NewHub()
+	wsHub := api.NewHub()
 	raw := make(chan core.Sample, 2048)
 	toHist := make(chan core.Sample, 2048)
-	go api.FanIn(ctx, raw, live, hub, toHist)
+	go api.FanIn(ctx, raw, live, wsHub, toHist)
 
-	var drivers []core.Driver
-	var primaryBrowser core.Browser
 	useSim := os.Getenv("LEVEL2_SIM_BROWSER") == "1" || os.Getenv("LEVEL2_SIM_BROWSER") == "true"
+	devHub := devruntime.NewHub(log, useSim)
+	var collectOnce sync.Map // deviceID -> true
+
+	startCollect := func(deviceID string) {
+		if useSim {
+			return
+		}
+		if _, loaded := collectOnce.LoadOrStore(deviceID, true); loaded {
+			return
+		}
+		ent, ok := devHub.Entry(deviceID)
+		if !ok {
+			return
+		}
+		drv, ok := ent.Driver.(*opcuaDriver.Driver)
+		if !ok {
+			return
+		}
+		go runDevice(ctx, log, cfgStore, deviceID, drv, raw)
+	}
+
+	for _, dev := range cfgStore.Devices() {
+		if err := devHub.Upsert(ctx, dev); err != nil {
+			log.Error("device hub", "device", dev.ID, "err", err)
+		}
+		startCollect(dev.ID)
+	}
+
 	if useSim {
-		primaryBrowser = simbrowser.NewDemo()
 		demo := mock.NewDemo(time.Second)
 		if err := demo.Connect(ctx); err != nil {
 			log.Error("demo connect", "err", err)
 			os.Exit(1)
 		}
-		drivers = append(drivers, demo)
 		go runDemo(ctx, log, demo, cfgStore, raw)
-		log.Info("PLC-off demo mode: sim browser + synthetic samples (no OPC dial)")
-	} else {
-		for _, dev := range cfgStore.Devices() {
-			d := opcuaDriver.New(dev, log.With("device", dev.ID))
-			connectCtx, connectCancel := context.WithTimeout(ctx, 3*time.Second)
-			if err := d.Connect(connectCtx); err != nil {
-				log.Error("opc connect", "device", dev.ID, "err", err)
-			}
-			connectCancel()
-			if primaryBrowser == nil {
-				primaryBrowser = d
-			}
-			drivers = append(drivers, d)
-			go runDevice(ctx, log, cfgStore, dev.ID, d, raw)
-		}
+		log.Info("PLC-off demo mode: multi-server sim address space + synthetic samples")
 	}
 
 	go flushLoop(ctx, log, hist, sp, toHist)
@@ -98,12 +109,26 @@ func main() {
 	apiSrv := &api.Server{
 		Log:     log,
 		Live:    live,
-		Hub:     hub,
+		Hub:     wsHub,
+		DevHub:  devHub,
 		History: hist,
-		Browser: primaryBrowser,
 		Cfg:     cfgStore,
 		Tags:    cfgStore.AllTags,
 		Devices: cfgStore.Devices,
+		OnDeviceChanged: func(deviceID string, removed bool) {
+			if removed {
+				devHub.Remove(ctx, deviceID)
+				collectOnce.Delete(deviceID)
+				return
+			}
+			for _, d := range cfgStore.Devices() {
+				if d.ID == deviceID {
+					_ = devHub.Upsert(ctx, d)
+					startCollect(deviceID)
+					break
+				}
+			}
+		},
 	}
 
 	mux := http.NewServeMux()
@@ -112,13 +137,11 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
-		for _, d := range drivers {
-			if d.Connected() {
-				metrics.OPCConnected.Set(1)
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte("ready"))
-				return
-			}
+		if useSim || devHub.AnyConnected() {
+			metrics.OPCConnected.Set(1)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ready"))
+			return
 		}
 		metrics.OPCConnected.Set(0)
 		http.Error(w, "not connected", http.StatusServiceUnavailable)
@@ -143,7 +166,7 @@ func main() {
 	shutdownCtx, c := context.WithTimeout(context.Background(), 5*time.Second)
 	defer c()
 	_ = srv.Shutdown(shutdownCtx)
-	for _, d := range drivers {
+	for _, d := range devHub.Drivers() {
 		_ = d.Disconnect(shutdownCtx)
 	}
 	log.Info("collector stopped")

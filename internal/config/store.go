@@ -102,6 +102,70 @@ func (s *Store) MergeTags(deviceID string, tags []core.Tag, replace bool) (added
 	return added, updated, nil
 }
 
+// UpsertDevice creates or updates a device (keeps existing tags on update unless cleared).
+func (s *Store) UpsertDevice(dev core.Device) error {
+	if dev.ID == "" {
+		return fmt.Errorf("device id required")
+	}
+	if dev.Endpoint == "" {
+		return fmt.Errorf("endpoint required")
+	}
+	if dev.Security == "" {
+		dev.Security = "None"
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.file.Devices {
+		if s.file.Devices[i].ID == dev.ID {
+			prev := s.file.Devices[i]
+			if len(dev.Tags) == 0 {
+				dev.Tags = prev.Tags
+			}
+			if dev.Password == "" {
+				dev.Password = prev.Password
+			}
+			s.file.Devices[i] = dev
+			if err := s.saveLocked(); err != nil {
+				return err
+			}
+			s.gen.Add(1)
+			return nil
+		}
+	}
+	if dev.Tags == nil {
+		dev.Tags = []core.Tag{}
+	}
+	s.file.Devices = append(s.file.Devices, dev)
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.gen.Add(1)
+	return nil
+}
+
+func (s *Store) DeleteDevice(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.file.Devices[:0]
+	found := false
+	for _, d := range s.file.Devices {
+		if d.ID == id {
+			found = true
+			continue
+		}
+		out = append(out, d)
+	}
+	if !found {
+		return fmt.Errorf("device %q not found", id)
+	}
+	s.file.Devices = out
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.gen.Add(1)
+	return nil
+}
+
 func (s *Store) saveLocked() error {
 	out := *s.file
 	out.Devices = append([]core.Device(nil), s.file.Devices...)

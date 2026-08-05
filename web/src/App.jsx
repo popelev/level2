@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 async function getJSON(url) {
   const r = await fetch(url)
@@ -14,169 +14,176 @@ function formatValue(sample) {
   return '—'
 }
 
-function formatTime(t) {
-  if (!t || t.startsWith('0001')) return '—'
-  try {
-    return new Date(t).toLocaleTimeString('en-US')
-  } catch {
-    return t
+const ROOT_ID = 'ns=0;i=84'
+
+function TreeNode({ node, depth, deviceId, selectedNodeId, onSelect, loadChildren }) {
+  const [open, setOpen] = useState(false)
+  const [kids, setKids] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  const toggle = async (e) => {
+    e.stopPropagation()
+    if (node.is_leaf) {
+      onSelect(node)
+      return
+    }
+    if (!open && kids == null) {
+      setLoading(true)
+      try {
+        const rows = await loadChildren(node.node_id)
+        setKids(rows)
+      } finally {
+        setLoading(false)
+      }
+    }
+    setOpen((v) => !v)
+    onSelect(node)
   }
+
+  return (
+    <div className="tree-node">
+      <button
+        type="button"
+        className={`tree-row${selectedNodeId === node.node_id ? ' selected' : ''}`}
+        style={{ paddingLeft: 8 + depth * 14 }}
+        onClick={toggle}
+      >
+        <span className="chev">{node.is_leaf ? '·' : open ? '▾' : '▸'}</span>
+        <span className={`icon ${node.is_leaf ? 'var' : 'fold'}`} />
+        <span className="name">{node.browse_name || node.display_name}</span>
+        {loading && <span className="muted small">…</span>}
+      </button>
+      {open && kids && kids.map((ch) => (
+        <TreeNode
+          key={ch.node_id}
+          node={ch}
+          depth={depth + 1}
+          deviceId={deviceId}
+          selectedNodeId={selectedNodeId}
+          onSelect={onSelect}
+          loadChildren={loadChildren}
+        />
+      ))}
+    </div>
+  )
 }
 
 export default function App() {
   const [health, setHealth] = useState('…')
   const [ready, setReady] = useState('…')
   const [devices, setDevices] = useState([])
-  const [tags, setTags] = useState([])
   const [deviceId, setDeviceId] = useState('')
-  const [tagId, setTagId] = useState('')
-  const [history, setHistory] = useState([])
-  const [nodeId, setNodeId] = useState('ns=0;i=85')
-  const [browse, setBrowse] = useState([])
-  const [expanded, setExpanded] = useState([])
+  const [tags, setTags] = useState([])
+  const [selectedNode, setSelectedNode] = useState(null)
+  const [rootKids, setRootKids] = useState([])
   const [err, setErr] = useState('')
-  const [liveMsg, setLiveMsg] = useState(null)
-  const [filter, setFilter] = useState('')
+  const [treeKey, setTreeKey] = useState(0)
+  const [showAdd, setShowAdd] = useState(false)
+  const [editForm, setEditForm] = useState({
+    id: '', endpoint: 'opc.tcp://10.14.10.16:4840', username: '', password: '', security: 'None',
+  })
   const [importBusy, setImportBusy] = useState(false)
   const [importMsg, setImportMsg] = useState('')
   const [replaceTags, setReplaceTags] = useState(false)
+  const [filter, setFilter] = useState('')
 
   const selectedDevice = useMemo(
     () => devices.find((d) => d.id === deviceId) || null,
     [devices, deviceId],
   )
 
-  const selectedTag = useMemo(
-    () => tags.find((t) => t.tag.id === tagId) || null,
-    [tags, tagId],
-  )
-
-  const visibleTags = useMemo(() => {
-    const q = filter.trim().toLowerCase()
-    if (!q) return tags
-    return tags.filter(
-      (t) =>
-        t.tag.id.toLowerCase().includes(q) ||
-        t.tag.node_id.toLowerCase().includes(q) ||
-        String(t.tag.datatype).toLowerCase().includes(q),
+  const loadChildren = useCallback(async (nodeId) => {
+    if (!deviceId) return []
+    return getJSON(
+      `/api/v1/browse?device_id=${encodeURIComponent(deviceId)}&node_id=${encodeURIComponent(nodeId)}`,
     )
-  }, [tags, filter])
+  }, [deviceId])
 
-  const refresh = async (dev = deviceId) => {
-    try {
-      setErr('')
-      const tagsURL = dev
-        ? `/api/v1/tags?device_id=${encodeURIComponent(dev)}`
-        : '/api/v1/tags'
-      const [h, rd, devs, t] = await Promise.all([
-        fetch('/healthz').then((r) => r.text()),
-        fetch('/readyz').then(async (r) => ({ ok: r.ok, text: await r.text() })),
-        getJSON('/api/v1/devices'),
-        getJSON(tagsURL),
-      ])
-      setHealth(h.trim())
-      setReady(rd.ok ? 'ready' : rd.text)
-      setDevices(devs)
-      setTags(t)
-      if (!dev && devs.length && !deviceId) {
-        setDeviceId(devs[0].id)
-      }
-      if (tagId && !t.some((x) => x.tag.id === tagId)) {
-        setTagId('')
-      }
-    } catch (e) {
-      setErr(String(e.message || e))
+  const refreshDevices = async () => {
+    const [h, rd, devs] = await Promise.all([
+      fetch('/healthz').then((r) => r.text()),
+      fetch('/readyz').then(async (r) => ({ ok: r.ok, text: await r.text() })),
+      getJSON('/api/v1/devices'),
+    ])
+    setHealth(h.trim())
+    setReady(rd.ok ? 'ready' : rd.text)
+    setDevices(devs)
+    if (!deviceId && devs[0]) setDeviceId(devs[0].id)
+    if (deviceId && !devs.some((d) => d.id === deviceId) && devs[0]) {
+      setDeviceId(devs[0].id)
     }
   }
 
-  const loadHistory = async (id) => {
-    if (!id) {
-      setHistory([])
+  const refreshTags = async (dev = deviceId) => {
+    if (!dev) {
+      setTags([])
       return
     }
-    try {
-      const rows = await getJSON(`/api/v1/tags/${encodeURIComponent(id)}/history?limit=12`)
-      setHistory(rows)
-    } catch {
-      setHistory([])
+    const t = await getJSON(`/api/v1/tags?device_id=${encodeURIComponent(dev)}`)
+    setTags(t)
+  }
+
+  const reloadTree = async () => {
+    if (!deviceId) {
+      setRootKids([])
+      return
     }
+    const kids = await loadChildren(ROOT_ID)
+    setRootKids(kids)
+    setTreeKey((k) => k + 1)
+    setSelectedNode({ node_id: ROOT_ID, browse_name: 'Root', is_leaf: false })
   }
 
   useEffect(() => {
-    refresh()
-    const t = setInterval(() => refresh(deviceId), 3000)
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws'
-    const ws = new WebSocket(`${proto}://${location.host}/api/v1/ws/stream`)
-    ws.onmessage = (ev) => {
-      try {
-        setLiveMsg(JSON.parse(ev.data))
-      } catch {
-        /* ignore */
-      }
-    }
-    return () => {
-      clearInterval(t)
-      ws.close()
-    }
+    refreshDevices().catch((e) => setErr(String(e.message || e)))
+    const t = setInterval(() => {
+      refreshDevices().catch(() => {})
+      refreshTags().catch(() => {})
+    }, 4000)
+    return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   useEffect(() => {
-    if (!deviceId && devices[0]) {
-      setDeviceId(devices[0].id)
-      return
-    }
-    if (deviceId) refresh(deviceId)
+    if (!deviceId) return
+    setErr('')
+    Promise.all([reloadTree(), refreshTags(deviceId)]).catch((e) => setErr(String(e.message || e)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId])
 
-  useEffect(() => {
-    loadHistory(tagId)
-    const t = setInterval(() => loadHistory(tagId), 5000)
-    return () => clearInterval(t)
-  }, [tagId])
-
-  const selectDevice = (id) => {
-    setDeviceId(id)
-    setTagId('')
-    setFilter('')
-  }
-
-  const selectTag = (row) => {
-    setTagId(row.tag.id)
-    setNodeId(row.tag.node_id)
-  }
-
-  const doBrowse = async (id = nodeId) => {
+  const saveDevice = async (e) => {
+    e.preventDefault()
+    setErr('')
     try {
-      setErr('')
-      setNodeId(id)
-      const nodes = await getJSON(`/api/v1/browse?node_id=${encodeURIComponent(id)}`)
-      setBrowse(nodes)
-    } catch (e) {
-      setErr(String(e.message || e))
+      const exists = devices.some((d) => d.id === editForm.id)
+      const r = await fetch(
+        exists ? `/api/v1/devices/${encodeURIComponent(editForm.id)}` : '/api/v1/devices',
+        {
+          method: exists ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(editForm),
+        },
+      )
+      if (!r.ok) throw new Error(await r.text())
+      setShowAdd(false)
+      await refreshDevices()
+      setDeviceId(editForm.id)
+    } catch (ex) {
+      setErr(String(ex.message || ex))
     }
   }
 
-  const doExpand = async () => {
+  const removeDevice = async () => {
+    if (!deviceId) return
+    if (!window.confirm(`Remove server "${deviceId}"?`)) return
+    setErr('')
     try {
-      setErr('')
-      const prefix = selectedDevice?.id || 'udt'
-      const rows = await fetch('/api/v1/expand', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          node_id: nodeId,
-          parent_tag_id: prefix,
-          max_depth: 6,
-        }),
-      }).then(async (r) => {
-        if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
-        return r.json()
-      })
-      setExpanded(rows)
-    } catch (e) {
-      setErr(String(e.message || e))
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}`, { method: 'DELETE' })
+      if (!r.ok && r.status !== 204) throw new Error(await r.text())
+      setDeviceId('')
+      await refreshDevices()
+    } catch (ex) {
+      setErr(String(ex.message || ex))
     }
   }
 
@@ -184,7 +191,6 @@ export default function App() {
     if (!deviceId || !file) return
     setImportBusy(true)
     setImportMsg('')
-    setErr('')
     try {
       const fd = new FormData()
       fd.append('file', file)
@@ -194,259 +200,252 @@ export default function App() {
         body: fd,
       })
       const text = await r.text()
-      if (!r.ok) throw new Error(text || r.status)
+      if (!r.ok) throw new Error(text)
       const data = JSON.parse(text)
-      setImportMsg(
-        `Import: +${data.added} / ~${data.updated} (total ${data.total})` +
-          (data.errors?.length ? `; warnings: ${data.errors.length}` : ''),
-      )
-      await refresh(deviceId)
-    } catch (e) {
-      setErr(String(e.message || e))
+      setImportMsg(`Import: +${data.added} / ~${data.updated} (total ${data.total})`)
+      await refreshTags(deviceId)
+      await refreshDevices()
+    } catch (ex) {
+      setErr(String(ex.message || ex))
     } finally {
       setImportBusy(false)
     }
   }
 
-  const statusPill = useMemo(() => {
-    if (ready === 'ready') return <span className="pill ok">ready</span>
-    return <span className="pill bad">{ready}</span>
-  }, [ready])
+  const doExpand = async () => {
+    if (!selectedNode || selectedNode.is_leaf) return
+    setErr('')
+    try {
+      const rows = await fetch('/api/v1/expand', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          device_id: deviceId,
+          node_id: selectedNode.node_id,
+          parent_tag_id: selectedNode.browse_name || 'udt',
+          max_depth: 6,
+        }),
+      }).then(async (r) => {
+        if (!r.ok) throw new Error(await r.text())
+        return r.json()
+      })
+      // show expand result as temporary message / keep in selected
+      setImportMsg(`Expand found ${rows.length} leaf nodes`)
+    } catch (ex) {
+      setErr(String(ex.message || ex))
+    }
+  }
+
+  const monitored = useMemo(() => {
+    const q = filter.trim().toLowerCase()
+    if (!q) return tags
+    return tags.filter(
+      (t) =>
+        t.tag.id.toLowerCase().includes(q) ||
+        t.tag.node_id.toLowerCase().includes(q),
+    )
+  }, [tags, filter])
 
   return (
-    <div className="app">
+    <div className="app ua">
       <header className="top">
         <div>
           <h1 className="brand">Level2</h1>
-          <p className="sub">Connectivity · device → tags → browse</p>
+          <p className="sub">Connectivity · UaExpert-style project & address space</p>
         </div>
         <div className="meta">
           <span className="pill ok">health {health}</span>
-          {statusPill}
-          {liveMsg && (
-            <span className="pill">
-              ws {liveMsg.tag_id}={formatValue(liveMsg)}
-            </span>
-          )}
-          <button type="button" className="secondary" onClick={() => refresh(deviceId)}>
-            Refresh
-          </button>
+          <span className={`pill ${ready === 'ready' ? 'ok' : 'bad'}`}>{ready}</span>
         </div>
       </header>
 
       {err && <p className="err">{err}</p>}
 
-      <div className="layout">
-        <aside className="panel">
-          <h2>Devices</h2>
-          <ul className="device-list">
-            {devices.map((d) => (
-              <li key={d.id}>
+      <div className="ua-layout">
+        <section className="panel address">
+          <div className="panel-head">
+            <h2>Address Space</h2>
+            <div className="row tight">
+              <button type="button" className="secondary" onClick={reloadTree} disabled={!deviceId}>
+                Refresh
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={doExpand}
+                disabled={!selectedNode || selectedNode.is_leaf}
+              >
+                Expand
+              </button>
+            </div>
+          </div>
+          {!deviceId && <p className="muted">Select a server in Project</p>}
+          {deviceId && (
+            <div className="address-tree" key={`${deviceId}-${treeKey}`}>
+              <button
+                type="button"
+                className={`tree-row${selectedNode?.node_id === ROOT_ID ? ' selected' : ''}`}
+                onClick={() => setSelectedNode({ node_id: ROOT_ID, browse_name: 'Root', is_leaf: false })}
+              >
+                <span className="chev">▾</span>
+                <span className="icon fold" />
+                <span className="name">Root</span>
+              </button>
+              {rootKids.map((n) => (
+                <TreeNode
+                  key={n.node_id}
+                  node={n}
+                  depth={1}
+                  deviceId={deviceId}
+                  selectedNodeId={selectedNode?.node_id}
+                  onSelect={setSelectedNode}
+                  loadChildren={loadChildren}
+                />
+              ))}
+            </div>
+          )}
+          {selectedNode && (
+            <div className="node-detail">
+              <div className="mono">{selectedNode.browse_name}</div>
+              <div className="mono small muted">{selectedNode.node_id}</div>
+              <div className="muted small">{selectedNode.is_leaf ? 'Variable' : 'Object / folder'}</div>
+            </div>
+          )}
+        </section>
+
+        <div className="right-col">
+          <section className="panel project">
+            <div className="panel-head">
+              <h2>Project</h2>
+              <div className="row tight">
                 <button
                   type="button"
-                  className={d.id === deviceId ? 'device active' : 'device'}
-                  onClick={() => selectDevice(d.id)}
+                  onClick={() => {
+                    setEditForm({
+                      id: '',
+                      endpoint: 'opc.tcp://10.14.10.16:4840',
+                      username: '',
+                      password: '',
+                      security: 'None',
+                    })
+                    setShowAdd(true)
+                  }}
                 >
-                  <span className="mono">{d.id}</span>
-                  <span className="muted">{d.tag_count} tags</span>
-                  <span className="mono small">{d.endpoint}</span>
+                  + Server
                 </button>
-              </li>
-            ))}
-            {devices.length === 0 && <li className="muted">No devices in config</li>}
-          </ul>
-          {selectedDevice && (
-            <div className="device-meta">
-              <div><span className="muted">security</span> {selectedDevice.security}</div>
-              <div className="mono small">{selectedDevice.endpoint}</div>
+                <button type="button" className="secondary" onClick={removeDevice} disabled={!deviceId}>
+                  Remove
+                </button>
+              </div>
+            </div>
+            <div className="project-tree">
+              <div className="proj-label">Servers</div>
+              {devices.map((d) => (
+                <button
+                  key={d.id}
+                  type="button"
+                  className={`server-row${d.id === deviceId ? ' selected' : ''}`}
+                  onClick={() => setDeviceId(d.id)}
+                  onDoubleClick={() => {
+                    setEditForm({
+                      id: d.id,
+                      endpoint: d.endpoint,
+                      username: d.username || '',
+                      password: '',
+                      security: d.security || 'None',
+                    })
+                    setShowAdd(true)
+                  }}
+                >
+                  <span className={`dot ${d.connected ? 'on' : 'off'}`} />
+                  <span className="mono">{d.id}</span>
+                  <span className="mono small muted">{d.endpoint}</span>
+                </button>
+              ))}
+              {devices.length === 0 && <p className="muted">No servers — add one</p>}
+            </div>
+            {showAdd && (
+              <form className="device-form" onSubmit={saveDevice}>
+                <h3>{devices.some((d) => d.id === editForm.id) ? 'Edit server' : 'Add server'}</h3>
+                <label>Id<input required value={editForm.id} onChange={(e) => setEditForm({ ...editForm, id: e.target.value })} disabled={devices.some((d) => d.id === editForm.id)} /></label>
+                <label>Endpoint<input required value={editForm.endpoint} onChange={(e) => setEditForm({ ...editForm, endpoint: e.target.value })} /></label>
+                <label>Username<input value={editForm.username} onChange={(e) => setEditForm({ ...editForm, username: e.target.value })} /></label>
+                <label>Password<input type="password" value={editForm.password} onChange={(e) => setEditForm({ ...editForm, password: e.target.value })} /></label>
+                <label>Security
+                  <select value={editForm.security} onChange={(e) => setEditForm({ ...editForm, security: e.target.value })}>
+                    <option>None</option>
+                    <option>Sign</option>
+                    <option>SignAndEncrypt</option>
+                  </select>
+                </label>
+                <div className="row">
+                  <button type="submit">Save</button>
+                  <button type="button" className="secondary" onClick={() => setShowAdd(false)}>Cancel</button>
+                </div>
+              </form>
+            )}
+            {selectedDevice && (
               <div className="import-box">
-                <div className="muted">Import OPC nodes from Excel</div>
-                <p className="hint">
-                  Columns: Area, Path, Signal, MeasurePoint NodeId, DataType, DataType Name
-                </p>
+                <div className="muted">Excel import → monitored tags</div>
                 <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={replaceTags}
-                    onChange={(e) => setReplaceTags(e.target.checked)}
-                  />
-                  replace all device tags
+                  <input type="checkbox" checked={replaceTags} onChange={(e) => setReplaceTags(e.target.checked)} />
+                  replace all tags
                 </label>
                 <input
                   type="file"
-                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                  disabled={importBusy || !deviceId}
+                  accept=".xlsx"
+                  disabled={importBusy}
                   onChange={(e) => {
                     const f = e.target.files?.[0]
                     e.target.value = ''
                     if (f) importExcel(f)
                   }}
                 />
-                {importBusy && <div className="muted">Importing…</div>}
-                {importMsg && <div className="good">{importMsg}</div>}
+                {importMsg && <div className="good small">{importMsg}</div>}
               </div>
-            </div>
-          )}
-        </aside>
+            )}
+          </section>
 
-        <section className="panel">
-          <div className="panel-head">
-            <h2>Tags {selectedDevice ? `· ${selectedDevice.id}` : ''}</h2>
-            <input
-              className="search"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="filter id / node / type"
-            />
-          </div>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Tag</th>
-                  <th>Type</th>
-                  <th>Value</th>
-                  <th>Q</th>
-                  <th>Updated</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleTags.map((t) => (
-                  <tr
-                    key={t.tag.id}
-                    className={t.tag.id === tagId ? 'selected' : ''}
-                    onClick={() => selectTag(t)}
-                  >
-                    <td>
-                      <div className="mono">{t.tag.id}</div>
-                      <div className="mono small muted">{t.tag.node_id}</div>
-                    </td>
-                    <td>{t.tag.datatype}</td>
-                    <td className="mono">{formatValue(t.sample)}</td>
-                    <td className={t.sample?.quality === 0 ? 'good' : 'badq'}>
-                      {t.sample ? t.sample.quality : '—'}
-                    </td>
-                    <td className="muted">{formatTime(t.updated_at || t.sample?.time)}</td>
-                  </tr>
-                ))}
-                {visibleTags.length === 0 && (
+          <section className="panel monitored">
+            <div className="panel-head">
+              <h2>Monitored tags</h2>
+              <input
+                className="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="filter"
+              />
+            </div>
+            <div className="table-wrap compact">
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={5} className="muted">No tags for this device</td>
+                    <th>Tag</th>
+                    <th>Value</th>
+                    <th>Q</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {selectedTag && (
-            <div className="tag-detail">
-              <h3>Selected tag · {selectedTag.tag.id}</h3>
-              <div className="detail-grid">
-                <div><span className="muted">node_id</span><div className="mono">{selectedTag.tag.node_id}</div></div>
-                <div><span className="muted">datatype</span><div>{selectedTag.tag.datatype}</div></div>
-                <div><span className="muted">interval</span><div>{selectedTag.tag.interval_ms} ms</div></div>
-                <div><span className="muted">enabled</span><div>{String(selectedTag.tag.enabled)}</div></div>
-                <div><span className="muted">value</span><div className="mono">{formatValue(selectedTag.sample)}</div></div>
-              </div>
-              <div className="row">
-                <button type="button" onClick={() => doBrowse(selectedTag.tag.node_id)}>
-                  Browse node
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => loadHistory(selectedTag.tag.id)}
-                >
-                  Reload history
-                </button>
-              </div>
-              <h3>History (last points)</h3>
-              <div className="table-wrap compact">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Value</th>
-                      <th>Q</th>
+                </thead>
+                <tbody>
+                  {monitored.map((t) => (
+                    <tr key={t.tag.id}>
+                      <td>
+                        <div className="mono">{t.tag.id}</div>
+                        <div className="mono small muted">{t.tag.node_id}</div>
+                      </td>
+                      <td className="mono">{formatValue(t.sample)}</td>
+                      <td className={t.sample?.quality === 0 ? 'good' : 'badq'}>
+                        {t.sample ? t.sample.quality : '—'}
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {history.map((h) => (
-                      <tr key={`${h.time}-${h.tag_id}`}>
-                        <td className="mono small">{formatTime(h.time)}</td>
-                        <td className="mono">{formatValue(h)}</td>
-                        <td className={h.quality === 0 ? 'good' : 'badq'}>{h.quality}</td>
-                      </tr>
-                    ))}
-                    {history.length === 0 && (
-                      <tr><td colSpan={3} className="muted">No samples</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                  {monitored.length === 0 && (
+                    <tr><td colSpan={3} className="muted">No monitored tags</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
-          )}
-        </section>
-
-        <section className="panel">
-          <h2>Browse / Expand</h2>
-          <div className="row">
-            <input
-              value={nodeId}
-              onChange={(e) => setNodeId(e.target.value)}
-              placeholder="ns=4;i=4207"
-            />
-            <button type="button" onClick={() => doBrowse(nodeId)}>Browse</button>
-            <button type="button" className="secondary" onClick={doExpand}>Expand</button>
-          </div>
-          <ul className="tree">
-            {browse.map((n) => (
-              <li key={n.node_id}>
-                <button type="button" className="link" onClick={() => doBrowse(n.node_id)}>
-                  {n.browse_name}
-                </button>
-                <span className="mono small">{n.node_id}</span>
-                <span className="pill">{n.is_leaf ? 'leaf' : 'node'}</span>
-              </li>
-            ))}
-          </ul>
-          {expanded.length > 0 && (
-            <>
-              <h3>Expanded leaves</h3>
-              <p className="hint">Adding to config is manual for now; tag CRUD API comes next</p>
-              <div className="table-wrap compact">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Tag id</th>
-                      <th>Path</th>
-                      <th>Type</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {expanded.map((e) => (
-                      <tr key={e.node_id}>
-                        <td className="mono">{e.id}</td>
-                        <td className="mono small">{e.browse_path}</td>
-                        <td>{e.datatype}</td>
-                        <td>
-                          <button
-                            type="button"
-                            className="secondary small-btn"
-                            onClick={() => setNodeId(e.node_id)}
-                          >
-                            Use node
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </section>
+          </section>
+        </div>
       </div>
     </div>
   )

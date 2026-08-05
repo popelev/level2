@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
 	"github.com/popelev/level2/internal/importexcel"
+	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/store"
 )
 
@@ -23,9 +25,12 @@ type Server struct {
 	Tags     func() []core.Tag
 	Devices  func() []core.Device
 	History  core.HistoryQuerier
-	Browser  core.Browser // optional; nil → 503 on browse/expand
+	Browser  core.Browser // fallback when device_id omitted
+	DevHub   *devruntime.Hub
 	Cfg      *config.Store
 	Hub      *Hub
+	// OnDeviceChanged is called after device create/update/delete (optional).
+	OnDeviceChanged func(deviceID string, removed bool)
 }
 
 type Hub struct {
@@ -73,6 +78,9 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/tags/{id}/value", s.handleTagValue)
 	mux.HandleFunc("GET /api/v1/tags/{id}/history", s.handleHistory)
 	mux.HandleFunc("GET /api/v1/devices", s.handleDevices)
+	mux.HandleFunc("POST /api/v1/devices", s.handleCreateDevice)
+	mux.HandleFunc("PUT /api/v1/devices/{id}", s.handleUpdateDevice)
+	mux.HandleFunc("DELETE /api/v1/devices/{id}", s.handleDeleteDevice)
 	mux.HandleFunc("GET /api/v1/browse", s.handleBrowse)
 	mux.HandleFunc("POST /api/v1/expand", s.handleExpand)
 	mux.HandleFunc("POST /api/v1/devices/{id}/tags/import", s.handleImportExcel)
@@ -130,29 +138,115 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 	devs := s.Devices()
+	status := map[string]bool{}
+	if s.DevHub != nil {
+		status = s.DevHub.Status()
+	}
 	type dto struct {
-		ID       string `json:"id"`
-		Endpoint string `json:"endpoint"`
-		Security string `json:"security"`
-		TagCount int    `json:"tag_count"`
+		ID        string `json:"id"`
+		Endpoint  string `json:"endpoint"`
+		Security  string `json:"security"`
+		Username  string `json:"username,omitempty"`
+		TagCount  int    `json:"tag_count"`
+		Connected bool   `json:"connected"`
 	}
 	out := make([]dto, 0, len(devs))
 	for _, d := range devs {
-		out = append(out, dto{ID: d.ID, Endpoint: d.Endpoint, Security: d.Security, TagCount: len(d.Tags)})
+		out = append(out, dto{
+			ID: d.ID, Endpoint: d.Endpoint, Security: d.Security,
+			Username: d.Username, TagCount: len(d.Tags),
+			Connected: status[d.ID],
+		})
 	}
 	writeJSON(w, http.StatusOK, out)
 }
 
+func (s *Server) handleCreateDevice(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		http.Error(w, "config store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	var body core.Device
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	for _, d := range s.Cfg.Devices() {
+		if d.ID == body.ID {
+			http.Error(w, "device already exists", http.StatusConflict)
+			return
+		}
+	}
+	if err := s.Cfg.UpsertDevice(body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if s.OnDeviceChanged != nil {
+		s.OnDeviceChanged(body.ID, false)
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"id": body.ID})
+}
+
+func (s *Server) handleUpdateDevice(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		http.Error(w, "config store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.PathValue("id")
+	var body core.Device
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	body.ID = id
+	if err := s.Cfg.UpsertDevice(body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if s.OnDeviceChanged != nil {
+		s.OnDeviceChanged(id, false)
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"id": id})
+}
+
+func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		http.Error(w, "config store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	id := r.PathValue("id")
+	if err := s.Cfg.DeleteDevice(id); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	if s.OnDeviceChanged != nil {
+		s.OnDeviceChanged(id, true)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) resolveBrowser(deviceID string) (core.Browser, error) {
+	if deviceID != "" && s.DevHub != nil {
+		return s.DevHub.Browser(deviceID)
+	}
+	if s.Browser != nil {
+		return s.Browser, nil
+	}
+	return nil, fmt.Errorf("browse unavailable")
+}
+
 func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
-	if s.Browser == nil {
-		http.Error(w, "browse unavailable (OPC not connected)", http.StatusServiceUnavailable)
+	deviceID := r.URL.Query().Get("device_id")
+	br, err := s.resolveBrowser(deviceID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 	node := r.URL.Query().Get("node_id")
 	if node == "" {
-		node = "ns=0;i=85" // Objects folder
+		node = "ns=0;i=84" // Root
 	}
-	nodes, err := s.Browser.BrowseChildren(r.Context(), node)
+	nodes, err := br.BrowseChildren(r.Context(), node)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
@@ -161,11 +255,8 @@ func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleExpand(w http.ResponseWriter, r *http.Request) {
-	if s.Browser == nil {
-		http.Error(w, "expand unavailable (OPC not connected)", http.StatusServiceUnavailable)
-		return
-	}
 	var body struct {
+		DeviceID    string `json:"device_id"`
 		NodeID      string `json:"node_id"`
 		ParentTagID string `json:"parent_tag_id"`
 		MaxDepth    int    `json:"max_depth"`
@@ -178,7 +269,12 @@ func (s *Server) handleExpand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "node_id required", http.StatusBadRequest)
 		return
 	}
-	tags, err := s.Browser.ExpandStructure(r.Context(), body.NodeID, body.ParentTagID, body.MaxDepth)
+	br, err := s.resolveBrowser(body.DeviceID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	tags, err := br.ExpandStructure(r.Context(), body.NodeID, body.ParentTagID, body.MaxDepth)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
