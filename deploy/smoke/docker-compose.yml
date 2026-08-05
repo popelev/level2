@@ -35,7 +35,7 @@ services:
     volumes:
       - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
       - ./telegraf/opcua:/etc/telegraf/opcua
-    # Host network не нужен: VM Bridged до PLC, Docker bridge до timescaledb
+    # Host network not required: VM Bridged to PLC, Docker bridge to timescaledb
 
   grafana:
     image: grafana/grafana:11.3.1

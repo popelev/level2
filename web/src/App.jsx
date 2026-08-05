@@ -17,7 +17,7 @@ function formatValue(sample) {
 function formatTime(t) {
   if (!t || t.startsWith('0001')) return '—'
   try {
-    return new Date(t).toLocaleTimeString()
+    return new Date(t).toLocaleTimeString('en-US')
   } catch {
     return t
   }
@@ -197,8 +197,8 @@ export default function App() {
       if (!r.ok) throw new Error(text || r.status)
       const data = JSON.parse(text)
       setImportMsg(
-        `Импорт: +${data.added} / ~${data.updated} (всего ${data.total})` +
-          (data.errors?.length ? `; предупреждений: ${data.errors.length}` : ''),
+        `Import: +${data.added} / ~${data.updated} (total ${data.total})` +
+          (data.errors?.length ? `; warnings: ${data.errors.length}` : ''),
       )
       await refresh(deviceId)
     } catch (e) {
@@ -218,7 +218,7 @@ export default function App() {
       <header className="top">
         <div>
           <h1 className="brand">Level2</h1>
-          <p className="sub">Connectivity · устройство → теги → browse</p>
+          <p className="sub">Connectivity · device → tags → browse</p>
         </div>
         <div className="meta">
           <span className="pill ok">health {health}</span>
@@ -238,7 +238,7 @@ export default function App() {
 
       <div className="layout">
         <aside className="panel">
-          <h2>Устройства</h2>
+          <h2>Devices</h2>
           <ul className="device-list">
             {devices.map((d) => (
               <li key={d.id}>
@@ -253,16 +253,16 @@ export default function App() {
                 </button>
               </li>
             ))}
-            {devices.length === 0 && <li className="muted">Нет устройств в config</li>}
+            {devices.length === 0 && <li className="muted">No devices in config</li>}
           </ul>
           {selectedDevice && (
             <div className="device-meta">
               <div><span className="muted">security</span> {selectedDevice.security}</div>
               <div className="mono small">{selectedDevice.endpoint}</div>
               <div className="import-box">
-                <div className="muted">Импорт OPC-нод из Excel</div>
+                <div className="muted">Import OPC nodes from Excel</div>
                 <p className="hint">
-                  Колонки: Area, Path, Signal, MeasurePoint NodeId, DataType, DataType Name
+                  Columns: Area, Path, Signal, MeasurePoint NodeId, DataType, DataType Name
                 </p>
                 <label className="check">
                   <input
@@ -270,7 +270,7 @@ export default function App() {
                     checked={replaceTags}
                     onChange={(e) => setReplaceTags(e.target.checked)}
                   />
-                  заменить все теги устройства
+                  replace all device tags
                 </label>
                 <input
                   type="file"
@@ -282,7 +282,7 @@ export default function App() {
                     if (f) importExcel(f)
                   }}
                 />
-                {importBusy && <div className="muted">Импорт…</div>}
+                {importBusy && <div className="muted">Importing…</div>}
                 {importMsg && <div className="good">{importMsg}</div>}
               </div>
             </div>
@@ -291,12 +291,12 @@ export default function App() {
 
         <section className="panel">
           <div className="panel-head">
-            <h2>Теги {selectedDevice ? `· ${selectedDevice.id}` : ''}</h2>
+            <h2>Tags {selectedDevice ? `· ${selectedDevice.id}` : ''}</h2>
             <input
               className="search"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
-              placeholder="фильтр id / node / type"
+              placeholder="filter id / node / type"
             />
           </div>
           <div className="table-wrap">
@@ -331,7 +331,7 @@ export default function App() {
                 ))}
                 {visibleTags.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="muted">Нет тегов для устройства</td>
+                    <td colSpan={5} className="muted">No tags for this device</td>
                   </tr>
                 )}
               </tbody>
@@ -340,7 +340,7 @@ export default function App() {
 
           {selectedTag && (
             <div className="tag-detail">
-              <h3>Выбранный тег · {selectedTag.tag.id}</h3>
+              <h3>Selected tag · {selectedTag.tag.id}</h3>
               <div className="detail-grid">
                 <div><span className="muted">node_id</span><div className="mono">{selectedTag.tag.node_id}</div></div>
                 <div><span className="muted">datatype</span><div>{selectedTag.tag.datatype}</div></div>
@@ -379,7 +379,7 @@ export default function App() {
                       </tr>
                     ))}
                     {history.length === 0 && (
-                      <tr><td colSpan={3} className="muted">Нет точек</td></tr>
+                      <tr><td colSpan={3} className="muted">No samples</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -413,7 +413,7 @@ export default function App() {
           {expanded.length > 0 && (
             <>
               <h3>Expanded leaves</h3>
-              <p className="hint">Добавление в config пока вручную / следующим шагом API CRUD</p>
+              <p className="hint">Adding to config is manual for now; tag CRUD API comes next</p>
               <div className="table-wrap compact">
                 <table>
                   <thead>

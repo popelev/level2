@@ -1,27 +1,25 @@
-# Level 2 — промышленная платформа сбора данных
-#
-# Сейчас: smoke-тест OPC UA (S7-1500) → Telegraf → TimescaleDB → Grafana
-# Дальше: свой Go-коллектор + Web Admin UI (замена Telegraf)
-#
-# Репозиторий: https://github.com/popelev/level2
+# Level 2 — industrial data collection platform
 
-## Быстрый старт (Ubuntu VM)
+# Now: OPC UA smoke (S7-1500) → Telegraf → TimescaleDB → Grafana
+# Next: custom Go collector + Web Admin UI (replaces Telegraf)
 
-1. Установите Docker (см. план / уже сделано на стенде).
-2. Клонируйте репозиторий:
+# Repository: https://github.com/popelev/level2
+
+## Quick start (Ubuntu VM)
+
+1. Install Docker (see plan / already done on the lab VM).
+2. Clone the repository:
 
 ```bash
 git clone https://github.com/popelev/level2.git
-cd level2/deploy/smoke
+cd level2
 ```
 
-3. Следуйте инструкциям в [deploy/smoke/README.md](deploy/smoke/README.md).
+3. Follow [deploy/smoke/README.md](deploy/smoke/README.md).
 
-## Структура
+## Layout
 
 ```
-deploy/smoke/       # Telegraf smoke (работает)
-deploy/platform/    # Go collector M1 (PLC-off scaffold)
-cmd/collector/
-internal/
+deploy/smoke/       # Telegraf smoke (working)
+deploy/platform/    # Go collector + Admin UI
 ```

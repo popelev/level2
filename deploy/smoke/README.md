@@ -1,23 +1,23 @@
 # Smoke: OPC UA → Telegraf → TimescaleDB → Grafana
 
-Временный стенд для проверки связи с **S7-1500 OPC UA**.  
-Потом Telegraf заменим своим Go-коллектором; Timescale и Grafana останутся.
+Temporary stack to verify connectivity to **S7-1500 OPC UA**.  
+Telegraf will later be replaced by the Go collector; Timescale and Grafana stay.
 
-## Что поднимается
+## Services
 
-| Контейнер    | Порт  | Назначение                          |
+| Container    | Port  | Purpose                             |
 |--------------|-------|-------------------------------------|
-| timescaledb  | 5432  | История (PostgreSQL + Timescale)    |
-| telegraf     | —     | Чтение OPC UA, запись в Timescale   |
-| grafana      | 3000  | Графики                             |
+| timescaledb  | 5432  | History (PostgreSQL + Timescale)    |
+| telegraf     | —     | OPC UA read → Timescale write       |
+| grafana      | 3000  | Charts                              |
 
-## Перед запуском
+## Before start
 
-1. В TIA: OPC UA Server на S7-1500, 1–2 тестовых тега.
-2. На Windows: **UaExpert** → `opc.tcp://<IP-PLC>:4840` с тем же **логином/паролем** и Security, что разрешены на PLC → скопировать **NodeId**.
-3. С VM: `ping <IP-PLC>` должен проходить (для PLC сеть VM = Bridged).
+1. In TIA: enable OPC UA Server on S7-1500 with 1–2 test tags.
+2. On Windows: **UaExpert** → `opc.tcp://<PLC-IP>:4840` with the same **username/password** and Security as on the PLC → copy **NodeId**.
+3. From the VM: `ping <PLC-IP>` must work (Bridged NIC for PLC access).
 
-## Команды на Ubuntu VM
+## Commands on the Ubuntu VM
 
 ```bash
 cd ~/level2/deploy/smoke
@@ -25,25 +25,25 @@ cp .env.example .env
 nano .env
 ```
 
-В `.env` укажите:
+Set in `.env`:
 
-- `PLC_OPC_ENDPOINT=opc.tcp://10.14.10.16:4840` — IP вашего PLC
-- `OPC_UA_USERNAME` / `OPC_UA_PASSWORD` — **те же**, что в UaExpert
-- пароли БД и Grafana (можно оставить примеры для лабы)
+- `PLC_OPC_ENDPOINT=opc.tcp://10.14.10.16:4840` — your PLC IP
+- `OPC_UA_USERNAME` / `OPC_UA_PASSWORD` — **same** as in UaExpert
+- DB and Grafana passwords (lab defaults are fine)
 
-Если в UaExpert Security **Basic256Sha256** + **Sign & Encrypt** — в `telegraf.conf` уже так настроено.
-Telegraf при первом старте создаст клиентский сертификат; его нужно **доверять на S7-1500** (см. ниже «Сертификаты»).
+If UaExpert uses **Basic256Sha256** + **Sign & Encrypt**, `telegraf.conf` is already set that way.
+On first start Telegraf creates a client certificate; you must **trust it on the S7-1500** (see Certificates below).
 
-Затем NodeId в конфиге Telegraf:
+Then set NodeIds in Telegraf config:
 
 ```bash
 nano telegraf/telegraf.conf
 ```
 
-Найдите секцию `[[inputs.opcua]]` / `nodes` и замените плейсхолдеры на NodeId из UaExpert  
-(пример: `{name="temp", id="ns=3;s=\"MyDB\".\"Temp\"}"`).
+Find `[[inputs.opcua]]` / `nodes` and replace placeholders with NodeIds from UaExpert  
+(example: `{name="temp", id="ns=3;s=\"MyDB\".\"Temp\"}"`).
 
-Запуск:
+Start:
 
 ```bash
 docker compose pull
@@ -52,20 +52,20 @@ docker compose ps
 docker compose logs -f telegraf
 ```
 
-Выход из логов: `Ctrl+C`.
+Leave logs with `Ctrl+C`.
 
-Grafana в браузере (Windows или VM):
+Grafana in the browser (Windows or VM):
 
 ```text
-http://<IP-VM>:3000
+http://<VM-IP>:3000
 ```
 
-Логин: `admin` / пароль из `.env` (`GF_SECURITY_ADMIN_PASSWORD`).
+Login: `admin` / password from `.env` (`GF_SECURITY_ADMIN_PASSWORD`).
 
-Datasource **TimescaleDB** уже прописан (provisioning).  
-Explore → выбрать TimescaleDB → таблица вроде `opcua` (имя measurement из telegraf).
+Datasource **TimescaleDB** is provisioned.  
+Explore → TimescaleDB → table like `opcua` (Telegraf measurement name).
 
-## Обновление из git
+## Update from git
 
 ```bash
 cd ~/level2
@@ -74,20 +74,20 @@ cd deploy/smoke
 docker compose up -d
 ```
 
-## Остановка
+## Stop
 
 ```bash
 cd ~/level2/deploy/smoke
 docker compose down
 ```
 
-Данные БД сохраняются в Docker volume `smoke_timeseries` (пока не сделаете `down -v`).
+DB data stays in Docker volume `smoke_timeseries` (until `down -v`).
 
-## Сертификаты (Sign & Encrypt)
+## Certificates (Sign & Encrypt)
 
-На PLC включены **Basic256Sha256** + **Sign & Encrypt** — Telegraf нужен клиентский сертификат.
+If the PLC uses **Basic256Sha256** + **Sign & Encrypt**, Telegraf needs a client certificate.
 
-**Один раз** на VM (из `deploy/smoke`):
+**Once** on the VM (from `deploy/smoke`):
 
 ```bash
 sudo apt install -y openssl
@@ -101,27 +101,27 @@ chmod 644 telegraf/opcua/cert.pem
 chmod 600 telegraf/opcua/key.pem
 ```
 
-Затем:
+Then:
 
 ```bash
 sudo docker compose up -d --force-recreate telegraf
 sudo docker compose logs -f telegraf
 ```
 
-Скопируйте cert на Windows и **доверьте на S7-1500** (TIA Online → OPC UA Certificates → Trusted):
+Copy the cert to Windows and **trust it on the S7-1500** (TIA Online → OPC UA Certificates → Trusted):
 
 ```bash
 cp telegraf/opcua/cert.pem ~/telegraf-opcua-cert.pem
 ```
 
-Без доверия на PLC: `BadSecurityChecksFailed` / certificate untrusted.
+Without trust on the PLC: `BadSecurityChecksFailed` / certificate untrusted.
 
-## Если Telegraf не коннектится
+## If Telegraf cannot connect
 
-| Симптом | Что проверить |
-|---------|----------------|
-| timeout / dial | IP PLC, Bridged, `ping`, порт 4840 |
-| BadIdentityTokenInvalid | Логин/пароль в `.env` как в UaExpert |
-| BadSecurityChecksFailed / Untrusted | Доверие к сертификату Telegraf на S7-1500 (см. выше) |
-| Bad NodeId | Скопировать NodeId ещё раз из UaExpert |
-| UaExpert ок, Telegraf нет | Тот же endpoint, Security, user; логи: `docker compose logs telegraf` |
+| Symptom | Check |
+|---------|--------|
+| timeout / dial | PLC IP, Bridged, `ping`, port 4840 |
+| BadIdentityTokenInvalid | Username/password in `.env` match UaExpert |
+| BadSecurityChecksFailed / Untrusted | Trust Telegraf cert on S7-1500 (see above) |
+| Bad NodeId | Re-copy NodeId from UaExpert |
+| UaExpert OK, Telegraf not | Same endpoint, Security, user; logs: `docker compose logs telegraf` |
