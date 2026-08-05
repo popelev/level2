@@ -3,6 +3,7 @@ package mock
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,12 +19,27 @@ type Driver struct {
 	values    map[string]core.Sample
 	interval  time.Duration
 	ConnectFn func(ctx context.Context) error
+	auto      bool // synthesize values from tag datatype
+	started   time.Time
 }
 
 func New() *Driver {
 	return &Driver{
 		values:   make(map[string]core.Sample),
 		interval: 50 * time.Millisecond,
+	}
+}
+
+// NewDemo publishes synthetic Good samples for PLC-off UI/API/history.
+func NewDemo(interval time.Duration) *Driver {
+	if interval <= 0 {
+		interval = time.Second
+	}
+	return &Driver{
+		values:   make(map[string]core.Sample),
+		interval: interval,
+		auto:     true,
+		started:  time.Now(),
 	}
 }
 
@@ -71,16 +87,20 @@ func (d *Driver) Subscribe(ctx context.Context, tags []core.Tag, out chan<- core
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
+			now := time.Now().UTC()
 			d.mu.Lock()
 			for _, t := range tags {
 				if !t.Enabled {
 					continue
 				}
-				s, ok := d.values[t.ID]
-				if !ok {
-					s = core.Sample{TagID: t.ID, Quality: core.QualityBad, Time: time.Now().UTC()}
+				var s core.Sample
+				if d.auto {
+					s = synthesize(t, now, time.Since(d.started))
+				} else if v, ok := d.values[t.ID]; ok {
+					s = v
+					s.Time = now
 				} else {
-					s.Time = time.Now().UTC()
+					s = core.Sample{TagID: t.ID, Quality: core.QualityBad, Time: now}
 				}
 				select {
 				case out <- s:
@@ -92,4 +112,26 @@ func (d *Driver) Subscribe(ctx context.Context, tags []core.Tag, out chan<- core
 			d.mu.Unlock()
 		}
 	}
+}
+
+func synthesize(t core.Tag, now time.Time, age time.Duration) core.Sample {
+	s := core.Sample{TagID: t.ID, Time: now, Quality: core.QualityGood}
+	sec := age.Seconds()
+	switch t.DataType {
+	case core.ValueFloat64:
+		n := 90 + 5*math.Sin(sec/5)
+		s.ValueNum = &n
+	case core.ValueInt64:
+		n := float64(int64(100 + 10*math.Sin(sec/7)))
+		s.ValueNum = &n
+	case core.ValueBool:
+		b := int(sec/3)%2 == 0
+		s.ValueBool = &b
+	case core.ValueString:
+		u := "demo"
+		s.ValueText = &u
+	default:
+		s.Quality = core.QualityBad
+	}
+	return s
 }

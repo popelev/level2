@@ -11,13 +11,14 @@ docker run --rm -e GOTOOLCHAIN=auto -v "$PWD":/src -w /src golang:1.24 go test .
 cd deploy/platform
 cp -n config.example.yaml config.yaml
 cp -n .env.example .env
-# LEVEL2_SIM_BROWSER=1 enables Browse/Expand without PLC
+# LEVEL2_SIM_BROWSER=1 enables Browse/Expand + synthetic samples without PLC
 docker compose build
 docker compose up -d
 curl -s http://127.0.0.1:8080/healthz
 curl -s http://127.0.0.1:8080/api/v1/tags
-curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns=4;i=4207'
+curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns%3D4%3Bi%3D4207'
 # UI: http://<vm-ip>:8080/
+# ready should be OK in demo mode; values appear within ~1s
 ```
 
 ## API

@@ -15,6 +15,7 @@ import (
 	"github.com/popelev/level2/internal/backoff"
 	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
+	"github.com/popelev/level2/internal/driver/mock"
 	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
 	"github.com/popelev/level2/internal/driver/simbrowser"
 	"github.com/popelev/level2/internal/historian/timescale"
@@ -66,21 +67,45 @@ func main() {
 	useSim := os.Getenv("LEVEL2_SIM_BROWSER") == "1" || os.Getenv("LEVEL2_SIM_BROWSER") == "true"
 	if useSim {
 		primaryBrowser = simbrowser.NewDemo()
-		log.Info("using in-memory OPC sim browser (PLC-off)")
-	}
-	for _, dev := range cfg.Devices {
-		d := opcuaDriver.New(dev, log.With("device", dev.ID))
-		connectCtx, connectCancel := context.WithTimeout(ctx, 3*time.Second)
-		if err := d.Connect(connectCtx); err != nil {
-			log.Error("opc connect", "device", dev.ID, "err", err)
+		demo := mock.NewDemo(time.Second)
+		if err := demo.Connect(ctx); err != nil {
+			log.Error("demo connect", "err", err)
+			os.Exit(1)
 		}
-		connectCancel()
-		if primaryBrowser == nil {
-			primaryBrowser = d
+		drivers = append(drivers, demo)
+		var allTags []core.Tag
+		for _, d := range cfg.Devices {
+			allTags = append(allTags, d.Tags...)
 		}
-		drivers = append(drivers, d)
-		devCopy := dev
-		go runDevice(ctx, log, devCopy, d, raw)
+		go func() {
+			for {
+				if ctx.Err() != nil {
+					return
+				}
+				err := demo.Subscribe(ctx, allTags, raw)
+				if ctx.Err() != nil {
+					return
+				}
+				log.Warn("demo subscribe ended", "err", err)
+				time.Sleep(time.Second)
+			}
+		}()
+		log.Info("PLC-off demo mode: sim browser + synthetic samples (no OPC dial)")
+	} else {
+		for _, dev := range cfg.Devices {
+			d := opcuaDriver.New(dev, log.With("device", dev.ID))
+			connectCtx, connectCancel := context.WithTimeout(ctx, 3*time.Second)
+			if err := d.Connect(connectCtx); err != nil {
+				log.Error("opc connect", "device", dev.ID, "err", err)
+			}
+			connectCancel()
+			if primaryBrowser == nil {
+				primaryBrowser = d
+			}
+			drivers = append(drivers, d)
+			devCopy := dev
+			go runDevice(ctx, log, devCopy, d, raw)
+		}
 	}
 
 	go flushLoop(ctx, log, hist, sp, toHist)
