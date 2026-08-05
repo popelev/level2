@@ -7,3 +7,5 @@ Thumbs.db
 .vscode/
 *.swp
 __pycache__/
+deploy/smoke/telegraf/opcua/*.pem
+deploy/smoke/telegraf/opcua/*.key

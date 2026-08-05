@@ -85,26 +85,36 @@ docker compose down
 
 ## Сертификаты (Sign & Encrypt)
 
-UaExpert и Telegraf при **Sign & Encrypt** используют клиентский сертификат. PLC должен ему **доверять**.
+На PLC включены **Basic256Sha256** + **Sign & Encrypt** — Telegraf нужен клиентский сертификат.
 
-1. Запустите Telegraf один раз (он создаст cert):
-   ```bash
-   docker compose up -d telegraf
-   docker compose logs telegraf
-   ```
-2. Скопируйте сертификат на хост VM:
-   ```bash
-   docker cp level2-telegraf:/etc/telegraf/opcua/cert.pem ~/telegraf-opcua-cert.pem
-   ```
-3. На Windows (TIA / Online): OPC UA → Certificates / Trusted clients — **импортировать** `telegraf-opcua-cert.pem` и поместить в **Trusted**.
-   (Либо Online: отклоненные сертификаты → Move to trusted.)
-4. Перезапуск Telegraf:
-   ```bash
-   docker compose restart telegraf
-   docker compose logs -f telegraf
-   ```
+**Один раз** на VM (из `deploy/smoke`):
 
-Без шага «доверия» на PLC типичны ошибки вроде `BadSecurityChecksFailed` / `BadCertificateUntrusted`.
+```bash
+sudo apt install -y openssl
+mkdir -p telegraf/opcua
+openssl req -x509 -newkey rsa:2048 \
+  -keyout telegraf/opcua/key.pem \
+  -out telegraf/opcua/cert.pem \
+  -days 825 -nodes \
+  -subj "/CN=level2-telegraf-opcua"
+chmod 644 telegraf/opcua/cert.pem
+chmod 600 telegraf/opcua/key.pem
+```
+
+Затем:
+
+```bash
+sudo docker compose up -d --force-recreate telegraf
+sudo docker compose logs -f telegraf
+```
+
+Скопируйте cert на Windows и **доверьте на S7-1500** (TIA Online → OPC UA Certificates → Trusted):
+
+```bash
+cp telegraf/opcua/cert.pem ~/telegraf-opcua-cert.pem
+```
+
+Без доверия на PLC: `BadSecurityChecksFailed` / certificate untrusted.
 
 ## Если Telegraf не коннектится
 
