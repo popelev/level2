@@ -70,9 +70,11 @@ func main() {
 	}
 	for _, dev := range cfg.Devices {
 		d := opcuaDriver.New(dev, log.With("device", dev.ID))
-		if err := d.Connect(ctx); err != nil {
+		connectCtx, connectCancel := context.WithTimeout(ctx, 3*time.Second)
+		if err := d.Connect(connectCtx); err != nil {
 			log.Error("opc connect", "device", dev.ID, "err", err)
 		}
+		connectCancel()
 		if primaryBrowser == nil {
 			primaryBrowser = d
 		}
