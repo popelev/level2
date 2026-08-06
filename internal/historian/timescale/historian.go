@@ -31,6 +31,14 @@ func (h *Historian) Close(ctx context.Context) error {
 	return nil
 }
 
+// Ping checks that the pool can reach Postgres (lightweight readiness probe).
+func (h *Historian) Ping(ctx context.Context) error {
+	if h == nil || h.pool == nil {
+		return fmt.Errorf("historian not configured")
+	}
+	return h.pool.Ping(ctx)
+}
+
 func (h *Historian) EnsureSchema(ctx context.Context) error {
 	sql := `
 CREATE SCHEMA IF NOT EXISTS collector;

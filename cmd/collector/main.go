@@ -120,6 +120,9 @@ func main() {
 		Cfg:     cfgStore,
 		Tags:    cfgStore.AllTags,
 		Devices: cfgStore.Devices,
+		ReadyCheck: func() bool {
+			return useSim || devHub.AnyConnected()
+		},
 		OnDeviceChanged: func(deviceID string, removed bool) {
 			if removed {
 				devHub.Remove(ctx, deviceID)

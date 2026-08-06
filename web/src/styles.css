@@ -128,6 +128,13 @@ body {
 .cap-stat.accent .cap-value { color: var(--accent); }
 .cap-sub { margin-top: 4px; }
 
+.overview-links h3 { margin-bottom: 10px; }
+.overview-link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .page-head {
   display: flex;
   justify-content: space-between;
@@ -166,7 +173,8 @@ body {
   font-size: 0.88rem;
 }
 
-.meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; max-width: min(820px, 100%); }
+.status-strip .pill { white-space: nowrap; }
 .pill {
   border: 1px solid var(--line);
   padding: 4px 10px;

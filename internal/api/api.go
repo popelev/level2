@@ -33,6 +33,8 @@ type Server struct {
 	Cfg      *config.Store
 	Hub      *Hub
 	Diag     *diag.Buffer
+	// ReadyCheck mirrors /readyz (optional; falls back to DevHub.AnyConnected).
+	ReadyCheck func() bool
 	// OnDeviceChanged is called after device create/update/delete (optional).
 	OnDeviceChanged func(deviceID string, removed bool)
 }
@@ -98,6 +100,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	s.mountDiagnostics(mux)
 	s.mountDatabase(mux)
 	s.mountTagBulk(mux)
+	s.mountStatus(mux)
 }
 
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
