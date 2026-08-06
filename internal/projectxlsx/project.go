@@ -163,12 +163,11 @@ func parseProject(f *excelize.File) (Project, error) {
 					out.Errors = append(out.Errors, fmt.Sprintf("tag %s: %v", tagID, err))
 					continue
 				}
-				dt := core.ValueType(strings.ToLower(cellAt(row, col["datatype"])))
-				switch dt {
-				case core.ValueBool, core.ValueInt64, core.ValueFloat64, core.ValueString:
-				case "":
+				dt := core.NormalizeValueType(core.ValueType(strings.ToLower(cellAt(row, col["datatype"]))))
+				if dt == "" {
 					dt = core.ValueFloat64
-				default:
+				}
+				if !core.ValidValueType(dt) {
 					out.Errors = append(out.Errors, fmt.Sprintf("tag %s: bad datatype %q", tagID, dt))
 					continue
 				}
