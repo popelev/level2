@@ -40,6 +40,40 @@ func TestMapString(t *testing.T) {
 	}
 }
 
+func TestMapString_LocalizedTextAndBytes(t *testing.T) {
+	tag := TagView{Tag: core.Tag{ID: "u", DataType: core.ValueString}}
+	lt := ua.NewLocalizedText("barg")
+	v, err := ua.NewVariant(lt)
+	if err != nil {
+		// Some gopcua builds want the value type, not pointer.
+		v, err = ua.NewVariant(*lt)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	dv := &ua.DataValue{Status: ua.StatusOK, Value: v}
+	s, err := mapDataValue(tag, dv, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.ValueText == nil || *s.ValueText != "barg" {
+		t.Fatalf("LocalizedText: got %#v", s.ValueText)
+	}
+
+	v2, err := ua.NewVariant([]byte("kPa"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dv2 := &ua.DataValue{Status: ua.StatusOK, Value: v2}
+	s2, err := mapDataValue(tag, dv2, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s2.ValueText == nil || *s2.ValueText != "kPa" {
+		t.Fatalf("bytes: got %#v", s2.ValueText)
+	}
+}
+
 func TestMapDateTime(t *testing.T) {
 	tag := TagView{Tag: core.Tag{ID: "ts", DataType: core.ValueDateTime}}
 	when := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)

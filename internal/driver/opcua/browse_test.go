@@ -37,6 +37,9 @@ func TestGuessDataType(t *testing.T) {
 	cases := map[string]core.ValueType{
 		"rValueOut":                      core.ValueFloat64,
 		"sUnit":                          core.ValueString,
+		"unit":                           core.ValueString,
+		"tank_sunit":                     core.ValueString,
+		"objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current_sunit": core.ValueString,
 		"bEnable":                        core.ValueBool,
 		"iCount":                         core.ValueInt64,
 		"group_mode_203_maintenance":     core.ValueBool,

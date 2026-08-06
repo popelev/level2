@@ -187,9 +187,24 @@ func asString(v any) (string, error) {
 	switch x := v.(type) {
 	case string:
 		return x, nil
+	case ua.XMLElement:
+		return string(x), nil
 	case []byte:
 		return string(x), nil
+	case ua.ByteArray:
+		return string(x), nil
+	case ua.LocalizedText:
+		return x.Text, nil
+	case *ua.LocalizedText:
+		if x == nil {
+			return "", fmt.Errorf("nil LocalizedText")
+		}
+		return x.Text, nil
 	default:
+		// CharArray / []uint8 via reflection.
+		if b, ok := asByteSlice(v); ok {
+			return string(b), nil
+		}
 		return "", fmt.Errorf("expected string, got %T", v)
 	}
 }

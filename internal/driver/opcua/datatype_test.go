@@ -16,6 +16,18 @@ func TestMapOPCDataType_Boolean(t *testing.T) {
 	}
 }
 
+func TestMapOPCDataType_StringTypes(t *testing.T) {
+	for _, tid := range []uint32{id.String, id.LocalizedText, id.ByteString, id.XMLElement} {
+		nid := ua.NewNumericNodeID(0, tid)
+		if got := mapOPCDataType(nid); got != core.ValueString {
+			t.Fatalf("opc id %d → %q, want string", tid, got)
+		}
+	}
+	if id.String != 12 {
+		t.Fatalf("String node id: got %d want 12", id.String)
+	}
+}
+
 func TestMapOPCDataType_DateTime(t *testing.T) {
 	nid := ua.NewNumericNodeID(0, id.DateTime)
 	if got := mapOPCDataType(nid); got != core.ValueDateTime {
@@ -51,6 +63,30 @@ func TestGuessDataType_ModeFlags(t *testing.T) {
 	}
 	if got := GuessDataType("anode_slime_time"); got != core.ValueDateTime {
 		t.Fatalf("time suffix: got %q", got)
+	}
+}
+
+func TestGuessDataType_SUnitFullTagID(t *testing.T) {
+	cases := []string{
+		"sUnit",
+		"unit",
+		"tank_sunit",
+		"objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current_sunit",
+		"OilTemp.sUnit",
+		"sName",
+		"sText",
+	}
+	for _, name := range cases {
+		if got := GuessDataType(name); got != core.ValueString {
+			t.Fatalf("%q: got %q want string", name, got)
+		}
+	}
+	// Analog / non-string must not flip.
+	if got := GuessDataType("rValueOut"); got != core.ValueFloat64 {
+		t.Fatalf("rValueOut: got %q", got)
+	}
+	if got := GuessDataType("objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current_rvalueout"); got != core.ValueFloat64 {
+		t.Fatalf("full rvalueout id: got %q", got)
 	}
 }
 
@@ -108,6 +144,35 @@ func TestApplyDataTypesFromOPC_OverwritesWrongFloat64(t *testing.T) {
 	ApplyDataTypesFromOPC(context.Background(), d, tags)
 	if tags[0].DataType != core.ValueDateTime {
 		t.Fatalf("sync overwrite: got %q want datetime", tags[0].DataType)
+	}
+}
+
+func TestApplyDataTypesFromOPC_OverwritesWrongFloat64_SUnit(t *testing.T) {
+	d := &Driver{}
+	tags := []core.Tag{{
+		ID:       "objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current_sunit",
+		NodeID:   "ns=5;i=7460",
+		DataType: core.ValueFloat64,
+	}}
+	ApplyDataTypesFromOPC(context.Background(), d, tags)
+	if tags[0].DataType != core.ValueString {
+		t.Fatalf("sync overwrite sUnit: got %q want string", tags[0].DataType)
+	}
+}
+
+func TestResolveMappedDataType_SUnitAmbiguous(t *testing.T) {
+	got := resolveMappedDataType("", "objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current_sunit")
+	if got != core.ValueString {
+		t.Fatalf("empty map full id: got %q", got)
+	}
+	got = resolveMappedDataType(core.ValueString, "sUnit")
+	if got != core.ValueString {
+		t.Fatalf("opc String: got %q", got)
+	}
+	// Authoritative OPC Float kept (ambiguous-name refine only when unmapped).
+	got = resolveMappedDataType(core.ValueFloat64, "sUnit")
+	if got != core.ValueFloat64 {
+		t.Fatalf("float kept: got %q", got)
 	}
 }
 
