@@ -122,12 +122,7 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 	}
 
 	if s.DB != nil {
-		dbURL := ""
-		if s.Cfg != nil {
-			dbURL = s.Cfg.Snapshot().Database.URL
-		}
-		st := s.DB.Status(r.Context(), dbURL)
-		out.DatabaseConnected = st.Connected && st.PingOK
+		out.DatabaseConnected = s.DB.Ping(r.Context()) == nil
 	}
 
 	if s.Diag != nil {

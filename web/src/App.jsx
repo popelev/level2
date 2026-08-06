@@ -67,27 +67,32 @@ function StatusPills({ summary }) {
 
   const apiOk = summary.api_ok !== false
   const ready = !!(summary.collector_ready ?? summary.ready)
-  const servers = summary.servers || {}
-  const tags = summary.tags || {}
-  const db = summary.db_write || {}
-  const total = servers.total || 0
-  const connected = servers.connected || 0
+  const total = summary.devices_total ?? summary.servers?.total ?? 0
+  const connected = summary.devices_connected ?? summary.servers?.connected ?? 0
+  const tagsEnabled = summary.tags_enabled ?? summary.tags?.enabled ?? 0
+  const tagsTotal = summary.tags_total ?? summary.tags?.total ?? 0
+  const qualityGood = summary.quality_good ?? summary.tags?.good_quality ?? 0
+  const qualityBad = summary.quality_bad ?? summary.tags?.bad_quality ?? 0
+  const qualityPct = summary.quality_good_pct ?? summary.tags?.good_pct
+  const samplesPerSec = summary.samples_per_sec ?? summary.db_write?.samples_per_sec ?? 0
+  const samplesWritten = summary.samples_written_total ?? summary.db_write?.samples_written_total ?? 0
+  const writeErrors = summary.write_errors_total ?? summary.db_write?.write_errors_total ?? 0
+  const spoolDepth = summary.spool_depth ?? summary.db_write?.spool_depth ?? 0
+
   const opcOk = total === 0 ? ready : connected > 0 && connected === total
   const opcLabel = total === 0
     ? (ready ? 'OPC: idle' : 'OPC: none')
     : `OPC: ${connected}/${total}`
 
-  const sampled = (tags.good_quality || 0) + (tags.bad_quality || 0)
+  const sampled = qualityGood + qualityBad
   let qualityClass = ''
   let qualityLabel = 'Quality: —'
   if (sampled > 0) {
-    const bad = tags.bad_quality || 0
-    const pct = tags.good_pct
-    qualityClass = bad > 0 ? 'bad' : 'ok'
-    qualityLabel = bad > 0 && bad <= 20
-      ? `Quality: ${bad} bad`
-      : `Quality: ${pct != null ? Math.round(pct) : '—'}% good`
-  } else if ((tags.enabled || 0) > 0) {
+    qualityClass = qualityBad > 0 ? 'bad' : 'ok'
+    qualityLabel = qualityBad > 0 && qualityBad <= 20
+      ? `Quality: ${qualityBad} bad`
+      : `Quality: ${qualityPct != null ? Math.round(qualityPct) : '—'}% good`
+  } else if (tagsEnabled > 0) {
     qualityClass = 'bad'
     qualityLabel = 'Quality: no data'
   }
@@ -95,8 +100,8 @@ function StatusPills({ summary }) {
   const pollLabel = summary.poll_avg_ms != null
     ? `Poll: ${formatPollMs(summary.poll_avg_ms)}`
     : 'Poll: —'
-  const writeErr = (db.write_errors_total || 0) > 0 || (db.spool_depth || 0) > 0
-  const dbLabel = `DB: ${formatRate(db.samples_per_sec)}`
+  const writeErr = writeErrors > 0 || spoolDepth > 0
+  const dbLabel = `DB: ${formatRate(samplesPerSec)}`
 
   return (
     <>
@@ -114,7 +119,7 @@ function StatusPills({ summary }) {
       </span>
       <span
         className={`pill ${qualityClass}`}
-        title={`Tags ${tags.enabled || 0}/${tags.total || 0} enabled · Good ${tags.good_quality || 0} · Bad ${tags.bad_quality || 0}`}
+        title={`Tags ${tagsEnabled}/${tagsTotal} enabled · Good ${qualityGood} · Bad ${qualityBad}`}
       >
         {qualityLabel}
       </span>
@@ -125,8 +130,8 @@ function StatusPills({ summary }) {
         {pollLabel}
       </span>
       <span
-        className={`pill ${writeErr ? 'bad' : (db.samples_per_sec > 0 ? 'ok' : '')}`}
-        title={`Historian write rate · written ${Math.round(db.samples_written_total || 0).toLocaleString()} · errors ${Math.round(db.write_errors_total || 0)} · spool ${Math.round(db.spool_depth || 0)}`}
+        className={`pill ${writeErr ? 'bad' : (samplesPerSec > 0 ? 'ok' : '')}`}
+        title={`Historian write rate · written ${Math.round(samplesWritten).toLocaleString()} · errors ${Math.round(writeErrors)} · spool ${Math.round(spoolDepth)}`}
       >
         {dbLabel}
       </span>
@@ -155,10 +160,10 @@ export default function App() {
     }
   }
 
-  const health = summary?.api_ok === false ? 'down' : (summary?.health || '…')
+  const health = summary?.api_ok === false ? 'down' : (summary ? 'ok' : '…')
   const ready = !summary
     ? '…'
-    : (summary.ready || summary.collector_ready ? 'ready' : 'not ready')
+    : (summary.collector_ready || summary.ready ? 'ready' : (summary.ready_detail || 'not ready'))
 
   useEffect(() => {
     if (!location.hash || location.hash === '#' || location.hash === '#/') {
