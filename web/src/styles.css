@@ -185,6 +185,54 @@ body {
   font-size: 0.85rem;
 }
 
+.diag-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.diag-toolbar {
+  gap: 12px;
+}
+.diag-filter, .diag-check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+}
+.diag-log-wrap {
+  max-height: min(70vh, 640px);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg0);
+}
+.diag-log {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+.diag-log th,
+.diag-log td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.diag-log th {
+  position: sticky;
+  top: 0;
+  background: var(--bg1);
+  z-index: 1;
+}
+.diag-log tr.lvl-warn td:nth-child(2) { color: #e6b422; }
+.diag-log tr.lvl-error td:nth-child(2) { color: #f07070; }
+.diag-log td.detail {
+  max-width: 28rem;
+  word-break: break-word;
+  color: var(--muted);
+}
+
 .address {
   min-height: 480px;
   display: flex;

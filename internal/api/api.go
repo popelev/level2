@@ -13,6 +13,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
+	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/importexcel"
 	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/store"
@@ -29,6 +30,7 @@ type Server struct {
 	DevHub   *devruntime.Hub
 	Cfg      *config.Store
 	Hub      *Hub
+	Diag     *diag.Buffer
 	// OnDeviceChanged is called after device create/update/delete (optional).
 	OnDeviceChanged func(deviceID string, removed bool)
 }
@@ -91,6 +93,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/tags/{id}/value", s.handleWriteNotImplemented)
 	mux.HandleFunc("GET /api/v1/ws/stream", s.handleWS)
 	s.mountProject(mux)
+	s.mountDiagnostics(mux)
 }
 
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {

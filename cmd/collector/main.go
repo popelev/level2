@@ -16,6 +16,7 @@ import (
 	"github.com/popelev/level2/internal/backoff"
 	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
+	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/driver/mock"
 	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
 	devruntime "github.com/popelev/level2/internal/runtime"
@@ -59,6 +60,8 @@ func main() {
 	}
 
 	live := store.NewLive()
+	diagBuf := diag.NewBuffer(3000)
+	diag.SetDefault(diagBuf)
 	wsHub := api.NewHub()
 	raw := make(chan core.Sample, 2048)
 	toHist := make(chan core.Sample, 2048)
@@ -110,6 +113,7 @@ func main() {
 		Log:     log,
 		Live:    live,
 		Hub:     wsHub,
+		Diag:    diagBuf,
 		DevHub:  devHub,
 		History: hist,
 		Cfg:     cfgStore,
@@ -201,6 +205,7 @@ func runDevice(ctx context.Context, log *slog.Logger, cfgStore *config.Store, de
 			if err := drv.Connect(ctx); err != nil {
 				wait := bo.Next()
 				log.Warn("waiting opc", "device", deviceID, "err", err, "backoff", wait.String())
+				diag.OPCRead(diag.LevelWarn, deviceID, "", "waiting for opc connection", err.Error())
 				select {
 				case <-ctx.Done():
 					return
@@ -224,6 +229,9 @@ func runDevice(ctx context.Context, log *slog.Logger, cfgStore *config.Store, de
 			return
 		}
 		log.Warn("subscribe ended", "device", deviceID, "err", err)
+		if err != nil {
+			diag.OPCRead(diag.LevelWarn, deviceID, "", "opc subscribe ended", err.Error())
+		}
 		_ = drv.Disconnect(ctx)
 		wait := bo.Next()
 		select {
@@ -263,15 +271,19 @@ func flushLoop(ctx context.Context, log *slog.Logger, hist core.Historian, sp *s
 		if err := hist.WriteBatch(ctx, batch); err != nil {
 			metrics.WriteErrors.Inc()
 			log.Error("write batch", "err", err, "n", len(batch))
+			diag.DBWrite(diag.LevelError, "historian write batch failed", err.Error(), len(batch))
 			if serr := sp.Enqueue(batch); serr != nil {
 				log.Error("spool enqueue", "err", serr)
+				diag.DBWrite(diag.LevelError, "spool enqueue failed", serr.Error(), len(batch))
 			} else {
 				metrics.SamplesSpooled.Add(float64(len(batch)))
 				metrics.SpoolDepth.Set(float64(sp.Len()))
+				diag.DBWrite(diag.LevelWarn, "samples spooled to disk", "", len(batch))
 			}
 			return
 		}
 		metrics.SamplesWritten.Add(float64(len(batch)))
+		diag.DBWrite(diag.LevelInfo, "wrote batch to timescale", "", len(batch))
 	}
 	for {
 		select {
@@ -317,12 +329,14 @@ func replaySpool(ctx context.Context, log *slog.Logger, hist core.Historian, sp 
 			}
 			if err := hist.WriteBatch(ctx, batch); err != nil {
 				log.Warn("spool replay failed", "err", err)
+				diag.DBWrite(diag.LevelError, "spool replay write failed", err.Error(), len(batch))
 				continue
 			}
 			metrics.SamplesWritten.Add(float64(len(batch)))
 			_ = sp.Remove(path)
 			metrics.SpoolDepth.Set(float64(sp.Len()))
 			log.Info("spool replayed", "n", len(batch), "path", filepath.Base(path))
+			diag.DBWrite(diag.LevelInfo, "spool replayed to timescale", filepath.Base(path), len(batch))
 		}
 	}
 }

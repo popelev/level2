@@ -12,6 +12,7 @@ import (
 	"github.com/gopcua/opcua/ua"
 	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
+	"github.com/popelev/level2/internal/diag"
 )
 
 // Driver is an OPC UA client that polls leaf nodes (M1).
@@ -125,10 +126,12 @@ func (d *Driver) Subscribe(ctx context.Context, tags []core.Tag, out chan<- core
 		case <-ticker.C:
 			if err := d.pollOnce(ctx, enabled, out); err != nil {
 				d.log.Warn("opcua poll failed", "err", err)
+				diag.OPCRead(diag.LevelWarn, d.device.ID, "", "opc poll failed", err.Error())
 				d.alive.Store(false)
 				_ = d.Disconnect(ctx)
 				if cerr := d.Connect(ctx); cerr != nil {
 					d.log.Error("opcua reconnect failed", "err", cerr)
+					diag.OPCRead(diag.LevelError, d.device.ID, "", "opc reconnect failed", cerr.Error())
 				}
 			}
 		}
@@ -213,6 +216,7 @@ func (d *Driver) pollBatch(ctx context.Context, tags []TagView, out chan<- core.
 		s, err := mapDataValue(tags[i], rv, now)
 		if err != nil {
 			d.log.Warn("skip tag value", "tag", tags[i].ID, "err", err)
+			diag.OPCRead(diag.LevelWarn, d.device.ID, tags[i].ID, "skip tag read", err.Error())
 			out <- core.Sample{Time: now, TagID: tags[i].ID, Quality: core.QualityBad}
 			continue
 		}

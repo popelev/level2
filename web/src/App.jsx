@@ -6,6 +6,7 @@ import ProjectsPage from './pages/ProjectsPage.jsx'
 
 import DbWriteListPage from './pages/DbWriteListPage.jsx'
 import TagsImportExportPage from './pages/TagsImportExportPage.jsx'
+import DiagnosticsPage from './pages/DiagnosticsPage.jsx'
 
 function deviceFromHash() {
   const h = location.hash || ''
@@ -19,6 +20,7 @@ function currentPage() {
   if (h.startsWith('monitor')) return 'monitor'
   if (h.startsWith('db-list') || h.startsWith('tags')) return 'db-list'
   if (h.startsWith('import')) return 'import'
+  if (h.startsWith('diag')) return 'diag'
   if (h.startsWith('project')) return 'projects'
   return 'servers'
 }
@@ -113,6 +115,13 @@ export default function App() {
         >
           Projects
         </button>
+        <button
+          type="button"
+          className={page === 'diag' ? 'nav-btn active' : 'nav-btn'}
+          onClick={() => go('diag')}
+        >
+          Diagnostics
+        </button>
       </nav>
 
       {err && <p className="err">{err}</p>}
@@ -157,6 +166,9 @@ export default function App() {
           onError={setErr}
           onDevicesChanged={refreshStatus}
         />
+      )}
+      {page === 'diag' && (
+        <DiagnosticsPage onError={setErr} />
       )}
     </div>
   )
