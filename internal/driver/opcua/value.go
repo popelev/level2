@@ -1,6 +1,7 @@
 package opcua
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"reflect"
@@ -81,8 +82,14 @@ func mapDataValue(tag TagView, dv *ua.DataValue, now time.Time) (core.Sample, er
 		if err != nil {
 			return s, err
 		}
-		str := tm.UTC().Format(time.RFC3339Nano)
-		s.ValueText = &str
+		if tm.IsZero() {
+			// Null / unset Siemens DT (all-zero ByteArray) — Good with empty text.
+			empty := ""
+			s.ValueText = &empty
+		} else {
+			str := tm.UTC().Format(time.RFC3339Nano)
+			s.ValueText = &str
+		}
 	default:
 		return s, fmt.Errorf("unsupported datatype %q", tag.DataType)
 	}
@@ -248,13 +255,61 @@ func asByteSlice(v any) ([]byte, bool) {
 }
 
 func bytesToDateTime(b []byte) (time.Time, error) {
+	if len(b) == 8 && isAllZero(b) {
+		// Null OPC DateTime / uninitialized Siemens DT — successful read, empty time.
+		return time.Time{}, nil
+	}
 	if tm, err := siemensDateAndTime(b); err == nil {
 		return tm, nil
+	}
+	if len(b) == 8 {
+		// Raw OPC UA DateTime / Windows FILETIME (little-endian int64).
+		ft := int64(binary.LittleEndian.Uint64(b))
+		if tm := filetimeToTime(ft); !tm.IsZero() && tm.Year() >= 1990 && tm.Year() <= 2100 {
+			return tm, nil
+		}
+		if tm, err := siemensLDT(b); err == nil {
+			return tm, nil
+		}
 	}
 	if tm, err := parseDateTimeString(string(b)); err == nil {
 		return tm, nil
 	}
-	return time.Time{}, fmt.Errorf("cannot decode datetime bytes (len=%d)", len(b))
+	return time.Time{}, fmt.Errorf("cannot decode datetime bytes (len=%d hex=%x)", len(b), b)
+}
+
+func isAllZero(b []byte) bool {
+	for _, x := range b {
+		if x != 0 {
+			return false
+		}
+	}
+	return len(b) > 0
+}
+
+// siemensLDT decodes S7-1500 LDT (nanoseconds since Unix epoch, big-endian).
+func siemensLDT(b []byte) (time.Time, error) {
+	if len(b) != 8 {
+		return time.Time{}, fmt.Errorf("LDT needs 8 bytes")
+	}
+	var nano int64
+	for _, x := range b {
+		nano = (nano << 8) | int64(x)
+	}
+	// Also try little-endian (OPC UA arrays sometimes LE).
+	le := int64(uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24 |
+		uint64(b[4])<<32 | uint64(b[5])<<40 | uint64(b[6])<<48 | uint64(b[7])<<56)
+	for _, n := range []int64{nano, le} {
+		if n == 0 {
+			continue
+		}
+		tm := time.Unix(0, n).UTC()
+		// Plausible industrial range.
+		if tm.Year() >= 1990 && tm.Year() <= 2100 {
+			return tm, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("LDT out of range")
 }
 
 // siemensDateAndTime decodes S7 DATE_AND_TIME (DT) — 8 BCD bytes.
@@ -262,6 +317,12 @@ func bytesToDateTime(b []byte) (time.Time, error) {
 func siemensDateAndTime(b []byte) (time.Time, error) {
 	if len(b) != 8 {
 		return time.Time{}, fmt.Errorf("siemens DT needs 8 bytes, got %d", len(b))
+	}
+	// Reject clearly non-BCD nibbles early (values > 9).
+	for i := 0; i < 6; i++ {
+		if (b[i]>>4) > 9 || (b[i]&0x0F) > 9 {
+			return time.Time{}, fmt.Errorf("non-BCD byte at %d: %02x", i, b[i])
+		}
 	}
 	year := decodeBCD(b[0])
 	if year < 90 {
@@ -274,9 +335,10 @@ func siemensDateAndTime(b []byte) (time.Time, error) {
 	hour := decodeBCD(b[3])
 	min := decodeBCD(b[4])
 	sec := decodeBCD(b[5])
-	msec := decodeBCD(b[6])*10 + decodeBCD(b[7]>>4)
+	msec := decodeBCD(b[6])*10 + int(b[7]>>4)
 	if month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || min > 59 || sec > 59 || msec > 999 {
-		return time.Time{}, fmt.Errorf("invalid siemens DT fields")
+		return time.Time{}, fmt.Errorf("invalid siemens DT fields y=%d m=%d d=%d %02d:%02d:%02d.%03d hex=%x",
+			year, month, day, hour, min, sec, msec, b)
 	}
 	return time.Date(year, time.Month(month), day, hour, min, sec, msec*1_000_000, time.UTC), nil
 }

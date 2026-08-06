@@ -172,6 +172,24 @@ func TestMapDateTimeSiemensByteArray(t *testing.T) {
 	}
 }
 
+func TestMapDateTimeNullSiemensByteArray(t *testing.T) {
+	tag := TagView{Tag: core.Tag{ID: "dt0", DataType: core.ValueDateTime}}
+	v, err := ua.NewVariant(ua.ByteArray{0, 0, 0, 0, 0, 0, 0, 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := mapDataValue(tag, &ua.DataValue{Status: ua.StatusOK, Value: v}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Quality != core.QualityGood {
+		t.Fatalf("want Good, got %#v", s)
+	}
+	if s.ValueText == nil || *s.ValueText != "" {
+		t.Fatalf("want empty value_text for null DT, got %#v", s.ValueText)
+	}
+}
+
 func TestMapUint(t *testing.T) {
 	tag := TagView{Tag: core.Tag{ID: "u", DataType: core.ValueUint}}
 	v, err := ua.NewVariant(uint32(42))
