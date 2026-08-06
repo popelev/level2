@@ -1,14 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import TagTreeTable from '../components/TagTreeTable.jsx'
 import TagPager from '../components/TagPager.jsx'
-import { getJSON } from '../api.js'
+import { formatQuality, getJSON } from '../api.js'
 
 const PAGE_SIZE = 50
+
+function isBadTag(tv) {
+  return formatQuality(tv.sample) === 'bad'
+}
 
 export default function DbWriteListPage({ devices, onError, onDevicesChanged, initialDeviceId }) {
   const [deviceId, setDeviceId] = useState('')
   const [tags, setTags] = useState([])
   const [filter, setFilter] = useState('')
+  const [badOnly, setBadOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [dbSelected, setDbSelected] = useState(() => new Set())
   const [bulkBusy, setBulkBusy] = useState('')
@@ -110,16 +115,20 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
     }
   }
 
+  const badTags = useMemo(() => tags.filter(isBadTag), [tags])
+
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase()
-    if (!q) return tags
-    return tags.filter(
+    let list = tags
+    if (badOnly) list = list.filter(isBadTag)
+    if (!q) return list
+    return list.filter(
       (t) =>
         t.tag.id.toLowerCase().includes(q) ||
         t.tag.node_id.toLowerCase().includes(q) ||
         String(t.tag.path || '').toLowerCase().includes(q),
     )
-  }, [tags, filter])
+  }, [tags, filter, badOnly])
 
   const sortedFiltered = useMemo(() => {
     const list = [...filtered]
@@ -137,7 +146,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
 
   useEffect(() => {
     setPage(1)
-  }, [deviceId, filter])
+  }, [deviceId, filter, badOnly])
 
   useEffect(() => {
     if (page !== pageClamped) setPage(pageClamped)
@@ -167,21 +176,20 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
     location.hash = `#/db-list?device=${encodeURIComponent(id)}`
   }
 
-  const syncFromOpc = async (tagIds = null) => {
+  const syncFromOpc = async (tagIds = null, mode = 'all') => {
     if (!deviceId) return
     const all = !tagIds?.length
     const n = all ? tags.length : tagIds.length
     if (n === 0) return
-    if (
-      !window.confirm(
-        all
+    const label =
+      mode === 'bad'
+        ? `Sync parameters from OPC for ${n} bad tag(s) by NodeId?`
+        : all
           ? `Sync parameters from OPC for all ${n} tag(s) by NodeId?`
-          : `Sync parameters from OPC for ${n} selected tag(s) by NodeId?`,
-      )
-    ) {
-      return
-    }
-    setBulkBusy(all ? 'sync-all' : 'sync-sel')
+          : `Sync parameters from OPC for ${n} selected tag(s) by NodeId?`
+    if (!window.confirm(label)) return
+    const busyKey = mode === 'bad' ? 'sync-bad' : all ? 'sync-all' : 'sync-sel'
+    setBulkBusy(busyKey)
     onError('')
     setMsg('')
     try {
@@ -260,20 +268,33 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
           <div className="panel-head">
             <h3>
               {currentDevice?.tag_count ?? tags.length} tag(s)
-              {sortedFiltered.length > PAGE_SIZE && (
+              {badTags.length > 0 && (
+                <span className="badq small"> · {badTags.length} bad</span>
+              )}
+              {(sortedFiltered.length > PAGE_SIZE || badOnly || filter.trim()) && (
                 <span className="muted small">
                   {' '}
                   · showing {pageFrom}–{pageTo}
-                  {filter.trim() ? ` (filtered ${sortedFiltered.length})` : ''}
+                  {` of ${sortedFiltered.length}`}
                 </span>
               )}
             </h3>
-            <input
-              className="search"
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="filter"
-            />
+            <div className="db-list-filters">
+              <label className="diag-check">
+                <input
+                  type="checkbox"
+                  checked={badOnly}
+                  onChange={(e) => setBadOnly(e.target.checked)}
+                />
+                Bad only
+              </label>
+              <input
+                className="search"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                placeholder="filter"
+              />
+            </div>
           </div>
           <p className="hint">
             Only enabled tags are polled. Add tags from Address Space or Import / Export.
@@ -286,6 +307,15 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
               onClick={() => syncFromOpc()}
             >
               {bulkBusy === 'sync-all' ? 'Syncing…' : 'Sync all from OPC'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!!bulkBusy || badTags.length === 0}
+              onClick={() => syncFromOpc(badTags.map((t) => t.tag.id), 'bad')}
+              title="Sync datatypes from OPC for tags with bad quality"
+            >
+              {bulkBusy === 'sync-bad' ? 'Syncing…' : `Sync bad (${badTags.length})`}
             </button>
             <button
               type="button"
