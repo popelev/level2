@@ -200,7 +200,11 @@ internal/               # drivers, api, historian, spool, store, …
 web/                    # React Admin UI
 deploy/platform/        # Docker Compose + runbook (основной путь)
 deploy/smoke/           # Telegraf smoke (legacy connectivity)
+deploy/ci/              # Jenkins CI/CD skeleton (лаб VM, порт 8081)
+Jenkinsfile             # Declarative pipeline (Phase 1: test + image build)
 ```
+
+CI/CD (Jenkins): [deploy/ci/README.md](deploy/ci/README.md).
 
 ---
 
