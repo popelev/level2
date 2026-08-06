@@ -9,6 +9,43 @@ export function normalizePath(p) {
     .join('/')
 }
 
+/** True when path looks like OPC Address Space browse (not plant Area/Path). */
+export function isOpcBrowsePath(path) {
+  return /Objects|ServerInterfaces|DeviceSet|Root/i.test(String(path || ''))
+}
+
+/**
+ * Unique tag id for DB list: parent folder segment + signal (matches expand API ids).
+ * Plant Excel rows use path depth ≤2 and signal-only ids — unchanged.
+ */
+export function tagIdFromBrowse(folderPath, browseName, sanitizeId) {
+  const base = sanitizeId(browseName || '')
+  const segs = normalizePath(folderPath).split('/').filter(Boolean)
+  const parent = segs[segs.length - 1] || ''
+  if (!parent || !isOpcBrowsePath(folderPath)) return base
+  return sanitizeId(`${parent}_${browseName}`)
+}
+
+/** Leaf label in tree table (browse name when id is parent_signal). */
+export function tagLeafDisplayName(tag) {
+  const id = tag.id || ''
+  const path = normalizePath(tag.path)
+  if (!isOpcBrowsePath(path)) return id
+  const idx = id.lastIndexOf('_')
+  if (idx > 0) return id.slice(idx + 1)
+  return id
+}
+
+/** Full path to a variable leaf under an Address Space folder prefix. */
+export function leafPathUnderPrefix(folderPrefix, browsePathOrName) {
+  const rel = normalizePath(String(browsePathOrName || '').replace(/\./g, '/'))
+  const prefix = normalizePath(folderPrefix)
+  if (!rel) return prefix
+  if (!prefix) return rel
+  if (rel.startsWith(`${prefix}/`) || rel === prefix) return rel
+  return normalizePath(`${prefix}/${rel}`)
+}
+
 /** Fallback folder from nsu=http://Name;i=… when tag.path empty. */
 export function pathFromNodeId(nodeId) {
   const m = String(nodeId || '').match(/^nsu=https?:\/\/([^;]+)/i)
@@ -42,7 +79,7 @@ export function buildTagTree(tagValues) {
     const leaf = {
       type: 'leaf',
       key: `tag:${tag.id}`,
-      name: tag.id,
+      name: tagLeafDisplayName(tag),
       tv,
     }
     cur.children.push(leaf)

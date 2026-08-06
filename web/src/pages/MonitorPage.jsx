@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TreeNode from '../components/TreeNode.jsx'
 import { ROOT_ID, getJSON, guessType, sanitizeId } from '../api.js'
-import { normalizePath } from '../tagTree.js'
+import { leafPathUnderPrefix, normalizePath, tagIdFromBrowse } from '../tagTree.js'
 
 export default function MonitorPage({ devices, onError, onDevicesChanged, initialDeviceId }) {
   const [deviceId, setDeviceId] = useState('')
@@ -107,12 +107,12 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
   const monitorSelectedNode = async () => {
     if (!deviceId || !selectedNode?.is_leaf) return
     onError('')
-    const id = sanitizeId(selectedNode.browse_name || selectedNode.node_id)
     const folderPath = normalizePath(
       selectedPath.includes('/')
         ? selectedPath.slice(0, selectedPath.lastIndexOf('/'))
         : '',
     )
+    const id = tagIdFromBrowse(folderPath, selectedNode.browse_name, sanitizeId)
     try {
       await upsertTag({
         id,
@@ -138,11 +138,15 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
       let n = 0
       for (const item of addrChecked.values()) {
         if (item.folder) continue
-        const id = sanitizeId(item.tag_id || item.browse_name || item.node_id)
         const folderPath = normalizePath(
           item.path.includes('/')
             ? item.path.slice(0, item.path.lastIndexOf('/'))
             : '',
+        )
+        const id = tagIdFromBrowse(
+          folderPath,
+          item.browse_name || item.tag_id,
+          sanitizeId,
         )
         await upsertTag({
           id,
@@ -217,15 +221,14 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
           folder: true,
         })
         for (const t of expanded) {
-          const bp = normalizePath(String(t.browse_path || '').replace(/\./g, '/'))
           const name = leafName(t)
-          const leafPath = bp || normalizePath(path ? `${path}/${name}` : name)
+          const rel = t.browse_path || name
+          const leafPath = leafPathUnderPrefix(path, rel)
           next.set(t.node_id, {
             browse_name: name,
             node_id: t.node_id,
             path: leafPath,
             datatype: t.datatype,
-            tag_id: t.id,
           })
         }
         return next

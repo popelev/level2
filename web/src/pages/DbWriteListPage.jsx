@@ -2,10 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import TagTreeTable from '../components/TagTreeTable.jsx'
 import { getJSON } from '../api.js'
 
+const PAGE_SIZE = 50
+
 export default function DbWriteListPage({ devices, onError, onDevicesChanged, initialDeviceId }) {
   const [deviceId, setDeviceId] = useState('')
   const [tags, setTags] = useState([])
   const [filter, setFilter] = useState('')
+  const [page, setPage] = useState(1)
   const [dbSelected, setDbSelected] = useState(() => new Set())
 
   useEffect(() => {
@@ -115,6 +118,36 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
     )
   }, [tags, filter])
 
+  const sortedFiltered = useMemo(() => {
+    const list = [...filtered]
+    list.sort((a, b) => {
+      const pa = String(a.tag.path || '')
+      const pb = String(b.tag.path || '')
+      if (pa !== pb) return pa.localeCompare(pb)
+      return a.tag.id.localeCompare(b.tag.id)
+    })
+    return list
+  }, [filtered])
+
+  const totalPages = Math.max(1, Math.ceil(sortedFiltered.length / PAGE_SIZE))
+  const pageClamped = Math.min(Math.max(1, page), totalPages)
+
+  useEffect(() => {
+    setPage(1)
+  }, [deviceId, filter])
+
+  useEffect(() => {
+    if (page !== pageClamped) setPage(pageClamped)
+  }, [page, pageClamped])
+
+  const pageTags = useMemo(() => {
+    const start = (pageClamped - 1) * PAGE_SIZE
+    return sortedFiltered.slice(start, start + PAGE_SIZE)
+  }, [sortedFiltered, pageClamped])
+
+  const pageFrom = sortedFiltered.length === 0 ? 0 : (pageClamped - 1) * PAGE_SIZE + 1
+  const pageTo = Math.min(pageClamped * PAGE_SIZE, sortedFiltered.length)
+
   const onDbToggleSelect = (ids, checked) => {
     setDbSelected((prev) => {
       const next = new Set(prev)
@@ -157,7 +190,16 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
       {deviceId && (
         <section className="panel monitored db-list-panel">
           <div className="panel-head">
-            <h3>{currentDevice?.tag_count ?? tags.length} tag(s)</h3>
+            <h3>
+              {currentDevice?.tag_count ?? tags.length} tag(s)
+              {sortedFiltered.length > PAGE_SIZE && (
+                <span className="muted small">
+                  {' '}
+                  · showing {pageFrom}–{pageTo}
+                  {filter.trim() ? ` (filtered ${sortedFiltered.length})` : ''}
+                </span>
+              )}
+            </h3>
             <input
               className="search"
               value={filter}
@@ -209,7 +251,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
           )}
           <div className="table-wrap compact db-list-table">
             <TagTreeTable
-              tagValues={filtered}
+              tagValues={pageTags}
               selected={dbSelected}
               onToggleSelect={onDbToggleSelect}
               onSetEnabled={setTagsEnabled}
@@ -217,6 +259,29 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
               onUpdateTag={updateTag}
             />
           </div>
+          {sortedFiltered.length > PAGE_SIZE && (
+            <div className="pager">
+              <button
+                type="button"
+                className="secondary small-btn"
+                disabled={pageClamped <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+              <span className="muted small">
+                Page {pageClamped} of {totalPages} ({PAGE_SIZE} per page)
+              </span>
+              <button
+                type="button"
+                className="secondary small-btn"
+                disabled={pageClamped >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Next
+              </button>
+            </div>
+          )}
         </section>
       )}
     </div>

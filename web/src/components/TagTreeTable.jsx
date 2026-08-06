@@ -95,7 +95,10 @@ function LeafRow({
       <div className="tt-label tt-tag">
         <span className="chev">·</span>
         <div>
-          <div className="name">{tag.id}</div>
+          <div className="name">{node.name}</div>
+          {node.name !== tag.id && (
+            <div className="mono small muted">{tag.id}</div>
+          )}
           <div className="mono small muted">{tag.node_id}</div>
         </div>
       </div>
