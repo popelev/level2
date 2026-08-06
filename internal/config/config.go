@@ -55,15 +55,7 @@ func Load(path string) (*File, error) {
 	}
 	for i := range f.Devices {
 		d := &f.Devices[i]
-		if ep := os.Getenv("PLC_OPC_ENDPOINT"); ep != "" && i == 0 {
-			d.Endpoint = ep
-		}
-		if u := os.Getenv("OPC_UA_USERNAME"); u != "" {
-			d.Username = u
-		}
-		if p := os.Getenv("OPC_UA_PASSWORD"); p != "" {
-			d.Password = p
-		}
+		ApplyDeviceEnvOverlay(d)
 		if d.Security == "" {
 			d.Security = "None"
 		}

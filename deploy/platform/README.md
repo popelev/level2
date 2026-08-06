@@ -38,4 +38,15 @@ curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns%3D4%3Bi%3D4207'
 
 ## PLC on
 
-Set `LEVEL2_SIM_BROWSER=0`, fill OPC credentials like smoke, confirm leaf `ns=4;i=4208` writes to `collector.samples`.
+Set `LEVEL2_SIM_BROWSER=0`, copy OPC credentials from smoke (or fill `.env`):
+
+```bash
+python3 deploy/platform/sync_opc_from_smoke.py   # VM lab helper
+docker compose up -d --force-recreate
+curl -s http://127.0.0.1:8080/readyz
+curl -s 'http://127.0.0.1:8080/api/v1/tags?device_id=s7_1500' | head
+```
+
+Stop Telegraf smoke input to avoid duplicate writes: `docker stop level2-telegraf`.
+
+Confirm leaf `ns=4;i=4208` writes to `collector.samples`.

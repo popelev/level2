@@ -9,6 +9,7 @@ import (
 
 	"github.com/popelev/level2/internal/core"
 	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
+	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/driver/simbrowser"
 )
 
@@ -112,6 +113,7 @@ func (h *Hub) newEntry(ctx context.Context, dev core.Device) (*Entry, error) {
 		stub := &alwaysOn{}
 		return &Entry{Device: dev, Driver: stub, Browser: demo, Connected: true}, nil
 	}
+	config.ApplyDeviceEnvOverlay(&dev)
 	d := opcuaDriver.New(dev, h.log.With("device", dev.ID))
 	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	err := d.Connect(cctx)

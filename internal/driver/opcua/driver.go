@@ -10,6 +10,7 @@ import (
 
 	"github.com/gopcua/opcua"
 	"github.com/gopcua/opcua/ua"
+	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
 )
 
@@ -41,6 +42,8 @@ func (d *Driver) Connect(ctx context.Context) error {
 		return nil
 	}
 
+	config.ApplyDeviceEnvOverlay(&d.device)
+
 	opts := []opcua.Option{
 		opcua.SecurityMode(ua.MessageSecurityModeNone),
 		opcua.SecurityPolicy(ua.SecurityPolicyURINone),
@@ -61,7 +64,7 @@ func (d *Driver) Connect(ctx context.Context) error {
 	d.client = c
 	d.alive.Store(true)
 	d.nsCache = nil
-	d.log.Info("opcua connected", "endpoint", d.device.Endpoint, "device", d.device.ID)
+	d.log.Info("opcua connected", "endpoint", d.device.Endpoint, "device", d.device.ID, "user", d.device.Username)
 	return nil
 }
 
