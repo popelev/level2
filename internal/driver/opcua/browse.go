@@ -48,11 +48,31 @@ func (d *Driver) BrowseChildren(ctx context.Context, parentNodeID string) ([]cor
 			BrowseName:  ref.BrowseName.Name,
 			DisplayName: ref.DisplayName.Text,
 			NodeClass:   fmt.Sprintf("%v", ref.NodeClass),
-			IsLeaf:      ref.NodeClass == ua.NodeClassVariable,
+			IsLeaf:      d.isScalarVariableLeaf(ctx, c, ref),
 		}
 		out = append(out, bn)
 	}
 	return out, nil
+}
+
+// isScalarVariableLeaf is false for OPC structure/UDT variables that expose field nodes as children.
+func (d *Driver) isScalarVariableLeaf(ctx context.Context, c opcuaClient, ref *ua.ReferenceDescription) bool {
+	if ref.NodeClass != ua.NodeClassVariable {
+		return false
+	}
+	childDesc := &ua.BrowseDescription{
+		NodeID:          ref.NodeID.NodeID,
+		BrowseDirection: ua.BrowseDirectionForward,
+		ReferenceTypeID: ua.NewNumericNodeID(0, id.HierarchicalReferences),
+		IncludeSubtypes: true,
+		NodeClassMask:   uint32(ua.NodeClassObject | ua.NodeClassVariable),
+		ResultMask:      uint32(ua.BrowseResultMaskAll),
+	}
+	kids, err := d.browseAllReferences(ctx, c, childDesc)
+	if err != nil || len(kids) == 0 {
+		return true
+	}
+	return false
 }
 
 // opcuaClient is the subset of *opcua.Client used for browsing.

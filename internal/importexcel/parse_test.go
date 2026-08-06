@@ -4,8 +4,26 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/popelev/level2/internal/core"
 	"github.com/xuri/excelize/v2"
 )
+
+func TestWriteRoundTrip(t *testing.T) {
+	tags := []core.Tag{
+		{ID: "E2_ECE_300_CL_001", NodeID: "nsu=http://Tankhouse_Data_2;i=2880", Path: "Area A/Path A", DataType: core.ValueFloat64, Enabled: true},
+	}
+	b, err := Write(tags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := Parse(bytes.NewReader(b))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Tags) != 1 || res.Tags[0].ID != tags[0].ID {
+		t.Fatalf("got %#v", res.Tags)
+	}
+}
 
 func TestParse_TankhouseLike(t *testing.T) {
 	f := excelize.NewFile()

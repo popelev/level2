@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import TreeNode from '../components/TreeNode.jsx'
-import TagTreeTable from '../components/TagTreeTable.jsx'
 import { ROOT_ID, getJSON, guessType, sanitizeId } from '../api.js'
 import { normalizePath } from '../tagTree.js'
 
@@ -11,14 +10,10 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
   const [selectedPath, setSelectedPath] = useState('')
   const [rootKids, setRootKids] = useState([])
   const [treeKey, setTreeKey] = useState(0)
-  const [filter, setFilter] = useState('')
-  const [importBusy, setImportBusy] = useState(false)
   const [msg, setMsg] = useState('')
-  const [replaceTags, setReplaceTags] = useState(false)
-  const [addrChecked, setAddrChecked] = useState(() => new Map()) // node_id -> { browse_name, node_id, path, datatype? }
+  const [addrChecked, setAddrChecked] = useState(() => new Map())
   const [expandingId, setExpandingId] = useState('')
   const [bulkBusy, setBulkBusy] = useState(false)
-  const [dbSelected, setDbSelected] = useState(() => new Set())
 
   useEffect(() => {
     if (initialDeviceId && devices.some((d) => d.id === initialDeviceId)) {
@@ -65,11 +60,10 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     if (!deviceId) return
     onError('')
     setAddrChecked(new Map())
-    setDbSelected(new Set())
     Promise.all([reloadTree(), refreshTags(deviceId)]).catch((e) => onError(String(e.message || e)))
     const t = setInterval(() => {
       refreshTags(deviceId).catch(() => {})
-    }, 3000)
+    }, 5000)
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId])
@@ -92,6 +86,24 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     if (!r.ok) throw new Error(await r.text())
   }
 
+  const unmonitorTags = async (tagIds) => {
+    if (!deviceId || !tagIds?.length) return
+    onError('')
+    try {
+      for (const tagId of tagIds) {
+        const r = await fetch(
+          `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tagId)}`,
+          { method: 'DELETE' },
+        )
+        if (!r.ok && r.status !== 204) throw new Error(await r.text())
+      }
+      await refreshTags(deviceId)
+      await onDevicesChanged()
+    } catch (ex) {
+      onError(String(ex.message || ex))
+    }
+  }
+
   const monitorSelectedNode = async () => {
     if (!deviceId || !selectedNode?.is_leaf) return
     onError('')
@@ -110,7 +122,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
         enabled: true,
         interval_ms: 1000,
       })
-      setMsg(`Monitoring ${id} → DB`)
+      setMsg(`Added ${id} to DB write list`)
       await refreshTags(deviceId)
       await onDevicesChanged()
     } catch (ex) {
@@ -142,7 +154,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
         })
         n++
       }
-      setMsg(`Wrote ${n} tag(s) → DB`)
+      setMsg(`Wrote ${n} tag(s) to DB write list`)
       setAddrChecked(new Map())
       await refreshTags(deviceId)
       await onDevicesChanged()
@@ -171,7 +183,6 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
       })
       return
     }
-    // Folder: expand all leaves via API
     if (!checked) {
       setExpandingId(node.node_id)
       try {
@@ -183,7 +194,6 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
           return next
         })
       } catch (ex) {
-        // still clear folder key
         setAddrChecked((prev) => {
           const next = new Map(prev)
           next.delete(node.node_id)
@@ -227,111 +237,6 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     }
   }
 
-  const unmonitorTags = async (tagIds) => {
-    if (!deviceId || !tagIds?.length) return
-    onError('')
-    try {
-      for (const tagId of tagIds) {
-        const r = await fetch(
-          `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tagId)}`,
-          { method: 'DELETE' },
-        )
-        if (!r.ok && r.status !== 204) throw new Error(await r.text())
-      }
-      setDbSelected((prev) => {
-        const next = new Set(prev)
-        for (const id of tagIds) next.delete(id)
-        return next
-      })
-      await refreshTags(deviceId)
-      await onDevicesChanged()
-    } catch (ex) {
-      onError(String(ex.message || ex))
-    }
-  }
-
-  const setTagsEnabled = async (tagList, enabled) => {
-    if (!deviceId || !tagList?.length) return
-    onError('')
-    try {
-      for (const tag of tagList) {
-        const r = await fetch(
-          `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag.id)}`,
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...tag, enabled }),
-          },
-        )
-        if (!r.ok) throw new Error(await r.text())
-      }
-      await refreshTags(deviceId)
-    } catch (ex) {
-      onError(String(ex.message || ex))
-    }
-  }
-
-  const updateTag = async (tag) => {
-    if (!deviceId || !tag?.id) return
-    onError('')
-    try {
-      const r = await fetch(
-        `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag.id)}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(tag),
-        },
-      )
-      if (!r.ok) throw new Error(await r.text())
-      await refreshTags(deviceId)
-    } catch (ex) {
-      onError(String(ex.message || ex))
-    }
-  }
-
-  const importExcel = async (file) => {
-    if (!deviceId || !file) return
-    if (replaceTags && !window.confirm('Replace all monitored tags for this server?')) return
-    setImportBusy(true)
-    setMsg('')
-    try {
-      const fd = new FormData()
-      fd.append('file', file)
-      const q = replaceTags ? '?replace=1' : ''
-      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/import${q}`, {
-        method: 'POST',
-        body: fd,
-      })
-      const text = await r.text()
-      if (!r.ok) throw new Error(text)
-      const data = JSON.parse(text)
-      const errN = (data.errors && data.errors.length) || 0
-      setMsg(
-        `Import: +${data.added} / ~${data.updated} (total ${data.total})` +
-          (errN ? ` · ${errN} row error(s)` : ''),
-      )
-      if (errN) onError(data.errors.slice(0, 5).join('; '))
-      await refreshTags(deviceId)
-      await onDevicesChanged()
-    } catch (ex) {
-      onError(String(ex.message || ex))
-    } finally {
-      setImportBusy(false)
-    }
-  }
-
-  const monitored = useMemo(() => {
-    const q = filter.trim().toLowerCase()
-    if (!q) return tags
-    return tags.filter(
-      (t) =>
-        t.tag.id.toLowerCase().includes(q) ||
-        t.tag.node_id.toLowerCase().includes(q) ||
-        String(t.tag.path || '').toLowerCase().includes(q),
-    )
-  }, [tags, filter])
-
   const leafCheckedCount = useMemo(() => {
     let n = 0
     for (const v of addrChecked.values()) {
@@ -340,23 +245,12 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     return n
   }, [addrChecked])
 
-  const onDbToggleSelect = (ids, checked) => {
-    setDbSelected((prev) => {
-      const next = new Set(prev)
-      for (const id of ids) {
-        if (checked) next.add(id)
-        else next.delete(id)
-      }
-      return next
-    })
-  }
-
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <h2>Monitored tags</h2>
-          <p className="muted">Choose nodes to write to TimescaleDB · browse address space · Excel import</p>
+          <h2>Address Space</h2>
+          <p className="muted">Browse OPC UA and add tags to the DB write list</p>
         </div>
         <label className="server-pick">
           Server
@@ -378,174 +272,93 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
       {!deviceId && <p className="muted">Create a server on the Servers page first</p>}
 
       {deviceId && currentDevice && !currentDevice.connected && (
-        <p className="err">Server “{deviceId}” is disconnected — Address Space / live values may be unavailable</p>
+        <p className="err">Server “{deviceId}” is disconnected — browse may be unavailable</p>
       )}
 
+      {msg && <p className="good small">{msg}</p>}
+
       {deviceId && (
-        <div className="monitor-layout">
-          <section className="panel address">
-            <div className="panel-head">
-              <h3>Address Space</h3>
-              <button type="button" className="secondary" onClick={reloadTree}>Refresh</button>
-            </div>
-            <div className="address-tree" key={`${deviceId}-${treeKey}`}>
-              <div
-                className={`tree-row${selectedNode?.node_id === ROOT_ID ? ' selected' : ''}`}
-              >
-                <span className="tree-check-spacer" />
-                <button
-                  type="button"
-                  className="tree-row-btn"
-                  onClick={() => {
-                    setSelectedNode({ node_id: ROOT_ID, browse_name: 'Root', is_leaf: false })
-                    setSelectedPath('')
-                  }}
-                >
-                  <span className="chev">▾</span>
-                  <span className="icon fold" />
-                  <span className="name">Root</span>
-                </button>
-              </div>
-              {rootKids.map((n) => (
-                <TreeNode
-                  key={n.node_id}
-                  node={n}
-                  depth={1}
-                  pathPrefix=""
-                  selectedNodeId={selectedNode?.node_id}
-                  onSelect={(node, path) => {
-                    setSelectedNode(node)
-                    setSelectedPath(path || '')
-                  }}
-                  loadChildren={loadChildren}
-                  checkedIds={checkedIds}
-                  onToggleCheck={onToggleAddrCheck}
-                  expandingId={expandingId}
-                  monitoredIds={monitoredIds}
-                />
-              ))}
-            </div>
-            <div className="sel-bar">
-              <span className="muted small">{leafCheckedCount} selected</span>
-              <button type="button" disabled={!leafCheckedCount || bulkBusy} onClick={writeCheckedToDB}>
-                Write selected to DB
-              </button>
+        <section className="panel address address-only">
+          <div className="panel-head">
+            <h3>Tree</h3>
+            <button type="button" className="secondary" onClick={reloadTree}>Refresh</button>
+          </div>
+          <div className="address-tree" key={`${deviceId}-${treeKey}`}>
+            <div
+              className={`tree-row${selectedNode?.node_id === ROOT_ID ? ' selected' : ''}`}
+            >
+              <span className="tree-check-spacer" />
               <button
                 type="button"
-                className="secondary"
-                disabled={!addrChecked.size}
-                onClick={() => setAddrChecked(new Map())}
+                className="tree-row-btn"
+                onClick={() => {
+                  setSelectedNode({ node_id: ROOT_ID, browse_name: 'Root', is_leaf: false })
+                  setSelectedPath('')
+                }}
               >
-                Clear
+                <span className="chev">▾</span>
+                <span className="name">Root</span>
               </button>
             </div>
-            {selectedNode && (
-              <div className="node-detail">
-                <div className="mono">{selectedNode.browse_name}</div>
-                <div className="mono small muted">{selectedNode.node_id}</div>
-                {selectedNode.is_leaf && (
-                  <div className="row tight" style={{ marginTop: 8 }}>
-                    <button type="button" onClick={monitorSelectedNode}>
-                      {isMonitored(selectedNode.node_id) ? 'Update in DB list' : 'Write to DB (monitor)'}
-                    </button>
-                    {isMonitored(selectedNode.node_id) && (
-                      <button
-                        type="button"
-                        className="secondary"
-                        onClick={() => {
-                          const t = tags.find((x) => x.tag.node_id === selectedNode.node_id)
-                          if (t) unmonitorTags([t.tag.id])
-                        }}
-                      >
-                        Stop writing
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </section>
-
-          <section className="panel monitored">
-            <div className="panel-head">
-              <h3>DB write list</h3>
-              <input
-                className="search"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder="filter"
-              />
-            </div>
-            <p className="hint">Only enabled tags in this list are polled and stored.</p>
-            <div className="import-box">
-              <div className="muted">Excel import</div>
-              <label className="check">
-                <input type="checkbox" checked={replaceTags} onChange={(e) => setReplaceTags(e.target.checked)} />
-                replace all tags
-              </label>
-              <input
-                type="file"
-                accept=".xlsx"
-                disabled={importBusy}
-                onChange={(e) => {
-                  const f = e.target.files?.[0]
-                  e.target.value = ''
-                  if (f) importExcel(f)
+            {rootKids.map((n) => (
+              <TreeNode
+                key={n.node_id}
+                node={n}
+                depth={1}
+                pathPrefix=""
+                selectedNodeId={selectedNode?.node_id}
+                onSelect={(node, path) => {
+                  setSelectedNode(node)
+                  setSelectedPath(path || '')
                 }}
+                loadChildren={loadChildren}
+                checkedIds={checkedIds}
+                onToggleCheck={onToggleAddrCheck}
+                expandingId={expandingId}
+                monitoredIds={monitoredIds}
               />
-              {msg && <div className="good small">{msg}</div>}
+            ))}
+          </div>
+          <div className="sel-bar">
+            <span className="muted small">{leafCheckedCount} selected</span>
+            <button type="button" disabled={!leafCheckedCount || bulkBusy} onClick={writeCheckedToDB}>
+              Write selected to DB
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!addrChecked.size}
+              onClick={() => setAddrChecked(new Map())}
+            >
+              Clear
+            </button>
+          </div>
+          {selectedNode && (
+            <div className="node-detail">
+              <div className="mono">{selectedNode.browse_name}</div>
+              <div className="mono small muted">{selectedNode.node_id}</div>
+              {selectedNode.is_leaf && (
+                <div className="row tight" style={{ marginTop: 8 }}>
+                  <button type="button" onClick={monitorSelectedNode}>
+                    {isMonitored(selectedNode.node_id) ? 'Update in DB list' : 'Write to DB (monitor)'}
+                  </button>
+                  {isMonitored(selectedNode.node_id) && (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        const t = tags.find((x) => x.tag.node_id === selectedNode.node_id)
+                        if (t) unmonitorTags([t.tag.id])
+                      }}
+                    >
+                      Stop writing
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
-            {dbSelected.size > 0 && (
-              <div className="sel-bar">
-                <span className="muted small">{dbSelected.size} selected</span>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    const list = tags.filter((t) => dbSelected.has(t.tag.id)).map((t) => t.tag)
-                    setTagsEnabled(list, true)
-                  }}
-                >
-                  Enable
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    const list = tags.filter((t) => dbSelected.has(t.tag.id)).map((t) => t.tag)
-                    setTagsEnabled(list, false)
-                  }}
-                >
-                  Disable
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => {
-                    if (window.confirm(`Remove ${dbSelected.size} tag(s)?`)) {
-                      unmonitorTags([...dbSelected])
-                    }
-                  }}
-                >
-                  Remove selected
-                </button>
-                <button type="button" className="secondary" onClick={() => setDbSelected(new Set())}>
-                  Clear
-                </button>
-              </div>
-            )}
-            <div className="table-wrap compact tall">
-              <TagTreeTable
-                tagValues={monitored}
-                selected={dbSelected}
-                onToggleSelect={onDbToggleSelect}
-                onSetEnabled={setTagsEnabled}
-                onRemove={unmonitorTags}
-                onUpdateTag={updateTag}
-              />
-            </div>
-          </section>
-        </div>
+          )}
+        </section>
       )}
     </div>
   )

@@ -84,6 +84,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/browse", s.handleBrowse)
 	mux.HandleFunc("POST /api/v1/expand", s.handleExpand)
 	mux.HandleFunc("POST /api/v1/devices/{id}/tags/import", s.handleImportExcel)
+	mux.HandleFunc("GET /api/v1/devices/{id}/tags.xlsx", s.handleExportTagsExcel)
 	mux.HandleFunc("POST /api/v1/devices/{id}/tags", s.handleUpsertTag)
 	mux.HandleFunc("PUT /api/v1/devices/{id}/tags/{tagId}", s.handleUpsertTag)
 	mux.HandleFunc("DELETE /api/v1/devices/{id}/tags/{tagId}", s.handleDeleteTag)
@@ -288,6 +289,36 @@ func (s *Server) handleExpand(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleWriteNotImplemented(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "write to PLC not implemented yet", http.StatusNotImplemented)
+}
+
+func (s *Server) handleExportTagsExcel(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		http.Error(w, "config store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	deviceID := r.PathValue("id")
+	var tags []core.Tag
+	found := false
+	for _, d := range s.Cfg.Devices() {
+		if d.ID == deviceID {
+			tags = d.Tags
+			found = true
+			break
+		}
+	}
+	if !found {
+		http.Error(w, fmt.Sprintf("device %q not found", deviceID), http.StatusNotFound)
+		return
+	}
+	b, err := importexcel.Write(tags)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	name := fmt.Sprintf("%s-tags.xlsx", deviceID)
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, name))
+	_, _ = w.Write(b)
 }
 
 func (s *Server) handleImportExcel(w http.ResponseWriter, r *http.Request) {

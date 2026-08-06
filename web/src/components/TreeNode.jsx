@@ -71,7 +71,6 @@ export default function TreeNode({
         />
         <button type="button" className="tree-row-btn" onClick={toggleOpen}>
           <span className="chev">{node.is_leaf ? '·' : open ? '▾' : '▸'}</span>
-          <span className={`icon ${node.is_leaf ? 'var' : 'fold'}`} />
           <span className="name">{node.browse_name || node.display_name}</span>
           {inDB && node.is_leaf && <span className="badge-in-db">in DB</span>}
           {(loading || expanding) && <span className="muted small">…</span>}

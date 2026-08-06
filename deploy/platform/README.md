@@ -31,6 +31,7 @@ curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns%3D4%3Bi%3D4207'
 | GET | `/api/v1/devices` | device list |
 | GET | `/api/v1/browse?node_id=` | OPC browse (or sim) |
 | POST | `/api/v1/expand` | `{"node_id","parent_tag_id","max_depth"}` |
+| GET | `/api/v1/devices/{id}/tags.xlsx` | export plant-format tag list |
 | POST | `/api/v1/devices/{id}/tags/import` | multipart `file=.xlsx` (`?replace=1` to replace tags) |
 | PUT | `/api/v1/tags/{id}/value` | 501 until write phase |
 | GET | `/api/v1/ws/stream` | live samples WebSocket |

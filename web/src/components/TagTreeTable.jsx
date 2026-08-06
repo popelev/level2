@@ -38,7 +38,6 @@ function FolderRow({
       />
       <button type="button" className="tree-row-btn tt-tag" onClick={onToggleOpen}>
         <span className="chev">{open ? '▾' : '▸'}</span>
-        <span className="icon fold" />
         <span className="name">{node.name}</span>
         <span className="muted small">({leaves.length})</span>
       </button>
@@ -95,14 +94,16 @@ function LeafRow({
       />
       <div className="tt-label tt-tag">
         <span className="chev">·</span>
-        <span className="icon var" />
         <div>
           <div className="name">{tag.id}</div>
           <div className="mono small muted">{tag.node_id}</div>
         </div>
       </div>
       <span className="tt-meta mono">{formatValue(tv.sample)}</span>
-      <span className={`tt-meta small ${formatQuality(tv.sample) === 'good' ? 'good' : formatQuality(tv.sample) === 'bad' ? 'badq' : 'muted'}`}>
+      <span
+        className={`tt-meta small ${formatQuality(tv.sample) === 'good' ? 'good' : formatQuality(tv.sample) === 'bad' ? 'badq' : 'muted'}`}
+        title={formatQuality(tv.sample) === 'bad' ? 'Often a UDT/structure node — use child rValueOut (e.g. ns=4;i=4901 not 4900)' : undefined}
+      >
         {formatQuality(tv.sample)}
       </span>
       <span className="tt-meta mono small muted">{formatSampleTime(tv.sample, tv.updated_at)}</span>
@@ -203,7 +204,7 @@ export default function TagTreeTable({
   const tree = useMemo(() => buildTagTree(tagValues), [tagValues])
 
   if (tagValues.length === 0) {
-    return <p className="muted">No monitored tags — select leaves in Address Space or import Excel</p>
+    return <p className="muted">No tags in DB write list — use Address Space or Import / Export</p>
   }
 
   return (

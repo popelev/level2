@@ -182,7 +182,7 @@ export default function ProjectsPage({ devices, onError, onDevicesChanged }) {
         {preview && (
           <div className="preview-box">
             {preview.legacy ? (
-              <p className="badq">Legacy plant sheet — import on Monitored tags for one server.</p>
+              <p className="badq">Legacy plant sheet — use Import / Export tab for one server.</p>
             ) : (
               <p className="good">
                 Preview: {preview.servers} servers, {preview.tags} tags

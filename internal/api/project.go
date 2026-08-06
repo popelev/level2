@@ -87,7 +87,7 @@ func (s *Server) handleProjectImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.Legacy {
-		http.Error(w, "legacy plant Excel: import on Monitored tags page for a selected server", http.StatusBadRequest)
+		http.Error(w, "legacy plant Excel: import on Import / Export tab for a selected server", http.StatusBadRequest)
 		return
 	}
 	if err := s.Cfg.ApplyProject(p.Devices, replace); err != nil {

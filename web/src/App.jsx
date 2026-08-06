@@ -4,6 +4,9 @@ import ServersPage from './pages/ServersPage.jsx'
 import MonitorPage from './pages/MonitorPage.jsx'
 import ProjectsPage from './pages/ProjectsPage.jsx'
 
+import DbWriteListPage from './pages/DbWriteListPage.jsx'
+import TagsImportExportPage from './pages/TagsImportExportPage.jsx'
+
 function deviceFromHash() {
   const h = location.hash || ''
   const q = h.indexOf('?')
@@ -13,7 +16,9 @@ function deviceFromHash() {
 
 function currentPage() {
   const h = (location.hash || '#/servers').replace(/^#\/?/, '')
-  if (h.startsWith('monitor') || h.startsWith('tags')) return 'monitor'
+  if (h.startsWith('monitor')) return 'monitor'
+  if (h.startsWith('db-list') || h.startsWith('tags')) return 'db-list'
+  if (h.startsWith('import')) return 'import'
   if (h.startsWith('project')) return 'projects'
   return 'servers'
 }
@@ -56,7 +61,7 @@ export default function App() {
   const go = (name, query) => {
     location.hash = query ? `#/${name}?${query}` : `#/${name}`
     setPage(name)
-    if (name === 'monitor') setMonitorDevice(deviceFromHash())
+    if (name === 'monitor' || name === 'import' || name === 'db-list') setMonitorDevice(deviceFromHash())
   }
 
   return (
@@ -83,9 +88,23 @@ export default function App() {
         <button
           type="button"
           className={page === 'monitor' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => go('monitor')}
+          onClick={() => go('monitor', monitorDevice ? `device=${encodeURIComponent(monitorDevice)}` : undefined)}
         >
-          Monitored tags
+          Address Space
+        </button>
+        <button
+          type="button"
+          className={page === 'db-list' ? 'nav-btn active' : 'nav-btn'}
+          onClick={() => go('db-list', monitorDevice ? `device=${encodeURIComponent(monitorDevice)}` : undefined)}
+        >
+          DB write list
+        </button>
+        <button
+          type="button"
+          className={page === 'import' ? 'nav-btn active' : 'nav-btn'}
+          onClick={() => go('import', monitorDevice ? `device=${encodeURIComponent(monitorDevice)}` : undefined)}
+        >
+          Import / Export
         </button>
         <button
           type="button"
@@ -108,6 +127,24 @@ export default function App() {
       {page === 'monitor' && (
         <MonitorPage
           key={monitorDevice || 'default'}
+          devices={devices}
+          initialDeviceId={monitorDevice}
+          onError={setErr}
+          onDevicesChanged={refreshStatus}
+        />
+      )}
+      {page === 'db-list' && (
+        <DbWriteListPage
+          key={monitorDevice || 'db-default'}
+          devices={devices}
+          initialDeviceId={monitorDevice}
+          onError={setErr}
+          onDevicesChanged={refreshStatus}
+        />
+      )}
+      {page === 'import' && (
+        <TagsImportExportPage
+          key={monitorDevice || 'import-default'}
           devices={devices}
           initialDeviceId={monitorDevice}
           onError={setErr}
