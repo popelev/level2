@@ -32,8 +32,18 @@ func TestParseNodeID_NamespaceURI(t *testing.T) {
 	}
 }
 
+func TestParseNodeID_ShorthandNS0(t *testing.T) {
+	p, err := ParseNodeID("i=2253")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Namespace != 0 || p.Identifier != "2253" || p.IdentifierType != "i" {
+		t.Fatalf("unexpected %#v", p)
+	}
+}
+
 func TestParseNodeID_Invalid(t *testing.T) {
-	cases := []string{"", "i=1", "ns=4", "ns=x;i=1", "ns=4;i=abc", "nsu=;i=1"}
+	cases := []string{"", "ns=4", "ns=x;i=1", "ns=4;i=abc", "nsu=;i=1"}
 	for _, c := range cases {
 		if _, err := ParseNodeID(c); err == nil {
 			t.Fatalf("expected error for %q", c)

@@ -3,8 +3,17 @@ package opcua
 import (
 	"testing"
 
+	"github.com/gopcua/opcua/ua"
 	"github.com/popelev/level2/internal/core"
 )
+
+func TestFormatNodeID_TwoByteNS0(t *testing.T) {
+	n := ua.NewTwoByteNodeID(0, 85)
+	got := formatNodeID(n)
+	if got != "ns=0;i=85" {
+		t.Fatalf("got %q want ns=0;i=85", got)
+	}
+}
 
 func TestExpandFromTree_LeavesOnly(t *testing.T) {
 	nodes := []core.BrowseNode{

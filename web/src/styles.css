@@ -129,12 +129,18 @@ body {
 }
 .panel-head h2 { margin: 0; }
 
-.address { min-height: 420px; }
+.address {
+  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+}
 .address-tree {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--bg0);
-  max-height: 520px;
+  flex: 1 1 auto;
+  min-height: min(52vh, 420px);
+  max-height: min(72vh, 780px);
   overflow: auto;
   padding: 4px 0;
 }

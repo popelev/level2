@@ -50,3 +50,27 @@ curl -s 'http://127.0.0.1:8080/api/v1/tags?device_id=s7_1500' | head
 Stop Telegraf smoke input to avoid duplicate writes: `docker stop level2-telegraf`.
 
 Confirm leaf `ns=4;i=4208` writes to `collector.samples`.
+
+### Acceptance scripts
+
+```bash
+cd ~/level2/deploy/platform
+chmod +x verify_offline.sh verify_plc_on.sh verify_all.sh
+
+# PLC off only (sim browser + demo samples)
+./verify_offline.sh
+
+# PLC on only (live S7-1500)
+./verify_plc_on.sh
+
+# Both modes in sequence (toggles LEVEL2_SIM_BROWSER in .env)
+./verify_all.sh both
+```
+
+Run unit tests in Docker (no local Go required):
+
+```bash
+cd ~/level2
+docker run --rm -e GOTOOLCHAIN=auto -v "$PWD":/src -w /src golang:1.24 go test ./...
+```
+

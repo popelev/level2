@@ -26,25 +26,20 @@ func (d *Driver) BrowseChildren(ctx context.Context, parentNodeID string) ([]cor
 	if err != nil {
 		return nil, err
 	}
-	req := &ua.BrowseRequest{
-		NodesToBrowse: []*ua.BrowseDescription{{
-			NodeID:          nid,
-			BrowseDirection: ua.BrowseDirectionForward,
-			ReferenceTypeID: ua.NewNumericNodeID(0, id.HierarchicalReferences),
-			IncludeSubtypes: true,
-			NodeClassMask:   uint32(ua.NodeClassObject | ua.NodeClassVariable | ua.NodeClassObjectType | ua.NodeClassVariableType),
-			ResultMask:      uint32(ua.BrowseResultMaskAll),
-		}},
+	desc := &ua.BrowseDescription{
+		NodeID:          nid,
+		BrowseDirection: ua.BrowseDirectionForward,
+		ReferenceTypeID: ua.NewNumericNodeID(0, id.HierarchicalReferences),
+		IncludeSubtypes: true,
+		NodeClassMask:   uint32(ua.NodeClassObject | ua.NodeClassVariable | ua.NodeClassObjectType | ua.NodeClassVariableType),
+		ResultMask:      uint32(ua.BrowseResultMaskAll),
 	}
-	resp, err := c.Browse(ctx, req)
+	refs, err := d.browseAllReferences(ctx, c, desc)
 	if err != nil {
 		return nil, err
 	}
-	if len(resp.Results) == 0 || resp.Results[0] == nil {
-		return nil, nil
-	}
-	out := make([]core.BrowseNode, 0, len(resp.Results[0].References))
-	for _, ref := range resp.Results[0].References {
+	out := make([]core.BrowseNode, 0, len(refs))
+	for _, ref := range refs {
 		if ref == nil || ref.NodeID == nil || ref.NodeID.NodeID == nil {
 			continue
 		}
@@ -58,6 +53,48 @@ func (d *Driver) BrowseChildren(ctx context.Context, parentNodeID string) ([]cor
 		out = append(out, bn)
 	}
 	return out, nil
+}
+
+// opcuaClient is the subset of *opcua.Client used for browsing.
+type opcuaClient interface {
+	Browse(context.Context, *ua.BrowseRequest) (*ua.BrowseResponse, error)
+	BrowseNext(context.Context, *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error)
+}
+
+func (d *Driver) browseAllReferences(ctx context.Context, c opcuaClient, desc *ua.BrowseDescription) ([]*ua.ReferenceDescription, error) {
+	req := &ua.BrowseRequest{NodesToBrowse: []*ua.BrowseDescription{desc}}
+	resp, err := c.Browse(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Results) == 0 || resp.Results[0] == nil {
+		return nil, nil
+	}
+	res := resp.Results[0]
+	if res.StatusCode != ua.StatusOK {
+		return nil, fmt.Errorf("browse status %s", res.StatusCode)
+	}
+	all := append([]*ua.ReferenceDescription(nil), res.References...)
+	cp := res.ContinuationPoint
+	for len(cp) > 0 {
+		nextResp, err := c.BrowseNext(ctx, &ua.BrowseNextRequest{
+			ContinuationPoints:        [][]byte{cp},
+			ReleaseContinuationPoints: false,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(nextResp.Results) == 0 || nextResp.Results[0] == nil {
+			break
+		}
+		nres := nextResp.Results[0]
+		if nres.StatusCode != ua.StatusOK {
+			return nil, fmt.Errorf("browse next status %s", nres.StatusCode)
+		}
+		all = append(all, nres.References...)
+		cp = nres.ContinuationPoint
+	}
+	return all, nil
 }
 
 // ProbeNode checks NodeClass via OPC UA Read (exists / is Variable).
@@ -149,13 +186,19 @@ func (d *Driver) expandWalk(ctx context.Context, nodeID, tagPrefix, path string,
 }
 
 func formatNodeID(n *ua.NodeID) string {
+	if n == nil {
+		return ""
+	}
+	ns := n.Namespace()
 	switch n.Type() {
-	case ua.NodeIDTypeNumeric:
-		return fmt.Sprintf("ns=%d;i=%d", n.Namespace(), n.IntID())
 	case ua.NodeIDTypeString:
-		return fmt.Sprintf("ns=%d;s=%s", n.Namespace(), n.StringID())
+		return fmt.Sprintf("ns=%d;s=%s", ns, n.StringID())
+	case ua.NodeIDTypeGUID:
+		return fmt.Sprintf("ns=%d;g=%s", ns, n.StringID())
+	case ua.NodeIDTypeByteString:
+		return fmt.Sprintf("ns=%d;b=%s", ns, n.StringID())
 	default:
-		return n.String()
+		return fmt.Sprintf("ns=%d;i=%d", ns, n.IntID())
 	}
 }
 

@@ -20,6 +20,13 @@ func ParseNodeID(raw string) (ParsedNodeID, error) {
 	if raw == "" {
 		return ParsedNodeID{}, fmt.Errorf("empty node id")
 	}
+	// Shorthand from some OPC stacks / legacy API responses (namespace 0).
+	if !strings.HasPrefix(raw, "ns=") && !strings.HasPrefix(raw, "nsu=") {
+		if strings.HasPrefix(raw, "i=") || strings.HasPrefix(raw, "s=") ||
+			strings.HasPrefix(raw, "g=") || strings.HasPrefix(raw, "b=") {
+			raw = "ns=0;" + raw
+		}
+	}
 
 	idSep, idType := findIdentSep(raw)
 	if idSep < 0 {
