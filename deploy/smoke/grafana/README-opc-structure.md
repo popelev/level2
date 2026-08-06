@@ -94,7 +94,7 @@ SQL matches **both** naming schemes via `IN (...)`.
 - **Gauge** — last `value`; min/max from scale tags (`configFromData`).
 - **Unit / Min / Max** — last sample stats (`value_text` for unit; `value_num` for scales).
 - **Structure prefix** — echoes the selected variable (text Stat; `reduceOptions.fields` must include strings).
-- **Resolved tags** — which child `tag_id`s were found (last 24h), with roles `value` / `min` / `max` / `unit`.
+- **Resolved tags** — child leaf names relative to the selected structure (`rvalueout`, `strscale_min`, …), not the full `tag_id` path.
 - **Trend** — value + min/max scale over time.
 
 ### Why Unit can show "No data"

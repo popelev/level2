@@ -206,7 +206,7 @@
     },
     {
       "datasource": { "type": "postgres", "uid": "timescaledb" },
-      "description": "Resolved child tag_ids for this structure (Siemens + generic).",
+      "description": "Resolved child tags for this structure. tag_id shown relative to the selected structure (no long path prefix).",
       "fieldConfig": {
         "defaults": {
           "custom": { "align": "left", "inspect": false },
@@ -227,11 +227,11 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT role, regexp_replace(tag_id, '^objects_serverinterfaces_', '') AS tag_id, value_num, value_text, time\nFROM (\n  SELECT\n    CASE\n      WHEN tag_id ~ '_(rvalueout|realvalue)$' THEN 'value'\n      WHEN tag_id ~ '_(strscale_min|min_scale)$' THEN 'min'\n      WHEN tag_id ~ '_(strscale_max|max_scale)$' THEN 'max'\n      WHEN tag_id ~ '_(sunit|unit)$' THEN 'unit'\n      ELSE 'other'\n    END AS role,\n    tag_id, value_num, value_text, time,\n    ROW_NUMBER() OVER (PARTITION BY tag_id ORDER BY time DESC) AS rn\n  FROM collector.samples\n  WHERE tag_id IN (\n    '${structure}_rvalueout', '${structure}_realvalue',\n    '${structure}_strscale_min', '${structure}_min_scale',\n    '${structure}_strscale_max', '${structure}_max_scale',\n    '${structure}_sunit', '${structure}_unit'\n  )\n  AND time > NOW() - INTERVAL '24 hours'\n) t\nWHERE rn = 1\nORDER BY role, tag_id",
+          "rawSql": "SELECT role,\n  CASE\n    WHEN tag_id LIKE '${structure}_%' THEN substr(tag_id, length('${structure}') + 2)\n    ELSE regexp_replace(tag_id, '^objects_serverinterfaces_', '')\n  END AS tag_id,\n  value_num, value_text, time\nFROM (\n  SELECT\n    CASE\n      WHEN tag_id ~ '_(rvalueout|realvalue)$' THEN 'value'\n      WHEN tag_id ~ '_(strscale_min|min_scale)$' THEN 'min'\n      WHEN tag_id ~ '_(strscale_max|max_scale)$' THEN 'max'\n      WHEN tag_id ~ '_(sunit|unit)$' THEN 'unit'\n      ELSE 'other'\n    END AS role,\n    tag_id, value_num, value_text, time,\n    ROW_NUMBER() OVER (PARTITION BY tag_id ORDER BY time DESC) AS rn\n  FROM collector.samples\n  WHERE tag_id IN (\n    '${structure}_rvalueout', '${structure}_realvalue',\n    '${structure}_strscale_min', '${structure}_min_scale',\n    '${structure}_strscale_max', '${structure}_max_scale',\n    '${structure}_sunit', '${structure}_unit'\n  )\n  AND time > NOW() - INTERVAL '24 hours'\n) t\nWHERE rn = 1\nORDER BY role, tag_id",
           "refId": "A"
         }
       ],
-      "title": "Resolved tags (last hour)",
+      "title": "Resolved tags (last 24h)",
       "type": "table"
     },
     {
