@@ -66,21 +66,26 @@ func (s *Server) handleBulkUpsertTags(w http.ResponseWriter, r *http.Request) {
 			errors = append(errors, fmt.Sprintf("%s: duplicate id for node %s (kept %s)", t.ID, t.NodeID, prevNode))
 			continue
 		}
-		if err := validateTagFields(&t); err != nil {
-			errors = append(errors, t.ID+": "+err.Error())
-			continue
-		}
-		// Prefer client datatype; only resolve when empty (avoids N OPC round-trips).
-		if t.DataType == "" {
-			s.resolveTagDataType(r.Context(), deviceID, &t)
-			_ = validateTagFields(&t)
-		}
+		t.DataType = core.NormalizeValueType(t.DataType)
 		seenNode[t.NodeID] = t.ID
 		seenID[t.ID] = t.NodeID
 		clean = append(clean, t)
 	}
 
-	added, updated, err := s.Cfg.MergeTags(deviceID, clean, false)
+	// Batch OPC DataType for tags the client left empty (no name heuristics as primary).
+	s.resolveEmptyDataTypesBatch(r.Context(), deviceID, clean)
+
+	var validated []core.Tag
+	for i := range clean {
+		t := clean[i]
+		if err := validateTagFields(&t); err != nil {
+			errors = append(errors, t.ID+": "+err.Error())
+			continue
+		}
+		validated = append(validated, t)
+	}
+
+	added, updated, err := s.Cfg.MergeTags(deviceID, validated, false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

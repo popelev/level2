@@ -169,7 +169,18 @@ func (d *Driver) ProbeNode(ctx context.Context, nodeID string) (exists bool, isL
 
 // ExpandStructure walks hierarchical children and returns leaf Variable tags.
 // Each node is browsed once; children of structures are reused (no double Browse for IsLeaf).
+// DataType comes from batched OPC Attribute Read (GuessDataType only if Read fails).
 func (d *Driver) ExpandStructure(ctx context.Context, parentNodeID, parentTagID string, maxDepth int) ([]core.ExpandedTag, error) {
+	return d.ExpandStructureWithProgress(ctx, parentNodeID, parentTagID, maxDepth, nil)
+}
+
+// ExpandProgressFunc reports expand phases: "browse" (done=total=leaf count) then
+// "datatype" (done/total while Attribute DataType is read in chunks).
+type ExpandProgressFunc func(phase string, done, total int)
+
+// ExpandStructureWithProgress is ExpandStructure plus optional progress callbacks
+// for UI (e.g. "Reading datatypes 1200/3500…").
+func (d *Driver) ExpandStructureWithProgress(ctx context.Context, parentNodeID, parentTagID string, maxDepth int, onProgress ExpandProgressFunc) ([]core.ExpandedTag, error) {
 	if maxDepth <= 0 {
 		maxDepth = 16
 	}
@@ -177,8 +188,37 @@ func (d *Driver) ExpandStructure(ctx context.Context, parentNodeID, parentTagID 
 		parentTagID = "udt"
 	}
 	var out []core.ExpandedTag
-	err := d.expandWalk(ctx, parentNodeID, parentTagID, "", 0, maxDepth, &out)
-	return out, err
+	if err := d.expandWalk(ctx, parentNodeID, parentTagID, "", 0, maxDepth, &out); err != nil {
+		return nil, err
+	}
+	if onProgress != nil {
+		onProgress("browse", len(out), len(out))
+	}
+	d.fillExpandedDataTypes(ctx, out, onProgress)
+	return out, nil
+}
+
+func (d *Driver) fillExpandedDataTypes(ctx context.Context, tags []core.ExpandedTag, onProgress ExpandProgressFunc) {
+	if len(tags) == 0 {
+		return
+	}
+	ids := make([]string, len(tags))
+	for i := range tags {
+		ids[i] = tags[i].NodeID
+	}
+	types := d.readOPCDataTypesBatch(ctx, ids, func(done, total int) {
+		if onProgress != nil {
+			onProgress("datatype", done, total)
+		}
+	})
+	for i := range tags {
+		if types[i] != "" {
+			tags[i].DataType = types[i]
+			continue
+		}
+		// Last resort only — prefer empty never; poll needs a platform type.
+		tags[i].DataType = GuessDataType(browseNameHint(tags[i]))
+	}
 }
 
 func (d *Driver) expandWalk(ctx context.Context, nodeID, tagPrefix, path string, depth, maxDepth int, out *[]core.ExpandedTag) error {
@@ -348,13 +388,11 @@ func (d *Driver) expandFromRefs(ctx context.Context, refs []*ua.ReferenceDescrip
 		grandRefs := grandAll[i]
 		isVar := ch.ref.NodeClass == ua.NodeClassVariable
 		if isVar && len(grandRefs) == 0 {
-			// Guess from browse name — avoid per-leaf OPC DataType Read during
-			// bulk expand (thousands of Reads). DB list can sync types later.
+			// DataType filled later via batched OPC Attribute Read.
 			*out = append(*out, core.ExpandedTag{
 				ID:         ch.tagID,
 				NodeID:     ch.nodeID,
 				BrowsePath: ch.path,
-				DataType:   GuessDataType(ch.name),
 			})
 			continue
 		}

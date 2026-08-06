@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -278,6 +279,7 @@ func (s *Server) handleExpand(w http.ResponseWriter, r *http.Request) {
 		NodeID      string `json:"node_id"`
 		ParentTagID string `json:"parent_tag_id"`
 		MaxDepth    int    `json:"max_depth"`
+		Stream      bool   `json:"stream"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "invalid json", http.StatusBadRequest)
@@ -292,12 +294,61 @@ func (s *Server) handleExpand(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+
+	wantStream := body.Stream || strings.Contains(r.Header.Get("Accept"), "ndjson")
+	if wantStream {
+		s.handleExpandStream(w, r, br, body.NodeID, body.ParentTagID, body.MaxDepth)
+		return
+	}
+
 	tags, err := br.ExpandStructure(r.Context(), body.NodeID, body.ParentTagID, body.MaxDepth)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	writeJSON(w, http.StatusOK, tags)
+}
+
+// expandWithProgress is implemented by the OPC driver for NDJSON progress during expand.
+type expandWithProgress interface {
+	ExpandStructureWithProgress(ctx context.Context, parentNodeID, parentTagID string, maxDepth int, onProgress func(phase string, done, total int)) ([]core.ExpandedTag, error)
+}
+
+func (s *Server) handleExpandStream(w http.ResponseWriter, r *http.Request, br core.Browser, nodeID, parentTagID string, maxDepth int) {
+	flusher, canFlush := w.(http.Flusher)
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.WriteHeader(http.StatusOK)
+	enc := json.NewEncoder(w)
+	writeEv := func(v any) {
+		_ = enc.Encode(v)
+		if canFlush {
+			flusher.Flush()
+		}
+	}
+
+	var tags []core.ExpandedTag
+	var err error
+	if prog, ok := br.(expandWithProgress); ok {
+		tags, err = prog.ExpandStructureWithProgress(r.Context(), nodeID, parentTagID, maxDepth, func(phase string, done, total int) {
+			writeEv(map[string]any{
+				"type":  "progress",
+				"phase": phase,
+				"done":  done,
+				"total": total,
+			})
+		})
+	} else {
+		tags, err = br.ExpandStructure(r.Context(), nodeID, parentTagID, maxDepth)
+		if err == nil {
+			writeEv(map[string]any{"type": "progress", "phase": "browse", "done": len(tags), "total": len(tags)})
+		}
+	}
+	if err != nil {
+		writeEv(map[string]any{"type": "error", "error": err.Error()})
+		return
+	}
+	writeEv(map[string]any{"type": "result", "tags": tags})
 }
 
 func (s *Server) handleWriteNotImplemented(w http.ResponseWriter, r *http.Request) {

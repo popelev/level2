@@ -1,6 +1,6 @@
 import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TreeNode from '../components/TreeNode.jsx'
-import { ROOT_ID, getJSON, guessType, sanitizeId } from '../api.js'
+import { ROOT_ID, getJSON, sanitizeId } from '../api.js'
 import {
   allocateUniqueTagIds,
   leafPathUnderPrefix,
@@ -160,7 +160,8 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
         id,
         node_id: selectedNode.node_id,
         path: folderPath,
-        datatype: selectedNode.datatype || guessType(selectedNode.browse_name),
+        // Prefer OPC datatype from browse; empty → server resolves via Attribute Read.
+        datatype: selectedNode.datatype || '',
         enabled: true,
         interval_ms: 1000,
       })
@@ -184,7 +185,9 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
       onProgress?.(`Expanding ${f.browse_name} (${i + 1}/${folders.length})…`)
       let expanded = expandCacheRef.current.get(f.node_id)
       if (!expanded) {
-        expanded = await getJSONExpand(deviceId, f.node_id, f.browse_name)
+        expanded = await getJSONExpand(deviceId, f.node_id, f.browse_name, (ev) => {
+          onProgress?.(formatExpandProgress(ev, f.browse_name, i + 1, folders.length))
+        })
         expandCacheRef.current.set(f.node_id, expanded)
         setExpandGen((g) => g + 1)
       }
@@ -197,7 +200,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
           browse_name: name,
           node_id: t.node_id,
           path: leafPath,
-          datatype: t.datatype || guessType(name),
+          datatype: t.datatype || '',
           tag_id: t.id,
         })
       }
@@ -214,7 +217,8 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
       const { tags: payload, skippedDuplicates, renamed } = allocateUniqueTagIds(
         leaves.map((item) => ({
           ...item,
-          datatype: item.datatype || guessType(item.browse_name),
+          // Empty datatype → server Attribute Read; never invent via name heuristics here.
+          datatype: item.datatype || '',
         })),
         sanitizeId,
       )
@@ -298,7 +302,10 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     try {
       let expanded = expandCacheRef.current.get(node.node_id)
       if (!expanded) {
-        expanded = await getJSONExpand(deviceId, node.node_id, node.browse_name)
+        expanded = await getJSONExpand(deviceId, node.node_id, node.browse_name, (ev) => {
+          if (token !== expandAbortRef.current) return
+          setMsg(formatExpandProgress(ev, node.browse_name))
+        })
         if (token !== expandAbortRef.current) return
         expandCacheRef.current.set(node.node_id, expanded)
         setExpandGen((g) => g + 1)
@@ -332,7 +339,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
           browse_name: node.browse_name,
           node_id: node.node_id,
           path,
-          datatype: node.datatype || guessType(node.browse_name),
+          datatype: node.datatype || '',
         })
       } else if (isUnderCheckedFolder(path)) {
         setExcludedIds((prev) => {
@@ -548,19 +555,73 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
   )
 }
 
-async function getJSONExpand(deviceId, nodeId, parentTagId) {
+function formatExpandProgress(ev, folderName, folderIdx, folderTotal) {
+  const prefix =
+    folderIdx && folderTotal
+      ? `${folderName} (${folderIdx}/${folderTotal}): `
+      : folderName
+        ? `${folderName}: `
+        : ''
+  if (!ev || !ev.phase) return `${prefix}Loading tags…`
+  if (ev.phase === 'browse') {
+    return `${prefix}Browsing address space… (${ev.done ?? 0} leaves)`
+  }
+  if (ev.phase === 'datatype') {
+    return `${prefix}Reading datatypes ${ev.done ?? 0}/${ev.total ?? 0}…`
+  }
+  return `${prefix}Loading tags…`
+}
+
+async function getJSONExpand(deviceId, nodeId, parentTagId, onProgress) {
   const r = await fetch('/api/v1/expand', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/x-ndjson',
+    },
     body: JSON.stringify({
       device_id: deviceId,
       node_id: nodeId,
       parent_tag_id: parentTagId || '',
       max_depth: 16,
+      stream: true,
     }),
   })
   if (!r.ok) throw new Error(await r.text())
-  return r.json()
+  const ct = r.headers.get('content-type') || ''
+  if (!ct.includes('ndjson')) {
+    return r.json()
+  }
+  const reader = r.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  let tags = null
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    let nl
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (!line) continue
+      let ev
+      try {
+        ev = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (ev.type === 'progress') {
+        onProgress?.(ev)
+      } else if (ev.type === 'result') {
+        tags = ev.tags || []
+      } else if (ev.type === 'error') {
+        throw new Error(ev.error || 'expand failed')
+      }
+    }
+  }
+  if (!tags) throw new Error('expand returned no result')
+  return tags
 }
 
 function leafName(expanded) {

@@ -18,45 +18,109 @@ func (d *Driver) ResolveTagDataType(ctx context.Context, nodeID, browseHint stri
 	return GuessDataType(browseHint)
 }
 
-// ApplyDataTypesFromOPC sets DataType on each tag from OPC UA (matched by tag.NodeID).
+// ApplyDataTypesFromOPC sets DataType on each tag from OPC UA (batched Attribute Read).
+// GuessDataType is used only when a node's DataType Read fails or is unmapped.
 func ApplyDataTypesFromOPC(ctx context.Context, d *Driver, tags []core.Tag) {
+	if d == nil || len(tags) == 0 {
+		return
+	}
+	ids := make([]string, len(tags))
 	for i := range tags {
-		tags[i].DataType = d.ResolveTagDataType(ctx, tags[i].NodeID, tags[i].ID)
+		ids[i] = tags[i].NodeID
+	}
+	types := d.readOPCDataTypesBatch(ctx, ids, nil)
+	for i := range tags {
+		if types[i] != "" {
+			tags[i].DataType = types[i]
+			continue
+		}
+		hint := tags[i].ID
+		if hint == "" {
+			hint = tags[i].NodeID
+		}
+		tags[i].DataType = GuessDataType(hint)
 	}
 }
 
 func (d *Driver) readOPCDataType(ctx context.Context, nodeID string) (core.ValueType, error) {
+	types := d.readOPCDataTypesBatch(ctx, []string{nodeID}, nil)
+	if len(types) == 0 || types[0] == "" {
+		return "", fmt.Errorf("read datatype failed")
+	}
+	return types[0], nil
+}
+
+// readOPCDataTypesBatch reads AttributeIDDataType for many nodes in chunks of maxNodesPerRead.
+// Empty entries mean the read failed or the OPC type is unmapped. onChunk(done, total) is
+// optional and called after each chunk (done is the exclusive end index).
+func (d *Driver) readOPCDataTypesBatch(ctx context.Context, nodeIDs []string, onChunk func(done, total int)) []core.ValueType {
+	out := make([]core.ValueType, len(nodeIDs))
+	if len(nodeIDs) == 0 {
+		return out
+	}
 	d.mu.Lock()
 	c := d.client
 	d.mu.Unlock()
 	if c == nil {
-		return "", fmt.Errorf("not connected")
+		if onChunk != nil {
+			onChunk(len(nodeIDs), len(nodeIDs))
+		}
+		return out
 	}
-	parsed, err := core.ParseNodeID(nodeID)
-	if err != nil {
-		return "", err
+
+	uaIDs := make([]*ua.NodeID, len(nodeIDs))
+	for i, idStr := range nodeIDs {
+		parsed, err := core.ParseNodeID(idStr)
+		if err != nil {
+			continue
+		}
+		nid, err := d.toUANodeID(ctx, parsed)
+		if err != nil {
+			continue
+		}
+		uaIDs[i] = nid
 	}
-	nid, err := d.toUANodeID(ctx, parsed)
-	if err != nil {
-		return "", err
+
+	total := len(nodeIDs)
+	for start := 0; start < total; start += maxNodesPerRead {
+		end := start + maxNodesPerRead
+		if end > total {
+			end = total
+		}
+		var nodes []*ua.ReadValueID
+		var idxs []int
+		for i := start; i < end; i++ {
+			if uaIDs[i] == nil {
+				continue
+			}
+			idxs = append(idxs, i)
+			nodes = append(nodes, &ua.ReadValueID{
+				NodeID:      uaIDs[i],
+				AttributeID: ua.AttributeIDDataType,
+			})
+		}
+		if len(nodes) > 0 {
+			resp, err := c.Read(ctx, &ua.ReadRequest{NodesToRead: nodes})
+			if err == nil && resp != nil {
+				for j, rv := range resp.Results {
+					if j >= len(idxs) || rv == nil || rv.Status != ua.StatusOK || rv.Value == nil {
+						continue
+					}
+					typeNID, ok := rv.Value.Value().(*ua.NodeID)
+					if !ok || typeNID == nil {
+						continue
+					}
+					if dt := mapOPCDataType(typeNID); dt != "" {
+						out[idxs[j]] = dt
+					}
+				}
+			}
+		}
+		if onChunk != nil {
+			onChunk(end, total)
+		}
 	}
-	req := &ua.ReadRequest{
-		NodesToRead: []*ua.ReadValueID{
-			{NodeID: nid, AttributeID: ua.AttributeIDDataType},
-		},
-	}
-	resp, err := c.Read(ctx, req)
-	if err != nil {
-		return "", err
-	}
-	if len(resp.Results) == 0 || resp.Results[0].Status != ua.StatusOK {
-		return "", fmt.Errorf("read datatype status")
-	}
-	typeNID, ok := resp.Results[0].Value.Value().(*ua.NodeID)
-	if !ok || typeNID == nil {
-		return "", fmt.Errorf("datatype not node id")
-	}
-	return mapOPCDataType(typeNID), nil
+	return out
 }
 
 func mapOPCDataType(typeNID *ua.NodeID) core.ValueType {
@@ -85,6 +149,7 @@ func mapOPCDataType(typeNID *ua.NodeID) core.ValueType {
 }
 
 // GuessDataType infers platform type from browse/signal name when OPC metadata is unavailable.
+// Used only as last-resort fallback after DataType Attribute Read fails.
 func GuessDataType(browseName string) core.ValueType {
 	n := strings.ToLower(browseName)
 	switch {
@@ -107,4 +172,15 @@ func GuessDataType(browseName string) core.ValueType {
 	default:
 		return core.ValueFloat64
 	}
+}
+
+func browseNameHint(t core.ExpandedTag) string {
+	if t.BrowsePath != "" {
+		parts := strings.Split(t.BrowsePath, ".")
+		return parts[len(parts)-1]
+	}
+	if t.ID != "" {
+		return t.ID
+	}
+	return t.NodeID
 }

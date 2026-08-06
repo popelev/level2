@@ -1,6 +1,7 @@
 package opcua
 
 import (
+	"context"
 	"testing"
 
 	"github.com/gopcua/opcua/id"
@@ -50,5 +51,35 @@ func TestGuessDataType_ModeFlags(t *testing.T) {
 	}
 	if got := GuessDataType("anode_slime_time"); got != core.ValueDateTime {
 		t.Fatalf("time suffix: got %q", got)
+	}
+}
+
+func TestBrowseNameHint(t *testing.T) {
+	got := browseNameHint(core.ExpandedTag{BrowsePath: "TankHouse.Data.Dcswitch", ID: "x_dcswitch"})
+	if got != "Dcswitch" {
+		t.Fatalf("got %q", got)
+	}
+	got = browseNameHint(core.ExpandedTag{ID: "tank_dcswitch"})
+	if got != "tank_dcswitch" {
+		t.Fatalf("id fallback: got %q", got)
+	}
+}
+
+func TestFillExpandedDataTypes_GuessFallbackWhenDisconnected(t *testing.T) {
+	d := &Driver{} // no client — batch read yields empty → Guess fallback
+	tags := []core.ExpandedTag{
+		{ID: "a_sunit", NodeID: "ns=4;i=1", BrowsePath: "sUnit"},
+		{ID: "a_benable", NodeID: "ns=4;i=2", BrowsePath: "bEnable"},
+		{ID: "a_rvalue", NodeID: "ns=4;i=3", BrowsePath: "rValueOut"},
+	}
+	d.fillExpandedDataTypes(context.Background(), tags, nil)
+	if tags[0].DataType != core.ValueString {
+		t.Fatalf("sUnit: got %q", tags[0].DataType)
+	}
+	if tags[1].DataType != core.ValueBool {
+		t.Fatalf("bEnable: got %q", tags[1].DataType)
+	}
+	if tags[2].DataType != core.ValueFloat64 {
+		t.Fatalf("rValueOut: got %q", tags[2].DataType)
 	}
 }

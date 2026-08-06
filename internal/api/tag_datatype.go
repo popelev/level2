@@ -33,3 +33,45 @@ func (s *Server) resolveTagDataType(ctx context.Context, deviceID string, tag *c
 		tag.DataType = dt
 	}
 }
+
+// resolveEmptyDataTypesBatch fills empty DataType fields via batched OPC Attribute Read.
+func (s *Server) resolveEmptyDataTypesBatch(ctx context.Context, deviceID string, tags []core.Tag) {
+	if s.DevHub == nil || len(tags) == 0 {
+		return
+	}
+	var need []int
+	for i := range tags {
+		if core.NormalizeValueType(tags[i].DataType) == "" || !core.ValidValueType(tags[i].DataType) {
+			need = append(need, i)
+		}
+	}
+	if len(need) == 0 {
+		return
+	}
+	ent, ok := s.DevHub.Entry(deviceID)
+	if !ok || !ent.Connected {
+		for _, i := range need {
+			hint := tags[i].ID
+			if hint == "" {
+				hint = tags[i].NodeID
+			}
+			tags[i].DataType = opcuaDriver.GuessDataType(hint)
+		}
+		return
+	}
+	drv, ok := ent.Driver.(*opcuaDriver.Driver)
+	if !ok {
+		for _, i := range need {
+			tags[i].DataType = opcuaDriver.GuessDataType(tags[i].ID)
+		}
+		return
+	}
+	subset := make([]core.Tag, len(need))
+	for j, i := range need {
+		subset[j] = tags[i]
+	}
+	opcuaDriver.ApplyDataTypesFromOPC(ctx, drv, subset)
+	for j, i := range need {
+		tags[i].DataType = subset[j].DataType
+	}
+}
