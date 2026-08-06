@@ -38,7 +38,7 @@ curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns%3D4%3Bi%3D4207'
 | POST | `/api/v1/devices/{id}/tags` | upsert one tag |
 | POST | `/api/v1/devices/{id}/tags/sync` | refresh datatypes from OPC by NodeId (`{"tag_ids":[]}` optional = all) |
 | DELETE | `/api/v1/devices/{id}/tags` | remove all tags on device |
-| PUT | `/api/v1/tags/{id}/value` | 501 until write phase |
+| PUT | `/api/v1/tags/{id}/value` | 501 until write phase — [docs/opc-write-mode.md](../../docs/opc-write-mode.md) |
 | GET | `/api/v1/ws/stream` | live samples WebSocket |
 | GET | `/api/v1/diagnostics/logs?category=&errors_only=&limit=` | OPC/DB ring log |
 | DELETE | `/api/v1/diagnostics/logs` | clear ring log |

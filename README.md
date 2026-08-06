@@ -190,7 +190,7 @@ Full table: [deploy/platform/README.md](deploy/platform/README.md#api).
 | GET | `/api/v1/database/status` | DB status / capacity |
 | GET | `/metrics` | Prometheus |
 
-Writing values to the PLC (`PUT /api/v1/tags/{id}/value`) is still **501** (write phase not implemented).
+Writing values to the PLC (`PUT /api/v1/tags/{id}/value`) is still **501** — design: [docs/opc-write-mode.md](docs/opc-write-mode.md). On-change historian / subscription: [docs/opc-subscription-mode.md](docs/opc-subscription-mode.md).
 
 ---
 
