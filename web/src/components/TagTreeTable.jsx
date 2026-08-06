@@ -97,10 +97,11 @@ function LeafRow({
         <span className="chev">·</span>
         <div>
           <div className="name">{node.name}</div>
-          {node.name !== tag.id && (
-            <div className="mono small muted">{tag.id}</div>
-          )}
-          <div className="mono small muted">{tag.node_id}</div>
+          <div className="mono small muted tt-sub">
+            {node.name !== tag.id && <span className="tt-id">{tag.id}</span>}
+            {node.name !== tag.id && tag.node_id ? <span className="tt-sep"> · </span> : null}
+            <span className="tt-nid">{tag.node_id}</span>
+          </div>
         </div>
       </div>
       <span className="tt-meta mono">{formatValue(tv.sample)}</span>

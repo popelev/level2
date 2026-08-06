@@ -26,14 +26,81 @@ export function tagIdFromBrowse(folderPath, browseName, sanitizeId) {
   return sanitizeId(`${parent}_${browseName}`)
 }
 
-/** Leaf label in tree table (browse name when id is parent_signal). */
+/**
+ * Short original/browse label for a leaf (e.g. rvalueout, maintenance).
+ * Long composite ids stay secondary in the UI.
+ */
 export function tagLeafDisplayName(tag) {
-  const id = tag.id || ''
+  const id = String(tag.id || '').trim()
+  if (!id) return ''
   const path = normalizePath(tag.path)
-  if (!isOpcBrowsePath(path)) return id
-  const idx = id.lastIndexOf('_')
-  if (idx > 0) return id.slice(idx + 1)
+  const segs = path ? path.split('/') : []
+  const parent = segs[segs.length - 1] || ''
+  const parentKey = sanitizeSeg(parent)
+
+  // Prefer signal after last path folder in the composite id:
+  // …_oil_temp_rvalueout + path …/OIL_TEMP → rvalueout
+  if (parentKey) {
+    const lower = id.toLowerCase()
+    const needle = `_${parentKey}_`
+    const at = lower.lastIndexOf(needle)
+    if (at >= 0) {
+      const rest = id.slice(at + needle.length)
+      if (rest) return formatBrowseHint(rest)
+    }
+    if (lower.startsWith(`${parentKey}_`)) {
+      return formatBrowseHint(id.slice(parentKey.length + 1))
+    }
+    // leaf directly named like folder (rare)
+    if (lower.endsWith(`_${parentKey}`) || lower === parentKey) {
+      return formatBrowseHint(parent)
+    }
+  }
+
+  const parts = id.split('_').filter(Boolean)
+  // Avoid chopping plant Excel signals (Area/Path + short id like E2_ECE_300_CL_001)
+  const longComposite =
+    isOpcBrowsePath(path) || segs.length >= 3 || id.length > 48 || parts.length >= 6
+  if (longComposite && parts.length >= 2) {
+    const last = parts[parts.length - 1]
+    if (last.length <= 2 && parts.length >= 3) {
+      return formatBrowseHint(`${parts[parts.length - 2]}_${last}`)
+    }
+    return formatBrowseHint(last)
+  }
+
+  // Plant Excel / short signal ids: keep full id as title
   return id
+}
+
+function sanitizeSeg(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[\s.\-/]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+}
+
+/** Light restore of Siemens-style / TitleCase for display. */
+export function formatBrowseHint(name) {
+  const s = String(name || '')
+  if (!s) return s
+  if (/[A-Z]/.test(s)) return s
+  const low = s.toLowerCase()
+  const known = [
+    [/^rvalueout$/i, 'rValueOut'],
+    [/^rvalue(.*)$/i, (_, m) => `rValue${m ? m.charAt(0).toUpperCase() + m.slice(1) : ''}`],
+    [/^sunit$/i, 'sUnit'],
+    [/^sname$/i, 'sName'],
+    [/^benable$/i, 'bEnable'],
+    [/^icount$/i, 'iCount'],
+  ]
+  for (const [re, repl] of known) {
+    const m = low.match(re)
+    if (!m) continue
+    return typeof repl === 'function' ? repl(m[0], m[1]) : repl
+  }
+  return low.charAt(0).toUpperCase() + low.slice(1)
 }
 
 /** Full path to a variable leaf under an Address Space folder prefix. */

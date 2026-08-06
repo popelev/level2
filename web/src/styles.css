@@ -41,20 +41,92 @@ body {
 
 .nav {
   display: flex;
-  gap: 8px;
+  gap: 10px 14px;
   margin-bottom: 16px;
   flex-wrap: wrap;
+  align-items: flex-end;
+}
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-right: 12px;
+  border-right: 1px solid var(--line);
+}
+.nav-group:last-child {
+  border-right: none;
+  padding-right: 0;
+}
+.nav-group-label {
+  font-size: 0.65rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-left: 2px;
+}
+.nav-group-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .nav-btn {
   background: var(--bg0);
   border: 1px solid var(--line);
   padding: 8px 14px;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.nav-btn:hover {
+  border-color: #3a5166;
 }
 .nav-btn.active {
   background: var(--sel);
   border-color: #2f6b55;
   color: var(--accent);
 }
+@media (max-width: 720px) {
+  .nav-group {
+    border-right: none;
+    padding-right: 0;
+    width: 100%;
+  }
+  .nav-group-btns { width: 100%; }
+  .nav-btn { flex: 1 1 auto; }
+}
+
+.cap-hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.cap-stat {
+  background: linear-gradient(180deg, var(--bg1), var(--bg2));
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.cap-stat.accent {
+  border-color: #2f6b55;
+}
+.cap-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+.cap-value {
+  font-size: 1.35rem;
+  font-weight: 600;
+  font-family: var(--mono);
+  color: var(--text);
+}
+.cap-stat.accent .cap-value { color: var(--accent); }
+.cap-sub { margin-top: 4px; }
 
 .page-head {
   display: flex;
@@ -448,6 +520,13 @@ tr.dim, .tt-row.dim { opacity: 0.55; }
 .tt-tag { padding-left: calc(var(--depth, 0) * 14px); }
 .tt-val, .tt-meta { font-size: 0.78rem; }
 .tt-label .name { word-break: break-all; }
+.tt-sub {
+  display: block;
+  word-break: break-all;
+  line-height: 1.25;
+  margin-top: 1px;
+}
+.tt-id { opacity: 0.9; }
 .tt-select, .tt-interval {
   font: inherit;
   font-size: 0.72rem;
