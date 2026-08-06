@@ -50,6 +50,11 @@ func (d *Driver) BrowseChildren(ctx context.Context, parentNodeID string) ([]cor
 			NodeClass:   fmt.Sprintf("%v", ref.NodeClass),
 			IsLeaf:      d.isScalarVariableLeaf(ctx, c, ref),
 		}
+		if bn.IsLeaf {
+			if dt := d.ResolveTagDataType(ctx, bn.NodeID, bn.BrowseName); dt != "" {
+				bn.DataType = string(dt)
+			}
+		}
 		out = append(out, bn)
 	}
 	return out, nil
@@ -190,11 +195,12 @@ func (d *Driver) expandWalk(ctx context.Context, nodeID, tagPrefix, path string,
 		}
 		tagID := sanitizeTagID(tagPrefix + "_" + childPath)
 		if ch.IsLeaf {
+			dt := d.ResolveTagDataType(ctx, ch.NodeID, ch.BrowseName)
 			*out = append(*out, core.ExpandedTag{
 				ID:         tagID,
 				NodeID:     ch.NodeID,
 				BrowsePath: childPath,
-				DataType:   guessDataType(ch.BrowseName),
+				DataType:   dt,
 			})
 			continue
 		}
@@ -229,17 +235,7 @@ func sanitizeTagID(s string) string {
 }
 
 func guessDataType(browseName string) core.ValueType {
-	n := strings.ToLower(browseName)
-	switch {
-	case strings.HasPrefix(n, "s") && (strings.Contains(n, "unit") || strings.Contains(n, "name") || strings.Contains(n, "text")):
-		return core.ValueString
-	case strings.HasPrefix(n, "b") || strings.Contains(n, "bool") || strings.HasPrefix(n, "enable"):
-		return core.ValueBool
-	case strings.HasPrefix(n, "i") || strings.Contains(n, "count") || strings.Contains(n, "int"):
-		return core.ValueInt64
-	default:
-		return core.ValueFloat64
-	}
+	return GuessDataType(browseName)
 }
 
 // ExpandFromTree is a pure helper used by unit tests / simulator without live OPC.

@@ -118,7 +118,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
         id,
         node_id: selectedNode.node_id,
         path: folderPath,
-        datatype: guessType(selectedNode.browse_name),
+        datatype: selectedNode.datatype || guessType(selectedNode.browse_name),
         enabled: true,
         interval_ms: 1000,
       })
@@ -179,6 +179,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
             browse_name: node.browse_name,
             node_id: node.node_id,
             path,
+            datatype: node.datatype || guessType(node.browse_name),
           })
         } else {
           next.delete(node.node_id)
@@ -228,7 +229,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
             browse_name: name,
             node_id: t.node_id,
             path: leafPath,
-            datatype: t.datatype,
+            datatype: t.datatype || guessType(name),
           })
         }
         return next

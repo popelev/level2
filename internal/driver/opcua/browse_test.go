@@ -35,10 +35,13 @@ func TestExpandFromTree_LeavesOnly(t *testing.T) {
 
 func TestGuessDataType(t *testing.T) {
 	cases := map[string]core.ValueType{
-		"rValueOut": core.ValueFloat64,
-		"sUnit":     core.ValueString,
-		"bEnable":   core.ValueBool,
-		"iCount":    core.ValueInt64,
+		"rValueOut":   core.ValueFloat64,
+		"sUnit":       core.ValueString,
+		"bEnable":     core.ValueBool,
+		"iCount":      core.ValueInt64,
+		"Maintenance": core.ValueBool,
+		"Operation":   core.ValueBool,
+		"Cathode_Harvesting": core.ValueBool,
 	}
 	for name, want := range cases {
 		if got := guessDataType(name); got != want {

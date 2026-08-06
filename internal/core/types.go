@@ -87,6 +87,7 @@ type BrowseNode struct {
 	DisplayName string `json:"display_name"`
 	NodeClass   string `json:"node_class"`
 	IsLeaf      bool   `json:"is_leaf"`
+	DataType    string `json:"datatype,omitempty"`
 }
 
 type ExpandedTag struct {

@@ -36,6 +36,9 @@ export const ROOT_ID = 'ns=0;i=84'
 export function guessType(name) {
   const n = String(name || '').toLowerCase()
   if (n.startsWith('b') || n.includes('bool') || n.includes('auto') || n.endsWith('_run')) return 'bool'
+  if (n.endsWith('_maintenance') || n.endsWith('_operation') || n.includes('harvesting')) return 'bool'
+  if (n.includes('_mode_') && !n.includes('rvalue')) return 'bool'
+  if (n.endsWith('_active')) return 'bool'
   if (n.startsWith('s') && (n.includes('unit') || n.includes('name') || n.includes('text'))) return 'string'
   if (n.startsWith('i') || n.includes('count')) return 'int64'
   return 'float64'

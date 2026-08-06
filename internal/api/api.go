@@ -380,6 +380,7 @@ func (s *Server) handleUpsertTag(w http.ResponseWriter, r *http.Request) {
 	if tid := r.PathValue("tagId"); tid != "" {
 		tag.ID = tid
 	}
+	s.resolveTagDataType(r.Context(), deviceID, &tag)
 	if err := s.Cfg.UpsertTag(deviceID, tag); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
