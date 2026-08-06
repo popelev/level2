@@ -1,25 +1,64 @@
 # Level2 CI/CD via Jenkins
 
-Planning and bootstrap for Jenkins next to the lab stack (same VM / Docker network).
+Jenkins next to the lab stack (same VM / Docker host), configured with **JCasC** so bring-up is one command — no setup wizard.
 
-**Status:** Phase 1 skeleton — CI checks + image build. Deploy stages are commented / gated. No production secrets in-repo.
+**Status:** Phase 1 — CI checks + image build via Multibranch Pipeline. Deploy/push stages gated. No production secrets in-repo.
 
-## Goals
+## One-command up
 
-| Goal | Phase | Notes |
-|------|-------|--------|
-| PR / `main` checks | 1 | `go test ./...`, UI `npm ci` + `npm run build` |
-| Build collector image | 1 | `deploy/platform/Dockerfile` (context repo root) |
-| Optional image push | 2 | Private registry or local tag only |
-| Optional deploy to level2-vm | 2 | `docker compose` in `deploy/platform/` — **gated**, does not replace manual lab flow |
+From the repo root on the lab VM (`~/level2`):
 
-Out of scope for CI: live OPC UA / PLC credentials, Grafana dashboards, smoke Telegraf.
+```bash
+docker compose -f deploy/ci/docker-compose.yml --env-file deploy/ci/.env.example up -d --build
+```
+
+Lab defaults in `.env.example`: user `admin` / password `admin`. To customize, `cp deploy/ci/.env.example deploy/ci/.env`, edit, then use `--env-file deploy/ci/.env`.
+
+UI: **http://\<vm-ip\>:8081/** (collector uses 8080).
+
+Login (lab defaults from `.env.example`):
+
+| Field | Default |
+|-------|---------|
+| User | `admin` |
+| Password | `admin` |
+
+Change `JENKINS_ADMIN_*` in `deploy/ci/.env` before first start (or recreate the `jenkins_home` volume after changing). Do not use lab passwords outside the VM.
+
+Smoke check:
+
+```bash
+curl -sS -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8081/login
+# expect 200
+```
+
+## What gets configured automatically
+
+| Piece | How |
+|-------|-----|
+| Setup wizard | Disabled (`runSetupWizard=false`) |
+| Plugins | `plugins.txt` via `jenkins-plugin-cli` in `Dockerfile.jenkins` |
+| Admin user | JCasC + `JENKINS_ADMIN_ID` / `JENKINS_ADMIN_PASSWORD` |
+| Multibranch job `level2` | Job DSL in `casc/jenkins.yaml` → repo `GITHUB_REPO_URL`, Script Path `Jenkinsfile` |
+| Docker builds | Host `docker.sock` (sibling containers) |
+
+Layout:
+
+```
+deploy/ci/
+  docker-compose.yml
+  Dockerfile.jenkins
+  plugins.txt
+  casc/jenkins.yaml      # JCasC + Job DSL seed
+  .env.example           # lab secrets template (copy to .env)
+  README.md
+```
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  GH[GitHub\npopelev/level2] -->|webhook or poll SCM| J[Jenkins\ndeploy/ci compose]
+  GH[GitHub\npopelev/level2] -->|poll SCM / webhook| J[Jenkins\ndeploy/ci compose]
   J --> A[Build agent\nsame Docker host]
   A -->|go test / npm build| T[Test results]
   A -->|docker build| IMG[collector image]
@@ -27,44 +66,13 @@ flowchart LR
   IMG -.->|Phase 2: compose up| VM[level2-vm\ndeploy/platform]
 ```
 
-Recommended layout on the lab VM:
+## Docker builds without nested DinD
 
-```
-level2/
-  Jenkinsfile                 # Declarative pipeline (repo root)
-  deploy/
-    ci/
-      docker-compose.yml      # Jenkins LTS + docker.sock
-      Dockerfile.jenkins      # LTS + Docker CLI
-      README.md               # this file
-    platform/                 # existing collector stack (unchanged)
-    smoke/                    # existing Timescale/Grafana (unchanged)
-```
+Mount the host Docker socket (`/var/run/docker.sock`). The controller runs **sibling** containers for:
 
-## Recommended Jenkins layout
-
-Run Jenkins from `deploy/ci/` on the **same host** as the Level2 compose stacks:
-
-```bash
-cd deploy/ci
-docker compose up -d --build
-# UI: http://<vm-ip>:8081/  (8080 is reserved for collector)
-```
-
-Image: `Dockerfile.jenkins` = Jenkins LTS + Docker CLI (sibling builds via socket).
-
-### Docker builds without nested DinD
-
-Mount the host Docker socket into Jenkins (`/var/run/docker.sock`). The controller then runs **sibling** containers for:
-
-- `golang:1.24` → `go test ./...` (`GOTOOLCHAIN=auto`, matches `deploy/platform/README.md`)
+- `golang:1.24` → `go test ./...`
 - `node:22-bookworm` → `npm ci` / `npm run build` under `web/`
-- `docker build -f deploy/platform/Dockerfile` → collector + embedded UI (same as platform compose)
-
-Alternatives (later):
-
-- **Docker Pipeline plugin** `agent { docker { image 'golang:1.24' } }` for isolated stages
-- True DinD only if socket mount is unacceptable (heavier, needs privileged)
+- `docker build -f deploy/platform/Dockerfile` → collector + embedded UI
 
 Do **not** put Jenkins on the public internet; bind to LAN / VPN only.
 
@@ -74,76 +82,74 @@ Root [`Jenkinsfile`](../../Jenkinsfile) (Declarative):
 
 | Stage | Command / action | Paths |
 |-------|------------------|--------|
-| Checkout | SCM (Multibranch / Pipeline from SCM) | — |
+| Checkout | SCM (Multibranch) | — |
 | Go Test | `go test ./...` in `golang:1.24` | `go.mod`, all packages |
 | Web Build | `npm ci` && `npm run build` in `node:22-bookworm` | `web/` |
-| Docker Build | `docker build -f deploy/platform/Dockerfile -t level2-collector:ci-$GIT_COMMIT .` | Dockerfile multi-stage (UI + Go) |
-| Push *(optional)* | `docker push …` | gated by `ENABLE_PUSH=true` |
-| Deploy *(optional)* | `docker compose -f deploy/platform/docker-compose.yml up -d --build` | gated by `ENABLE_DEPLOY=true` + branch `main` |
+| Docker Build | `docker build -f deploy/platform/Dockerfile …` | platform Dockerfile |
+| Push *(optional)* | gated by `ENABLE_PUSH=true` | Phase 2 |
+| Deploy *(optional)* | gated by `ENABLE_DEPLOY=true` + `main` | Phase 2 |
 
-Acceptance scripts (`verify_offline.sh`, `verify_plc_on.sh`) stay **manual / lab-only** — they need a running stack and optionally PLC.
+## GitHub credentials (optional)
+
+`https://github.com/popelev/level2` is **public** — Multibranch seeds and scans without a PAT.
+
+For a **private** fork, higher API limits, or private submodule access:
+
+1. Create a fine-scoped PAT (contents: read).
+2. Set in `deploy/ci/.env` (never commit):
+
+   ```bash
+   GITHUB_PAT=ghp_your_token_here
+   GITHUB_CREDENTIALS_ID=github-pat
+   ```
+
+3. Recreate Jenkins (or reload CasC) so credential `github-pat` is updated:
+
+   ```bash
+   docker compose -f deploy/ci/docker-compose.yml --env-file deploy/ci/.env up -d --build
+   ```
+
+4. In Jenkins UI → job **level2** → Configure → Branch Sources → set Credentials to **github-pat** (secret text), or add `credentialsId('github-pat')` under the `git { … }` block in `casc/jenkins.yaml` and restart.
+
+If the first Multibranch scan fails with auth errors and no PAT is set, Jenkins itself is still up — fix PAT / credentials, then **Scan Multibranch Pipeline Now**.
 
 ## Secrets
 
 | Secret | Needed for CI? | How |
 |--------|----------------|-----|
-| GitHub credentials / webhook token | Yes (clone + trigger) | Jenkins Credentials; Multibranch GitHub App or username+PAT |
-| OPC UA user/password | **No** for unit CI | Stay in `deploy/platform/.env` / smoke only |
-| `DATABASE_URL` | Optional | Only if you add integration tests against Timescale; not required for `go test ./...` today |
-| Registry credentials | Phase 2 only | Jenkins Credentials, never commit |
-| Deploy SSH / compose host | Phase 2 only | Prefer same-host compose via socket; avoid storing OPC in Jenkins |
+| Jenkins admin | Yes | `JENKINS_ADMIN_*` in `.env` (see `.env.example`) |
+| GitHub PAT | Only if private / rate-limited | `GITHUB_PAT` → CasC credential `github-pat` |
+| OPC UA / DB | **No** for unit CI | Stay in `deploy/platform/.env` |
+| Registry / deploy | Phase 2 | Jenkins Credentials, never commit |
 
-Do not commit `.env`, PLC passwords, or Jenkins admin password. Initial admin password is printed once in the Jenkins container logs.
+`.env` is gitignored (`**/.env`). Only `.env.example` is tracked.
 
 ## Triggers
 
-1. **GitHub webhook** (preferred): Multibranch Pipeline → GitHub hook trigger for GITScm polling / GitHub plugin.
-2. **Poll SCM** fallback: e.g. `H/5 * * * *` if webhook cannot reach the lab VM.
-3. **Multibranch Pipeline**: discover `main` + PR branches; build PRs without deploy.
-
-Suggested job: Multibranch from `https://github.com/popelev/level2.git`, Script Path `Jenkinsfile`.
+1. **GitHub webhook** (preferred once reachable): Multibranch → GitHub hook.
+2. **Periodic folder trigger** (CasC default: daily) + manual **Scan Multibranch Pipeline Now**.
+3. Discover `main` + other branches; Script Path `Jenkinsfile`.
 
 ## Security notes
 
-- Do not expose Jenkins publicly; firewall / VPN; change default admin password.
-- Use a GitHub PAT or App with least privilege (contents read; optionally commit status write).
-- Pipeline must not `git push --force` or rewrite history.
-- Socket mount grants Jenkins host-Docker power — treat the Jenkins UI as highly privileged.
-- Keep Phase 2 deploy behind an explicit parameter / credential check so PR builds cannot redeploy the lab.
+- Lab defaults (`admin`/`admin`) are for the VM only — change them.
+- Socket mount grants Jenkins host-Docker power — treat the UI as highly privileged.
+- Keep Phase 2 deploy behind parameters so PR builds cannot redeploy the lab.
 
 ## Phased rollout
 
-### Phase 1 — CI only (this skeleton)
+### Phase 1 — CI only (current)
 
-1. `docker compose up -d --build` in `deploy/ci/`.
-2. Create Multibranch job pointing at the repo / `Jenkinsfile`.
-3. Enable builds on `main` and PRs: Go test, Web build, Docker build.
-4. No auto-deploy; no registry push required.
+1. One-command compose up (above).
+2. Open UI → job **level2** → scan branches → build `main`.
+3. No auto-deploy; no registry push required.
 
 ### Phase 2 — Auto-deploy to lab VM
 
-1. Add registry or local image tagging convention.
-2. Enable `ENABLE_DEPLOY` only on `main` after green CI.
-3. Deploy via existing `deploy/platform/docker-compose.yml` (external `smoke_default` / `smoke_timeseries` unchanged).
-4. Optionally call `verify_offline.sh` post-deploy (still no OPC secrets in Jenkins).
-
-## Quick start (Jenkins only)
-
-```bash
-cd ~/level2/deploy/ci
-docker compose up -d --build
-docker compose logs -f jenkins   # copy initialAdminPassword when prompted
-# Open http://<vm-lan-ip>:8081/
-```
-
-Then in Jenkins UI: install suggested plugins → Multibranch Pipeline → this repository → Script Path `Jenkinsfile`.
-
-Existing smoke/platform stacks are untouched; Jenkins uses host port **8081**.
+1. Registry or local tagging.
+2. `ENABLE_DEPLOY` only on `main` after green CI.
+3. Deploy via `deploy/platform/docker-compose.yml`.
 
 ## Sample pipeline reference
 
-See repository root [`Jenkinsfile`](../../Jenkinsfile). It mirrors real paths:
-
-- Go module: `go.mod` (toolchain via `GOTOOLCHAIN=auto`)
-- UI: `web/package.json`, `web/package-lock.json`
-- Image: `deploy/platform/Dockerfile` (same as `deploy/platform/docker-compose.yml` build)
+See repository root [`Jenkinsfile`](../../Jenkinsfile).

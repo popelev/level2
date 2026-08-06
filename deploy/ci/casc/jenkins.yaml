@@ -1,0 +1,74 @@
+# Jenkins Configuration as Code for Level2 lab CI.
+# Secrets come from environment variables (see deploy/ci/.env.example).
+
+jenkins:
+  systemMessage: "Level2 lab CI — Multibranch Pipeline from GitHub (JCasC)."
+  numExecutors: 2
+  mode: NORMAL
+  scmCheckoutRetryCount: 2
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_ID}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+  remotingSecurity:
+    enabled: true
+
+security:
+  # Lab only: allow Job DSL seed from CasC without manual script approval.
+  globalJobDslSecurityConfiguration:
+    useScriptSecurity: false
+
+unclassified:
+  location:
+    url: "${JENKINS_URL}"
+    adminAddress: "ci@level2.local"
+
+# Optional GitHub PAT (string credential id: github-pat).
+# Public repos work without it. For private repos / GitHub API rate limits:
+#   1. Set GITHUB_PAT in deploy/ci/.env
+#   2. Re-create or update the Multibranch source to use credentialsId 'github-pat'
+#      (or set GITHUB_ATTACH_CREDENTIALS=true and recreate the volume / re-run seed).
+credentials:
+  system:
+    domainCredentials:
+      - credentials:
+          - string:
+              scope: GLOBAL
+              id: "github-pat"
+              secret: "${GITHUB_PAT:--}"
+              description: "GitHub PAT (optional). Default '-' means unset — do not use for private clone until GITHUB_PAT is set."
+
+jobs:
+  - script: |
+      multibranchPipelineJob('level2') {
+        displayName('level2')
+        description('Multibranch Pipeline for popelev/level2 — Script Path Jenkinsfile')
+        branchSources {
+          git {
+            id('level2-git')
+            remote('${GITHUB_REPO_URL}')
+            includes('*')
+          }
+        }
+        factory {
+          workflowBranchProjectFactory {
+            scriptPath('Jenkinsfile')
+          }
+        }
+        orphanedItemStrategy {
+          discardOldItems {
+            numToKeep(20)
+            daysToKeep(30)
+          }
+        }
+        triggers {
+          periodicFolderTrigger {
+            interval('1d')
+          }
+        }
+      }

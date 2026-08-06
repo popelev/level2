@@ -1,7 +1,14 @@
 # Jenkins LTS next to the Level2 lab stack (same Docker host).
 # Does not modify deploy/smoke or deploy/platform networks.
 #
+# One-command up (from repo root on the lab VM):
+#   docker compose -f deploy/ci/docker-compose.yml --env-file deploy/ci/.env.example up -d --build
+#
+# Or copy .env.example → .env, edit secrets, then:
+#   docker compose -f deploy/ci/docker-compose.yml --env-file deploy/ci/.env up -d --build
+#
 # UI: http://<host>:8081/  (collector already uses 8080)
+# Do not commit .env (gitignored via **/.env).
 
 services:
   jenkins:
@@ -16,13 +23,22 @@ services:
       - "8081:8080"
       - "50000:50000"
     environment:
-      JAVA_OPTS: "-Djenkins.install.runSetupWizard=true"
+      JAVA_OPTS: >-
+        -Djenkins.install.runSetupWizard=false
+        -Dcasc.jenkins.config=/var/jenkins_home/casc_configs
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc_configs
+      JENKINS_ADMIN_ID: ${JENKINS_ADMIN_ID:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-admin}
+      JENKINS_URL: ${JENKINS_URL:-http://localhost:8081/}
+      GITHUB_REPO_URL: ${GITHUB_REPO_URL:-https://github.com/popelev/level2.git}
+      GITHUB_PAT: ${GITHUB_PAT:-}
+      GITHUB_CREDENTIALS_ID: ${GITHUB_CREDENTIALS_ID:-github-pat}
     volumes:
       - jenkins_home:/var/jenkins_home
+      # Live CasC overrides (also copied into image under ref/casc_configs).
+      - ./casc:/var/jenkins_home/casc_configs:ro
       # Sibling builds: run golang/node/docker build on the host engine
       - /var/run/docker.sock:/var/run/docker.sock
-      # Optional: mount the repo when developing the Jenkinsfile locally
-      # - ../..:/workspace/level2:ro
     # Keep Jenkins on the default bridge; no need to join smoke_default
 
 volumes:

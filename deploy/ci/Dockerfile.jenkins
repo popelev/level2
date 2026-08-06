@@ -1,10 +1,20 @@
-# Jenkins LTS with Docker CLI for sibling builds via mounted docker.sock.
+# Jenkins LTS with Docker CLI + plugins + JCasC (no setup wizard).
 FROM jenkins/jenkins:lts-jdk21
 
 USER root
 RUN apt-get update \
   && apt-get install -y --no-install-recommends docker.io git \
   && rm -rf /var/lib/apt/lists/*
+
+# Plugins from plugins.txt (configuration-as-code, git, multibranch, job-dsl, …).
+COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
+RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
+
+# CasC seed (Jenkins copies ref/ → jenkins_home on first boot).
+# Compose also bind-mounts ./casc → /var/jenkins_home/casc_configs for live edits.
+COPY casc/ /usr/share/jenkins/ref/casc_configs/
+
+ENV CASC_JENKINS_CONFIG=/var/jenkins_home/casc_configs
 
 # Compose runs this service as root so the socket group matches the host engine.
 USER root
