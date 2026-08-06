@@ -65,6 +65,15 @@ Login: `admin` / password from `.env` (`GF_SECURITY_ADMIN_PASSWORD`).
 Datasource **TimescaleDB** is provisioned.  
 Explore → TimescaleDB → table like `opcua` (Telegraf measurement name).
 
+Provisioned dashboards (folder **Level2**):
+
+- **Level2 Trends** — smoke / legacy example series
+- **OPC Structure Measure** — template: pick structure root once → gauge + trend for `rValueOut`/`realValue` + scale + unit — see [grafana/README-opc-structure.md](grafana/README-opc-structure.md)
+
+```text
+http://<VM-IP>:3000/d/level2-opc-structure/opc-structure-measure
+```
+
 ## Update from git
 
 ```bash

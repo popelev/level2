@@ -1,0 +1,371 @@
+{
+  "annotations": { "list": [] },
+  "description": "Template: pick OPC structure root once → gauge/trend for value with min/max scale and unit. Supports Siemens (rValueOut/strScale/sUnit) and generic (realValue/min Scale/max Scale/unit) sanitized tag_ids.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "description": "Latest value. Axis min/max from scale tags (Config from query).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "percentage",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 90 }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 10, "w": 8, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  time AS \"time\",\n  value_num AS \"value\"\nFROM collector.samples\nWHERE\n  tag_id IN ('${structure}_rvalueout', '${structure}_realvalue')\n  AND $__timeFilter(time)\nORDER BY 1",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT value_num AS \"min\"\nFROM collector.samples\nWHERE tag_id IN ('${structure}_strscale_min', '${structure}_min_scale')\nORDER BY time DESC\nLIMIT 1",
+          "refId": "Min"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT value_num AS \"max\"\nFROM collector.samples\nWHERE tag_id IN ('${structure}_strscale_max', '${structure}_max_scale')\nORDER BY time DESC\nLIMIT 1",
+          "refId": "Max"
+        }
+      ],
+      "title": "Value — ${structure}",
+      "transformations": [
+        {
+          "id": "configFromData",
+          "options": {
+            "configRefId": "Min",
+            "mappings": [
+              {
+                "fieldName": "min",
+                "handlerKey": "min",
+                "reducerId": "lastNotNull"
+              }
+            ]
+          }
+        },
+        {
+          "id": "configFromData",
+          "options": {
+            "configRefId": "Max",
+            "mappings": [
+              {
+                "fieldName": "max",
+                "handlerKey": "max",
+                "reducerId": "lastNotNull"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "gauge"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 0 },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(value_text, value_num::text) AS \"unit\"\nFROM collector.samples\nWHERE tag_id IN ('${structure}_sunit', '${structure}_unit')\nORDER BY time DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Unit",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 0 },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT value_num AS \"min\"\nFROM collector.samples\nWHERE tag_id IN ('${structure}_strscale_min', '${structure}_min_scale')\nORDER BY time DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Min scale",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT value_num AS \"max\"\nFROM collector.samples\nWHERE tag_id IN ('${structure}_strscale_max', '${structure}_max_scale')\nORDER BY time DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Max scale",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "text", "value": null }]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
+      "id": 5,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT '${structure}' AS \"prefix\"",
+          "refId": "A"
+        }
+      ],
+      "title": "Structure prefix",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "description": "Resolved child tag_ids for this structure (Siemens + generic).",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "left", "inspect": false },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 5, "w": 16, "x": 8, "y": 5 },
+      "id": 6,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT role, tag_id, value_num, value_text, time\nFROM (\n  SELECT 'value' AS role, tag_id, value_num, value_text, time,\n         ROW_NUMBER() OVER (PARTITION BY tag_id ORDER BY time DESC) AS rn\n  FROM collector.samples\n  WHERE tag_id IN (\n    '${structure}_rvalueout', '${structure}_realvalue',\n    '${structure}_strscale_min', '${structure}_min_scale',\n    '${structure}_strscale_max', '${structure}_max_scale',\n    '${structure}_sunit', '${structure}_unit'\n  )\n  AND time > NOW() - INTERVAL '1 hour'\n) t\nWHERE rn = 1\nORDER BY role, tag_id",
+          "refId": "A"
+        }
+      ],
+      "title": "Resolved tags (last hour)",
+      "type": "table"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "timescaledb" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "spanNulls": false
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "min" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "dash": [4, 4], "fill": "dash" } },
+              { "id": "color", "value": { "fixedColor": "semi-dark-blue", "mode": "fixed" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "max" },
+            "properties": [
+              { "id": "custom.lineStyle", "value": { "dash": [4, 4], "fill": "dash" } },
+              { "id": "color", "value": { "fixedColor": "semi-dark-red", "mode": "fixed" } }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 10 },
+      "id": 7,
+      "options": {
+        "legend": { "calcs": ["lastNotNull", "min", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "none" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  time AS \"time\",\n  value_num AS \"value\"\nFROM collector.samples\nWHERE\n  tag_id IN ('${structure}_rvalueout', '${structure}_realvalue')\n  AND $__timeFilter(time)\nORDER BY 1",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  time AS \"time\",\n  value_num AS \"min\"\nFROM collector.samples\nWHERE\n  tag_id IN ('${structure}_strscale_min', '${structure}_min_scale')\n  AND $__timeFilter(time)\nORDER BY 1",
+          "refId": "B"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  time AS \"time\",\n  value_num AS \"max\"\nFROM collector.samples\nWHERE\n  tag_id IN ('${structure}_strscale_max', '${structure}_max_scale')\n  AND $__timeFilter(time)\nORDER BY 1",
+          "refId": "C"
+        }
+      ],
+      "title": "Trend — value + scale (${structure})",
+      "type": "timeseries"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["level2", "opc", "structure", "template"],
+  "templating": {
+    "list": [
+      {
+        "allValue": "",
+        "allowCustomValue": true,
+        "current": {},
+        "datasource": { "type": "postgres", "uid": "timescaledb" },
+        "definition": "SELECT regexp_replace(tag_id, '_(rvalueout|realvalue)$', '') AS __value\nFROM collector.samples\nWHERE time > NOW() - INTERVAL '1 hour'\n  AND tag_id ~ '_(rvalueout|realvalue)$'\nGROUP BY 1\nORDER BY 1",
+        "description": "OPC structure root (sanitized tag_id prefix). Child series resolve as ${structure}_rvalueout|realvalue, _strscale_min|min_scale, _strscale_max|max_scale, _sunit|unit. Custom values allowed (paste prefix).",
+        "hide": 0,
+        "includeAll": false,
+        "label": "Structure",
+        "multi": false,
+        "name": "structure",
+        "options": [],
+        "query": "SELECT regexp_replace(tag_id, '_(rvalueout|realvalue)$', '') AS __value\nFROM collector.samples\nWHERE time > NOW() - INTERVAL '1 hour'\n  AND tag_id ~ '_(rvalueout|realvalue)$'\nGROUP BY 1\nORDER BY 1",
+        "refresh": 2,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "browser",
+  "title": "OPC Structure Measure",
+  "uid": "level2-opc-structure",
+  "version": 1
+}
