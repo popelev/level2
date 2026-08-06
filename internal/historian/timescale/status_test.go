@@ -33,12 +33,18 @@ func TestResolveFreeBytesStatfs(t *testing.T) {
 	t.Setenv("LEVEL2_DB_CAPACITY_BYTES", "")
 	dir := t.TempDir()
 	t.Setenv("LEVEL2_DB_DATA_PATH", dir)
-	free, source, cap := resolveFreeBytes(1000)
-	if free == nil || *free <= 0 {
+	free, source, cap, diskTotal, limit := resolveFreeBytes(1000, 50)
+	if free == nil || *free < 0 {
 		t.Fatalf("free=%v source=%s", free, source)
 	}
-	if cap != nil {
-		t.Fatalf("capacity should be nil for statfs, got %v", *cap)
+	if diskTotal == nil || *diskTotal <= 0 {
+		t.Fatalf("diskTotal=%v", diskTotal)
+	}
+	if limit == nil || *limit != *diskTotal/2 {
+		t.Fatalf("limit=%v diskTotal=%v", limit, diskTotal)
+	}
+	if cap == nil || *cap != *limit {
+		t.Fatalf("cap=%v limit=%v", cap, limit)
 	}
 	if source != "statfs:"+dir {
 		t.Fatalf("source=%q", source)
@@ -48,9 +54,12 @@ func TestResolveFreeBytesStatfs(t *testing.T) {
 func TestResolveFreeBytesEnvOverride(t *testing.T) {
 	t.Setenv("LEVEL2_DB_CAPACITY_BYTES", "10000")
 	t.Setenv("LEVEL2_DB_DATA_PATH", t.TempDir())
-	free, source, cap := resolveFreeBytes(3000)
+	free, source, cap, diskTotal, limit := resolveFreeBytes(3000, 90)
 	if source != "env_limit" || free == nil || *free != 7000 || cap == nil || *cap != 10000 {
 		t.Fatalf("free=%v source=%s cap=%v", free, source, cap)
+	}
+	if limit == nil || *limit != 10000 || diskTotal == nil || *diskTotal != 10000 {
+		t.Fatalf("limit=%v diskTotal=%v", limit, diskTotal)
 	}
 }
 

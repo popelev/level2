@@ -33,18 +33,23 @@ type ConnectionStatus struct {
 
 // CapacityStats describes DB growth and remaining room for ETA.
 type CapacityStats struct {
-	DatabaseSizeBytes int64   `json:"database_size_bytes"`
-	SamplesSizeBytes  int64   `json:"samples_size_bytes"`
-	SamplesApproxRows int64   `json:"samples_approx_rows"`
-	SamplesLast5Min   int64   `json:"samples_last_5min"`
-	SamplesPerSec     float64 `json:"samples_per_sec"`
-	AvgSampleBytes    float64 `json:"avg_sample_bytes"`
-	GrowthBytesPerSec float64 `json:"growth_bytes_per_sec"`
-	FreeBytes         *int64  `json:"free_bytes"`
-	FreeBytesSource   string  `json:"free_bytes_source"`
-	CapacityBytes     *int64  `json:"capacity_bytes,omitempty"`
+	DatabaseSizeBytes int64    `json:"database_size_bytes"`
+	SamplesSizeBytes  int64    `json:"samples_size_bytes"`
+	SamplesApproxRows int64    `json:"samples_approx_rows"`
+	SamplesLast5Min   int64    `json:"samples_last_5min"`
+	SamplesPerSec     float64  `json:"samples_per_sec"`
+	AvgSampleBytes    float64  `json:"avg_sample_bytes"`
+	GrowthBytesPerSec float64  `json:"growth_bytes_per_sec"`
+	FreeBytes         *int64   `json:"free_bytes"`
+	FreeBytesSource   string   `json:"free_bytes_source"`
+	CapacityBytes     *int64   `json:"capacity_bytes,omitempty"`
+	DiskTotalBytes    *int64   `json:"disk_total_bytes,omitempty"`
+	CapacityPercent   int      `json:"capacity_percent"`
+	FullPolicy        string   `json:"full_policy"`
+	LimitBytes        *int64   `json:"limit_bytes,omitempty"` // disk_total * percent/100 (or env)
+	UsedOverLimit     bool     `json:"used_over_limit"`
 	ETASeconds        *float64 `json:"eta_seconds"`
-	WindowSeconds     int     `json:"window_seconds"`
+	WindowSeconds     int      `json:"window_seconds"`
 }
 
 // Status returns connection health and masked DSN fields.
@@ -129,10 +134,21 @@ SELECT COUNT(*) FROM collector.samples WHERE time > now() - interval '5 minutes'
 	}
 	out.GrowthBytesPerSec = out.SamplesPerSec * out.AvgSampleBytes
 
-	free, source, capacity := resolveFreeBytes(out.DatabaseSizeBytes)
+	settings := h.CapacityPolicy()
+	out.CapacityPercent = settings.Percent
+	out.FullPolicy = settings.Policy
+
+	free, source, capacity, diskTotal, limit := resolveFreeBytes(out.DatabaseSizeBytes, settings.Percent)
 	out.FreeBytesSource = source
 	if capacity != nil {
 		out.CapacityBytes = capacity
+	}
+	if diskTotal != nil {
+		out.DiskTotalBytes = diskTotal
+	}
+	if limit != nil {
+		out.LimitBytes = limit
+		out.UsedOverLimit = out.DatabaseSizeBytes >= *limit
 	}
 	if free != nil {
 		out.FreeBytes = free
@@ -144,27 +160,51 @@ SELECT COUNT(*) FROM collector.samples WHERE time > now() - interval '5 minutes'
 	return out, nil
 }
 
-func resolveFreeBytes(usedBytes int64) (free *int64, source string, capacity *int64) {
+func resolveFreeBytes(usedBytes int64, percent int) (free *int64, source string, capacity *int64, diskTotal *int64, limit *int64) {
+	if percent < 1 {
+		percent = 90
+	}
+	if percent > 100 {
+		percent = 100
+	}
+
 	if raw := strings.TrimSpace(os.Getenv("LEVEL2_DB_CAPACITY_BYTES")); raw != "" {
 		capN, err := strconv.ParseInt(raw, 10, 64)
 		if err == nil && capN > 0 {
 			capacity = &capN
+			limit = &capN
 			f := capN - usedBytes
 			if f < 0 {
 				f = 0
 			}
-			return &f, "env_limit", capacity
+			return &f, "env_limit", capacity, capacity, limit
 		}
 	}
 
 	for _, path := range dbDiskPaths() {
-		n, err := diskFree(path)
-		if err != nil || n < 0 {
+		avail, total, err := diskSpace(path)
+		if err != nil || avail < 0 || total <= 0 {
 			continue
 		}
-		return &n, "statfs:" + path, nil
+		lim := total * int64(percent) / 100
+		if lim < 1 {
+			lim = 1
+		}
+		diskTotal = &total
+		limit = &lim
+		capacity = &lim
+		// Remaining under policy limit (also never exceed real free space).
+		underLimit := lim - usedBytes
+		if underLimit < 0 {
+			underLimit = 0
+		}
+		f := underLimit
+		if avail < f {
+			f = avail
+		}
+		return &f, "statfs:" + path, capacity, diskTotal, limit
 	}
-	return nil, "unavailable", nil
+	return nil, "unavailable", nil, nil, nil
 }
 
 // dbDiskPaths returns candidate filesystem paths for Statfs (Timescale data volume).

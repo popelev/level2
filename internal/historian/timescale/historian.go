@@ -4,14 +4,18 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
 )
 
 // Historian writes samples to Timescale/Postgres.
 type Historian struct {
-	pool *pgxpool.Pool
+	pool             *pgxpool.Pool
+	capacityPercent  atomic.Int64
+	fullPolicy       atomic.Value // string
 }
 
 func New(ctx context.Context, databaseURL string) (*Historian, error) {
@@ -23,7 +27,9 @@ func New(ctx context.Context, databaseURL string) (*Historian, error) {
 		pool.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
-	return &Historian{pool: pool}, nil
+	h := &Historian{pool: pool}
+	h.SetCapacityPolicy(90, config.FullPolicyStop)
+	return h, nil
 }
 
 func (h *Historian) Close(ctx context.Context) error {
@@ -63,6 +69,9 @@ CREATE TABLE IF NOT EXISTS collector.samples (
 func (h *Historian) WriteBatch(ctx context.Context, samples []core.Sample) error {
 	if len(samples) == 0 {
 		return nil
+	}
+	if err := h.enforceCapacity(ctx); err != nil {
+		return err
 	}
 	var b strings.Builder
 	b.WriteString(`INSERT INTO collector.samples (time, tag_id, value_num, value_text, value_bool, quality) VALUES `)

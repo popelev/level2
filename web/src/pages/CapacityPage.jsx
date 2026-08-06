@@ -1,5 +1,28 @@
 import { useCallback, useEffect, useState } from 'react'
-import { formatBytes, getJSON } from '../api.js'
+import { formatBytes, getJSON, putJSON } from '../api.js'
+
+const POLICIES = [
+  {
+    id: 'stop',
+    label: 'Stop writing',
+    help: 'Halt historian inserts when the limit is reached. Samples are not spooled.',
+  },
+  {
+    id: 'drop_oldest',
+    label: 'Overwrite / drop oldest',
+    help: 'Drop oldest Timescale chunks (or DELETE oldest rows) until under the limit, then continue writing.',
+  },
+  {
+    id: 'rotate',
+    label: 'Create new database (Phase 2)',
+    help: 'Not implemented yet — currently behaves like Stop. Schema/table rotation will come later.',
+  },
+  {
+    id: 'expand_limit',
+    label: 'Expand limit',
+    help: 'User-driven: raise the slider to allow more growth. Until then, writes halt like Stop.',
+  },
+]
 
 function formatRate(n) {
   if (n == null || Number.isNaN(Number(n))) return '—'
@@ -27,11 +50,19 @@ function formatETA(seconds) {
 
 export default function CapacityPage({ onError }) {
   const [data, setData] = useState(null)
+  const [percent, setPercent] = useState(90)
+  const [policy, setPolicy] = useState('stop')
+  const [saving, setSaving] = useState(false)
+  const [dirty, setDirty] = useState(false)
 
   const load = useCallback(async () => {
     const st = await getJSON('/api/v1/diagnostics/capacity')
     setData(st)
-  }, [])
+    if (!dirty) {
+      if (st.capacity_percent != null) setPercent(Number(st.capacity_percent))
+      if (st.full_policy) setPolicy(st.full_policy)
+    }
+  }, [dirty])
 
   useEffect(() => {
     onError('')
@@ -41,6 +72,31 @@ export default function CapacityPage({ onError }) {
     }, 8000)
     return () => clearInterval(t)
   }, [load, onError])
+
+  const diskTotal = data?.disk_total_bytes
+  const computedLimit =
+    data?.limit_bytes != null
+      ? data.limit_bytes
+      : diskTotal != null
+        ? Math.floor((Number(diskTotal) * Number(percent)) / 100)
+        : null
+
+  const savePolicy = async () => {
+    onError('')
+    setSaving(true)
+    try {
+      await putJSON('/api/v1/database/capacity-policy', {
+        capacity_percent: Number(percent),
+        full_policy: policy,
+      })
+      setDirty(false)
+      await load()
+    } catch (e) {
+      onError(String(e.message || e))
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const mem = data?.collector_memory
   const freeKnown = data?.free_bytes != null
@@ -52,7 +108,7 @@ export default function CapacityPage({ onError }) {
         <div>
           <h2>Capacity / Storage</h2>
           <p className="muted">
-            Disk use of TimescaleDB and estimate of time to fill at the current write rate
+            Disk use of TimescaleDB, capacity limit, and policy when the database is (nearly) full
           </p>
         </div>
         <button type="button" className="secondary small-btn" onClick={() => load().catch((e) => onError(String(e.message || e)))}>
@@ -65,6 +121,13 @@ export default function CapacityPage({ onError }) {
       ) : (
         <>
           {data.error && <p className="err">{data.error}</p>}
+          {data.used_over_limit && (
+            <p className="err">
+              Database size is at or above the configured limit
+              {policy === 'rotate' ? ' (rotate is Phase 2 — writes halt like Stop)' : ''}
+              {policy === 'expand_limit' ? ' — raise the capacity slider to resume writes' : ''}.
+            </p>
+          )}
 
           <div className="cap-hero">
             <div className="cap-stat">
@@ -76,7 +139,7 @@ export default function CapacityPage({ onError }) {
               <div className="cap-value">{formatBytes(data.samples_size_bytes)}</div>
             </div>
             <div className="cap-stat">
-              <div className="cap-label">Free</div>
+              <div className="cap-label">Free (to limit)</div>
               <div className="cap-value">{freeKnown ? formatBytes(data.free_bytes) : 'unknown'}</div>
               <div className="cap-sub muted small">{data.free_bytes_source || ''}</div>
             </div>
@@ -92,6 +155,59 @@ export default function CapacityPage({ onError }) {
               </div>
             </div>
           </div>
+
+          <section className="panel">
+            <h3>When nearly full</h3>
+            <p className="hint">
+              Max disk fraction the database may use. Byte limit = disk total × percent / 100
+              {diskTotal != null ? ` (disk ${formatBytes(diskTotal)})` : ''}.
+            </p>
+            <div className="cap-policy">
+              <label className="cap-slider-label" htmlFor="cap-percent">
+                Capacity limit: <strong>{percent}%</strong>
+                {computedLimit != null && (
+                  <span className="muted"> → {formatBytes(computedLimit)}</span>
+                )}
+              </label>
+              <input
+                id="cap-percent"
+                type="range"
+                min={1}
+                max={100}
+                value={percent}
+                onChange={(e) => {
+                  setPercent(Number(e.target.value))
+                  setDirty(true)
+                }}
+              />
+              <div className="cap-policy-options">
+                {POLICIES.map((p) => (
+                  <label key={p.id} className={`cap-policy-opt${policy === p.id ? ' selected' : ''}`}>
+                    <input
+                      type="radio"
+                      name="full_policy"
+                      value={p.id}
+                      checked={policy === p.id}
+                      onChange={() => {
+                        setPolicy(p.id)
+                        setDirty(true)
+                      }}
+                    />
+                    <span>
+                      <span className="cap-policy-title">{p.label}</span>
+                      <span className="muted small">{p.help}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="row tight" style={{ marginTop: 12 }}>
+                <button type="button" disabled={saving || !dirty} onClick={savePolicy}>
+                  {saving ? 'Saving…' : 'Save policy'}
+                </button>
+                {dirty && <span className="muted small">Unsaved changes</span>}
+              </div>
+            </div>
+          </section>
 
           <section className="panel">
             <h3>Write rate & tags</h3>
@@ -122,8 +238,12 @@ export default function CapacityPage({ onError }) {
                 <div>{formatBytes(data.growth_bytes_per_sec)}/s</div>
               </div>
             </div>
-            {data.capacity_bytes != null && (
-              <p className="hint">Configured capacity limit: {formatBytes(data.capacity_bytes)}</p>
+            {(data.limit_bytes != null || data.capacity_bytes != null) && (
+              <p className="hint">
+                Effective limit: {formatBytes(data.limit_bytes ?? data.capacity_bytes)}
+                {data.capacity_percent != null ? ` (${data.capacity_percent}%)` : ''}
+                {data.full_policy ? ` · policy ${data.full_policy}` : ''}
+              </p>
             )}
           </section>
 
@@ -158,6 +278,10 @@ export default function CapacityPage({ onError }) {
                 <span className={`pill${data.metrics.write_errors_total > 0 ? ' bad' : ''}`}>
                   write errors {Math.round(data.metrics.write_errors_total || 0)}
                 </span>
+                <span className={`pill${data.metrics.capacity_halts_total > 0 ? ' bad' : ''}`}>
+                  capacity halts {Math.round(data.metrics.capacity_halts_total || 0)}
+                </span>
+                <span className="pill">capacity drops {Math.round(data.metrics.capacity_drops_total || 0)}</span>
                 <span className="pill">spool files {Math.round(data.metrics.spool_depth || 0)}</span>
               </div>
             </section>

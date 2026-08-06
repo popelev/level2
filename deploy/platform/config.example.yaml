@@ -9,6 +9,11 @@ ui_dir: "/usr/share/level2/ui"
 
 database:
   url: "postgres://level2:level2_change_me@timescaledb:5432/level2?sslmode=disable"
+  # Max fraction of disk the DB may use (1–100). Byte limit = disk_total × percent / 100.
+  # Override absolute bytes with env LEVEL2_DB_CAPACITY_BYTES if needed.
+  capacity_percent: 90
+  # When used >= limit: stop | drop_oldest | rotate (Phase 2 stub) | expand_limit
+  full_policy: stop
 
 devices:
   - id: s7_1500

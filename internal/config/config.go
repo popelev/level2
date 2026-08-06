@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/popelev/level2/internal/core"
@@ -18,8 +19,18 @@ type File struct {
 	Devices  []core.Device `yaml:"devices"`
 }
 
+// Full-disk policies when used bytes reach the capacity percent limit.
+const (
+	FullPolicyStop        = "stop"
+	FullPolicyDropOldest  = "drop_oldest"
+	FullPolicyRotate      = "rotate"       // Phase 2 stub — behaves like stop
+	FullPolicyExpandLimit = "expand_limit" // user raises percent; until then like stop
+)
+
 type Database struct {
-	URL string `yaml:"url"`
+	URL              string `yaml:"url"`
+	CapacityPercent  int    `yaml:"capacity_percent,omitempty"` // 1–100; max fraction of disk DB may use
+	FullPolicy       string `yaml:"full_policy,omitempty"`      // stop | drop_oldest | rotate | expand_limit
 }
 
 // Load reads YAML and applies env overrides for secrets/endpoint.
@@ -46,6 +57,25 @@ func Load(path string) (*File, error) {
 	}
 	if f.Database.URL == "" {
 		return nil, fmt.Errorf("database.url is required (or DATABASE_URL env)")
+	}
+	if err := normalizeDatabaseCapacity(&f.Database); err != nil {
+		return nil, err
+	}
+	if v := strings.TrimSpace(os.Getenv("LEVEL2_DB_CAPACITY_PERCENT")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("LEVEL2_DB_CAPACITY_PERCENT: %w", err)
+		}
+		f.Database.CapacityPercent = n
+		if err := normalizeDatabaseCapacity(&f.Database); err != nil {
+			return nil, err
+		}
+	}
+	if v := strings.TrimSpace(os.Getenv("LEVEL2_DB_FULL_POLICY")); v != "" {
+		f.Database.FullPolicy = v
+		if err := normalizeDatabaseCapacity(&f.Database); err != nil {
+			return nil, err
+		}
 	}
 	if v := os.Getenv("SPOOL_DIR"); v != "" {
 		f.SpoolDir = v
@@ -86,4 +116,46 @@ func Load(path string) (*File, error) {
 		}
 	}
 	return &f, nil
+}
+
+func normalizeDatabaseCapacity(db *Database) error {
+	if db.CapacityPercent == 0 {
+		db.CapacityPercent = 90
+	}
+	if db.CapacityPercent < 1 || db.CapacityPercent > 100 {
+		return fmt.Errorf("database.capacity_percent must be 1–100, got %d", db.CapacityPercent)
+	}
+	if db.FullPolicy == "" {
+		db.FullPolicy = FullPolicyStop
+	}
+	db.FullPolicy = strings.ToLower(strings.TrimSpace(db.FullPolicy))
+	if !ValidFullPolicy(db.FullPolicy) {
+		return fmt.Errorf("database.full_policy must be one of stop|drop_oldest|rotate|expand_limit, got %q", db.FullPolicy)
+	}
+	return nil
+}
+
+// ValidFullPolicy reports whether p is a known full-disk policy.
+func ValidFullPolicy(p string) bool {
+	switch strings.ToLower(strings.TrimSpace(p)) {
+	case FullPolicyStop, FullPolicyDropOldest, FullPolicyRotate, FullPolicyExpandLimit:
+		return true
+	default:
+		return false
+	}
+}
+
+// ValidateCapacityPolicy checks percent/policy without applying defaults (for API updates).
+func ValidateCapacityPolicy(percent int, policy string) (int, string, error) {
+	policy = strings.ToLower(strings.TrimSpace(policy))
+	if percent < 1 || percent > 100 {
+		return 0, "", fmt.Errorf("capacity_percent must be 1–100, got %d", percent)
+	}
+	if policy == "" {
+		policy = FullPolicyStop
+	}
+	if !ValidFullPolicy(policy) {
+		return 0, "", fmt.Errorf("full_policy must be one of stop|drop_oldest|rotate|expand_limit, got %q", policy)
+	}
+	return percent, policy, nil
 }

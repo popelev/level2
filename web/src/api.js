@@ -4,6 +4,16 @@ export async function getJSON(url) {
   return r.json()
 }
 
+export async function putJSON(url, body) {
+  const r = await fetch(url, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+  return r.json()
+}
+
 export function formatBytes(n) {
   if (n == null || Number.isNaN(Number(n))) return '—'
   const v = Number(n)

@@ -29,6 +29,14 @@ var (
 		Name: "level2_spool_depth",
 		Help: "Number of spool files waiting for replay",
 	})
+	CapacityHalts = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "level2_historian_capacity_halts_total",
+		Help: "Write batches skipped because DB capacity policy halted writes",
+	})
+	CapacityDrops = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "level2_historian_capacity_drops_total",
+		Help: "Oldest-data drop operations performed under drop_oldest policy",
+	})
 )
 
 func Handler() http.Handler { return promhttp.Handler() }

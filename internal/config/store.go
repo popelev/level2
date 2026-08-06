@@ -325,6 +325,23 @@ func (s *Store) ApplyProject(devices []core.Device, replace bool) error {
 	return nil
 }
 
+// SetCapacityPolicy updates disk capacity percent and full-disk policy, then persists YAML.
+func (s *Store) SetCapacityPolicy(percent int, policy string) error {
+	percent, policy, err := ValidateCapacityPolicy(percent, policy)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.file.Database.CapacityPercent = percent
+	s.file.Database.FullPolicy = policy
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.gen.Add(1)
+	return nil
+}
+
 func (s *Store) saveLocked() error {
 	out := *s.file
 	out.Devices = append([]core.Device(nil), s.file.Devices...)

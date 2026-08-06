@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getJSON } from '../api.js'
+import { formatBytes, getJSON } from '../api.js'
 
 export default function DatabasePage({ onError }) {
   const [data, setData] = useState(null)
 
   const load = useCallback(async () => {
-    const st = await getJSON('/api/v1/database/status')
-    setData(st)
+    const [st, pol] = await Promise.all([
+      getJSON('/api/v1/database/status'),
+      getJSON('/api/v1/database/capacity-policy').catch(() => ({})),
+    ])
+    setData({ ...st, ...pol })
   }, [])
 
   useEffect(() => {
@@ -101,6 +104,27 @@ export default function DatabasePage({ onError }) {
               <div>
                 <div className="muted small">Acquired</div>
                 <div>{data.pool_acquired_conns ?? '—'}</div>
+              </div>
+            </div>
+          </section>
+          <section className="panel">
+            <h3>Capacity policy</h3>
+            <p className="hint">
+              Configure the disk fraction and full-disk action on the{' '}
+              <strong>Capacity</strong> page (slider + stop / drop oldest / expand).
+            </p>
+            <div className="detail-grid">
+              <div>
+                <div className="muted small">capacity_percent</div>
+                <div className="mono">{data.capacity_percent != null ? `${data.capacity_percent}%` : '—'}</div>
+              </div>
+              <div>
+                <div className="muted small">full_policy</div>
+                <div className="mono">{data.full_policy || '—'}</div>
+              </div>
+              <div>
+                <div className="muted small">Byte limit</div>
+                <div className="mono">{data.limit_bytes != null ? formatBytes(data.limit_bytes) : '—'}</div>
               </div>
             </div>
           </section>

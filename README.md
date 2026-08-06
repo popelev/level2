@@ -1,26 +1,26 @@
 # Level2
 
-Платформа промышленного сбора данных: **OPC UA collector (Go)** → **TimescaleDB** + **Admin UI (React)**.
+Industrial data collection platform: **OPC UA collector (Go)** → **TimescaleDB** + **Admin UI (React)**.
 
-Репозиторий: https://github.com/popelev/level2
+Repository: https://github.com/popelev/level2
 
-Collector опрашивает leaf-теги по OPC UA (батчами до **100** узлов на Read), держит live-значения в памяти, пишет историю в TimescaleDB (`collector.samples`) и отдаёт REST/WebSocket API. React UI обслуживается с того же `:8080`.
+The collector polls leaf tags over OPC UA (batches of up to **100** nodes per Read), keeps live values in memory, writes history to TimescaleDB (`collector.samples`), and exposes a REST/WebSocket API. The React UI is served from the same `:8080`.
 
-> Ранее smoke-стек Telegraf → Timescale → Grafana жил в `deploy/smoke/`. Основной путь сейчас — Go collector в `deploy/platform/`.
+> The earlier Telegraf → Timescale → Grafana smoke stack lived in `deploy/smoke/`. The primary path is now the Go collector in `deploy/platform/`.
 
 ---
 
-## Как это устроено
+## How it works
 
 ```mermaid
 flowchart LR
-  PLC["PLC / OPC UA<br/>(S7-1500 и др.)"]
+  PLC["PLC / OPC UA<br/>(S7-1500 etc.)"]
   COL["Collector<br/>drivers · poll ≤100/Read"]
   LIVE["Live store"]
   FAN["FanIn"]
   WS["WebSocket Hub"]
   HIST["Historian<br/>TimescaleDB"]
-  SPOOL["Disk spool<br/>(при сбое записи)"]
+  SPOOL["Disk spool<br/>(on write failure)"]
   API["REST / WS API<br/>:8080"]
   UI["React Admin UI"]
 
@@ -37,16 +37,16 @@ flowchart LR
   API --> UI
 ```
 
-**Поток данных (кратко):**
+**Data flow (short):**
 
-1. Driver (OPC UA или SIM) читает enabled-теги → канал samples.
-2. `FanIn` обновляет live store, шлёт в WS и в буфер historian.
-3. `flushLoop` пишет батчи в Timescale; при ошибке — spool на диск и последующий replay.
-4. API + UI читают live/history/diagnostics/capacity.
+1. Driver (OPC UA or SIM) reads enabled tags → samples channel.
+2. `FanIn` updates the live store, sends to WS and the historian buffer.
+3. `flushLoop` writes batches to Timescale; on error — spool to disk and later replay.
+4. API + UI read live/history/diagnostics/capacity.
 
 ---
 
-## Топология развёртывания (лаб)
+## Deployment topology (lab)
 
 ```mermaid
 flowchart TB
@@ -56,12 +56,12 @@ flowchart TB
 
   subgraph VM["Ubuntu VM · Docker"]
     COL2["level2-collector<br/>Go + UI :8080"]
-    TS["timescaledb<br/>(сеть/volume smoke)"]
+    TS["timescaledb<br/>(smoke network/volume)"]
     COL2 -->|DATABASE_URL| TS
     COL2 -.->|Statfs RO mount<br/>smoke_timeseries| TS
   end
 
-  subgraph NET["Сеть цеха"]
+  subgraph NET["Plant network"]
     PLC2["PLC OPC UA<br/>:4840"]
   end
 
@@ -69,11 +69,11 @@ flowchart TB
   COL2 -->|opc.tcp| PLC2
 ```
 
-Collector подключается к той же Docker-сети и Timescale, что и smoke (`smoke_default`, volume `smoke_timeseries`). Подробности — в [deploy/platform/README.md](deploy/platform/README.md).
+The collector joins the same Docker network and Timescale instance as smoke (`smoke_default`, volume `smoke_timeseries`). Details: [deploy/platform/README.md](deploy/platform/README.md).
 
 ---
 
-## Основной путь записи (poll → DB)
+## Main write path (poll → DB)
 
 ```mermaid
 sequenceDiagram
@@ -87,70 +87,72 @@ sequenceDiagram
   participant Sp as Spool
 
   UI->>API: Browse / Expand → upsert tags<br/>(DB write list)
-  loop каждый interval (мин. interval_ms)
-    Drv->>Drv: Read батчами по 100 NodeId
+  loop every interval (min. interval_ms)
+    Drv->>Drv: Read in batches of 100 NodeId
     Drv->>Fan: Sample
     Fan->>Live: Update
     Fan->>Flush: Sample
   end
   Flush->>TS: WriteBatch
-  alt ошибка записи
+  alt write error
     Flush->>Sp: Enqueue
-    Sp-->>TS: replay позже
+    Sp-->>TS: replay later
   end
   UI->>API: GET /tags, WS /ws/stream, history
 ```
 
 ---
 
-## Основные сценарии UI
+## Main UI scenarios
 
-Навигация Admin UI (`http://<host>:8080/`):
+Admin UI navigation (`http://<host>:8080/`):
 
-| Группа | Вкладки |
-|--------|---------|
+| Group | Tabs |
+|-------|------|
 | — | **Overview** |
 | Connectivity | **Servers**, **Address Space** |
 | Data | **DB write list**, **Import / Export** |
 | Config | **Projects**, **Database** |
 | System | **Diagnostics**, **Capacity** |
 
-**Типичный поток тегов**
+**Typical tag workflow**
 
-1. **Address Space** — browse дерева OPC (`GET /browse`), expand (`POST /expand`), выбор leaf → запись в список опроса.
-2. **DB write list** — enabled-теги, которые реально поллятся и пишутся в Timescale; live-значения обновляются в UI.
-3. **Import / Export** — Excel списка тегов на один сервер (`…/tags.xlsx`, `…/tags/import`).
-4. **Projects** — `Project.xlsx` (Servers + Tags), import merge/replace, validate/compare против Address Space.
-5. **Overview / Diagnostics / Capacity / Database** — сводка готовности и качества, кольцевой лог OPC/DB, свободное место БД, статус `DATABASE_URL`.
+1. **Address Space** — browse the OPC tree (`GET /browse`), expand (`POST /expand`), pick leaf → add to the poll list.
+2. **DB write list** — enabled tags that are actually polled and written to Timescale; live values update in the UI.
+3. **Import / Export** — Excel tag list for one server (`…/tags.xlsx`, `…/tags/import`).
+4. **Projects** — `Project.xlsx` (Servers + Tags), import merge/replace, validate/compare against Address Space.
+5. **Overview / Diagnostics / Capacity / Database** — readiness and quality summary, OPC/DB ring log, free DB space, `DATABASE_URL` status.
 
-Режим без PLC: `LEVEL2_SIM_BROWSER=1` — in-memory browse/expand и синтетические samples.
+PLC-less mode: `LEVEL2_SIM_BROWSER=1` — in-memory browse/expand and synthetic samples.
 
 ---
 
-## Ключевые переменные окружения
+## Key environment variables
 
-| Переменная | Назначение |
-|------------|------------|
-| `LEVEL2_SIM_BROWSER` | `1` — demo без PLC; `0` — живой OPC UA |
-| `DATABASE_URL` | PostgreSQL/Timescale DSN (в compose задаётся автоматически) |
+| Variable | Purpose |
+|----------|---------|
+| `LEVEL2_SIM_BROWSER` | `1` — demo without PLC; `0` — live OPC UA |
+| `DATABASE_URL` | PostgreSQL/Timescale DSN (set automatically in compose) |
 | `PLC_OPC_ENDPOINT` | `opc.tcp://…:4840` |
-| `OPC_UA_USERNAME` / `OPC_UA_PASSWORD` | Учётные данные OPC (как в UaExpert) |
-| `LEVEL2_DB_CAPACITY_BYTES` | Опциональный лимит ёмкости (байты); иначе Statfs по смонтированному volume |
-| `LEVEL2_DB_DATA_PATH` | Путь к данным БД внутри collector (по умолчанию `/var/lib/level2/dbdisk`) |
+| `OPC_UA_USERNAME` / `OPC_UA_PASSWORD` | OPC credentials (same as in UaExpert) |
+| `LEVEL2_DB_CAPACITY_BYTES` | Optional absolute capacity limit (bytes); otherwise Statfs × `capacity_percent` |
+| `LEVEL2_DB_CAPACITY_PERCENT` | Disk fraction 1–100 (YAML `database.capacity_percent`, default 90) |
+| `LEVEL2_DB_FULL_POLICY` | `stop` \| `drop_oldest` \| `rotate` \| `expand_limit` — see [docs/db-capacity-policy.md](docs/db-capacity-policy.md) |
+| `LEVEL2_DB_DATA_PATH` | DB data path inside the collector (default `/var/lib/level2/dbdisk`) |
 
-Пример: [deploy/platform/.env.example](deploy/platform/.env.example).
+Example: [deploy/platform/.env.example](deploy/platform/.env.example).
 
 ---
 
-## Быстрый старт
+## Quick start
 
-Не дублируем полный runbook — см. **[deploy/platform/README.md](deploy/platform/README.md)**.
+Full runbook is not duplicated here — see **[deploy/platform/README.md](deploy/platform/README.md)**.
 
-Кратко:
+Short version:
 
 ```bash
-# 1) Timescale из smoke (сеть + volume), если ещё не поднят
-cd deploy/smoke && docker compose up -d timescaledb   # по необходимости
+# 1) Timescale from smoke (network + volume), if not already up
+cd deploy/smoke && docker compose up -d timescaledb   # if needed
 
 # 2) Platform collector
 cd deploy/platform
@@ -165,51 +167,43 @@ curl -s http://127.0.0.1:8080/healthz
 ```
 
 - **PLC off** — sim browser + synthetic samples (`verify_offline.sh`).
-- **PLC on** — `LEVEL2_SIM_BROWSER=0`, credentials, `verify_plc_on.sh`; остановите Telegraf smoke, чтобы не дублировать запись.
+- **PLC on** — `LEVEL2_SIM_BROWSER=0`, credentials, `verify_plc_on.sh`; stop Telegraf smoke to avoid duplicate writes.
 
-Старый connectivity-smoke (Telegraf + Grafana): [deploy/smoke/README.md](deploy/smoke/README.md).
+Legacy connectivity smoke (Telegraf + Grafana): [deploy/smoke/README.md](deploy/smoke/README.md).
 
 ---
 
 ## API (highlights)
 
-Полная таблица — в [deploy/platform/README.md](deploy/platform/README.md#api).
+Full table: [deploy/platform/README.md](deploy/platform/README.md#api).
 
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/healthz`, `/readyz` | liveness / readiness |
-| GET | `/api/v1/status/summary` | сводка для UI pills |
+| GET | `/api/v1/status/summary` | summary for UI pills |
 | GET | `/api/v1/tags`, `/api/v1/tags/{id}/value` | live |
 | GET | `/api/v1/tags/{id}/history` | Timescale |
 | GET | `/api/v1/browse`, POST `/api/v1/expand` | Address Space |
 | GET/POST | `/api/v1/devices/…/tags…` | CRUD / import / export / sync |
 | GET | `/api/v1/ws/stream` | live WebSocket |
-| GET | `/api/v1/diagnostics/logs` | кольцевой лог |
-| GET | `/api/v1/database/status` | статус БД / capacity |
+| GET | `/api/v1/diagnostics/logs` | ring log |
+| GET | `/api/v1/database/status` | DB status / capacity |
 | GET | `/metrics` | Prometheus |
 
-Запись значений в PLC (`PUT /api/v1/tags/{id}/value`) пока **501** (фаза write не реализована).
+Writing values to the PLC (`PUT /api/v1/tags/{id}/value`) is still **501** (write phase not implemented).
 
 ---
 
-## Структура репозитория
+## Repository layout
 
 ```
-cmd/collector/          # точка входа collector
+cmd/collector/          # collector entrypoint
 internal/               # drivers, api, historian, spool, store, …
 web/                    # React Admin UI
-deploy/platform/        # Docker Compose + runbook (основной путь)
+deploy/platform/        # Docker Compose + runbook (primary path)
 deploy/smoke/           # Telegraf smoke (legacy connectivity)
-deploy/ci/              # Jenkins CI/CD skeleton (лаб VM, порт 8081)
+deploy/ci/              # Jenkins CI/CD skeleton (lab VM, port 8081)
 Jenkinsfile             # Declarative pipeline (Phase 1: test + image build)
 ```
 
 CI/CD (Jenkins): [deploy/ci/README.md](deploy/ci/README.md).
-
-Дизайн режима **poll vs subscribe** (запись в Timescale только при изменении значения): [docs/opc-subscription-mode.md](docs/opc-subscription-mode.md).
-
----
-
-## English (short)
-
-**Level2** is an OPC UA → TimescaleDB collector with a React admin console on `:8080`. Polls leaf tags in batches of **100**, fans samples into a live store + historian (with disk spool on write failure). Lab topology: Windows browser → Ubuntu VM Docker (collector + Timescale from smoke network) → PLC on the plant network. Quick start and full API table: [deploy/platform/README.md](deploy/platform/README.md).

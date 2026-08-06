@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"log/slog"
 	"net/http"
@@ -48,6 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 	defer hist.Close(context.Background())
+	hist.SetCapacityPolicy(cfg.Database.CapacityPercent, cfg.Database.FullPolicy)
 	if err := hist.EnsureSchema(ctx); err != nil {
 		log.Error("schema", "err", err)
 		os.Exit(1)
@@ -301,6 +303,11 @@ func flushLoop(ctx context.Context, log *slog.Logger, hist core.Historian, sp *s
 		batch := buf
 		buf = make([]core.Sample, 0, 256)
 		if err := hist.WriteBatch(ctx, batch); err != nil {
+			if errors.Is(err, timescale.ErrCapacityHalt) {
+				log.Warn("write batch halted by capacity policy", "err", err, "n", len(batch))
+				diag.DBWrite(diag.LevelWarn, "historian halted by capacity policy", err.Error(), len(batch))
+				return
+			}
 			metrics.WriteErrors.Inc()
 			diag.RecordDBWriteError()
 			log.Error("write batch", "err", err, "n", len(batch))
@@ -361,6 +368,11 @@ func replaySpool(ctx context.Context, log *slog.Logger, hist core.Historian, sp 
 				continue
 			}
 			if err := hist.WriteBatch(ctx, batch); err != nil {
+				if errors.Is(err, timescale.ErrCapacityHalt) {
+					log.Warn("spool replay halted by capacity policy", "err", err)
+					diag.DBWrite(diag.LevelWarn, "spool replay halted by capacity policy", err.Error(), len(batch))
+					continue
+				}
 				log.Warn("spool replay failed", "err", err)
 				diag.RecordDBWriteError()
 				diag.DBWrite(diag.LevelError, "spool replay write failed", err.Error(), len(batch))
