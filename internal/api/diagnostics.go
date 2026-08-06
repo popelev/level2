@@ -12,6 +12,7 @@ import (
 func (s *Server) mountDiagnostics(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/diagnostics/logs", s.handleDiagLogs)
 	mux.HandleFunc("DELETE /api/v1/diagnostics/logs", s.handleDiagClear)
+	mux.HandleFunc("GET /api/v1/diagnostics/capacity", s.handleCapacity)
 }
 
 func (s *Server) handleDiagLogs(w http.ResponseWriter, r *http.Request) {

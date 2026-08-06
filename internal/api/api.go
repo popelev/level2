@@ -14,6 +14,7 @@ import (
 	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
 	"github.com/popelev/level2/internal/diag"
+	"github.com/popelev/level2/internal/historian/timescale"
 	"github.com/popelev/level2/internal/importexcel"
 	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/store"
@@ -26,6 +27,7 @@ type Server struct {
 	Tags     func() []core.Tag
 	Devices  func() []core.Device
 	History  core.HistoryQuerier
+	DB       *timescale.Historian
 	Browser  core.Browser // fallback when device_id omitted
 	DevHub   *devruntime.Hub
 	Cfg      *config.Store
@@ -94,6 +96,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/ws/stream", s.handleWS)
 	s.mountProject(mux)
 	s.mountDiagnostics(mux)
+	s.mountDatabase(mux)
 	s.mountTagBulk(mux)
 }
 

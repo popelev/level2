@@ -3,10 +3,11 @@ import { getJSON } from './api.js'
 import ServersPage from './pages/ServersPage.jsx'
 import MonitorPage from './pages/MonitorPage.jsx'
 import ProjectsPage from './pages/ProjectsPage.jsx'
-
 import DbWriteListPage from './pages/DbWriteListPage.jsx'
 import TagsImportExportPage from './pages/TagsImportExportPage.jsx'
 import DiagnosticsPage from './pages/DiagnosticsPage.jsx'
+import DatabasePage from './pages/DatabasePage.jsx'
+import CapacityPage from './pages/CapacityPage.jsx'
 
 function deviceFromHash() {
   const h = location.hash || ''
@@ -21,8 +22,19 @@ function currentPage() {
   if (h.startsWith('db-list') || h.startsWith('tags')) return 'db-list'
   if (h.startsWith('import')) return 'import'
   if (h.startsWith('diag')) return 'diag'
+  if (h.startsWith('capacity') || h.startsWith('storage')) return 'capacity'
+  if (h.startsWith('database') || h.startsWith('db-settings')) return 'database'
   if (h.startsWith('project')) return 'projects'
   return 'servers'
+}
+
+function NavGroup({ label, children }) {
+  return (
+    <div className="nav-group">
+      <span className="nav-group-label">{label}</span>
+      <div className="nav-group-btns">{children}</div>
+    </div>
+  )
 }
 
 export default function App() {
@@ -66,6 +78,8 @@ export default function App() {
     if (name === 'monitor' || name === 'import' || name === 'db-list') setMonitorDevice(deviceFromHash())
   }
 
+  const deviceQ = monitorDevice ? `device=${encodeURIComponent(monitorDevice)}` : undefined
+
   return (
     <div className="app ua">
       <header className="top">
@@ -80,48 +94,73 @@ export default function App() {
       </header>
 
       <nav className="nav">
-        <button
-          type="button"
-          className={page === 'servers' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => go('servers')}
-        >
-          Servers
-        </button>
-        <button
-          type="button"
-          className={page === 'monitor' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => go('monitor', monitorDevice ? `device=${encodeURIComponent(monitorDevice)}` : undefined)}
-        >
-          Address Space
-        </button>
-        <button
-          type="button"
-          className={page === 'db-list' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => go('db-list', monitorDevice ? `device=${encodeURIComponent(monitorDevice)}` : undefined)}
-        >
-          DB write list
-        </button>
-        <button
-          type="button"
-          className={page === 'import' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => go('import', monitorDevice ? `device=${encodeURIComponent(monitorDevice)}` : undefined)}
-        >
-          Import / Export
-        </button>
-        <button
-          type="button"
-          className={page === 'projects' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => go('projects')}
-        >
-          Projects
-        </button>
-        <button
-          type="button"
-          className={page === 'diag' ? 'nav-btn active' : 'nav-btn'}
-          onClick={() => go('diag')}
-        >
-          Diagnostics
-        </button>
+        <NavGroup label="Connectivity">
+          <button
+            type="button"
+            className={page === 'servers' ? 'nav-btn active' : 'nav-btn'}
+            onClick={() => go('servers')}
+          >
+            Servers
+          </button>
+          <button
+            type="button"
+            className={page === 'monitor' ? 'nav-btn active' : 'nav-btn'}
+            onClick={() => go('monitor', deviceQ)}
+          >
+            Address Space
+          </button>
+        </NavGroup>
+
+        <NavGroup label="Data">
+          <button
+            type="button"
+            className={page === 'db-list' ? 'nav-btn active' : 'nav-btn'}
+            onClick={() => go('db-list', deviceQ)}
+          >
+            DB write list
+          </button>
+          <button
+            type="button"
+            className={page === 'import' ? 'nav-btn active' : 'nav-btn'}
+            onClick={() => go('import', deviceQ)}
+          >
+            Import / Export
+          </button>
+        </NavGroup>
+
+        <NavGroup label="Config">
+          <button
+            type="button"
+            className={page === 'projects' ? 'nav-btn active' : 'nav-btn'}
+            onClick={() => go('projects')}
+          >
+            Projects
+          </button>
+          <button
+            type="button"
+            className={page === 'database' ? 'nav-btn active' : 'nav-btn'}
+            onClick={() => go('database')}
+          >
+            Database
+          </button>
+        </NavGroup>
+
+        <NavGroup label="System">
+          <button
+            type="button"
+            className={page === 'diag' ? 'nav-btn active' : 'nav-btn'}
+            onClick={() => go('diag')}
+          >
+            Diagnostics
+          </button>
+          <button
+            type="button"
+            className={page === 'capacity' ? 'nav-btn active' : 'nav-btn'}
+            onClick={() => go('capacity')}
+          >
+            Capacity
+          </button>
+        </NavGroup>
       </nav>
 
       {err && <p className="err">{err}</p>}
@@ -167,8 +206,14 @@ export default function App() {
           onDevicesChanged={refreshStatus}
         />
       )}
+      {page === 'database' && (
+        <DatabasePage onError={setErr} />
+      )}
       {page === 'diag' && (
         <DiagnosticsPage onError={setErr} />
+      )}
+      {page === 'capacity' && (
+        <CapacityPage onError={setErr} />
       )}
     </div>
   )

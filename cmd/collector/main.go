@@ -116,6 +116,7 @@ func main() {
 		Diag:    diagBuf,
 		DevHub:  devHub,
 		History: hist,
+		DB:      hist,
 		Cfg:     cfgStore,
 		Tags:    cfgStore.AllTags,
 		Devices: cfgStore.Devices,

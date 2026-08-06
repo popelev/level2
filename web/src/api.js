@@ -4,6 +4,19 @@ export async function getJSON(url) {
   return r.json()
 }
 
+export function formatBytes(n) {
+  if (n == null || Number.isNaN(Number(n))) return '—'
+  const v = Number(n)
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let i = 0
+  let x = v
+  while (x >= 1024 && i < units.length - 1) {
+    x /= 1024
+    i += 1
+  }
+  return `${x < 10 && i > 0 ? x.toFixed(2) : x.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
 export function formatValue(sample) {
   if (!sample) return '—'
   const num = sample.value_num ?? sample.ValueNum
