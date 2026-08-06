@@ -35,7 +35,7 @@ function currentPage() {
 function NavGroup({ label, children }) {
   return (
     <div className="nav-group">
-      <span className="nav-group-label">{label}</span>
+      {label ? <span className="nav-group-label">{label}</span> : null}
       <div className="nav-group-btns">{children}</div>
     </div>
   )
@@ -205,7 +205,7 @@ export default function App() {
       </header>
 
       <nav className="nav">
-        <NavGroup label="Connectivity">
+        <NavGroup>
           <button
             type="button"
             className={page === 'overview' ? 'nav-btn active' : 'nav-btn'}
@@ -213,6 +213,9 @@ export default function App() {
           >
             Overview
           </button>
+        </NavGroup>
+
+        <NavGroup label="Connectivity">
           <button
             type="button"
             className={page === 'servers' ? 'nav-btn active' : 'nav-btn'}
