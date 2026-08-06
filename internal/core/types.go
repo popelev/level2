@@ -35,6 +35,15 @@ type Sample struct {
 	Quality   Quality   `json:"quality"`
 }
 
+// PollMode is how the collector obtains tag values from the field.
+// Empty Mode on Tag means PollModePoll (legacy).
+type PollMode string
+
+const (
+	PollModePoll      PollMode = "poll"      // periodic Read
+	PollModeSubscribe PollMode = "subscribe" // OPC UA MonitoredItems / on-change (Phase 2)
+)
+
 // Tag describes a monitored leaf node.
 type Tag struct {
 	ID         string    `yaml:"id" json:"id"`
@@ -43,6 +52,8 @@ type Tag struct {
 	DataType   ValueType `yaml:"datatype" json:"datatype"`
 	Enabled    bool      `yaml:"enabled" json:"enabled"`
 	IntervalMs int       `yaml:"interval_ms" json:"interval_ms"`
+	// Mode is poll (legacy) or subscribe (OPC Subscription). See docs/opc-subscription-mode.md.
+	Mode PollMode `yaml:"mode,omitempty" json:"mode,omitempty"`
 }
 
 // Device is an OPC UA endpoint.

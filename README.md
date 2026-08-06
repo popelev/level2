@@ -206,6 +206,8 @@ Jenkinsfile             # Declarative pipeline (Phase 1: test + image build)
 
 CI/CD (Jenkins): [deploy/ci/README.md](deploy/ci/README.md).
 
+Дизайн режима **poll vs subscribe** (запись в Timescale только при изменении значения): [docs/opc-subscription-mode.md](docs/opc-subscription-mode.md).
+
 ---
 
 ## English (short)
