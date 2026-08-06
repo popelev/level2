@@ -8,7 +8,7 @@ import (
 )
 
 func TestFormatNodeID_TwoByteNS0(t *testing.T) {
-	n := ua.NewTwoByteNodeID(0, 85)
+	n := ua.NewNumericNodeID(0, 85)
 	got := formatNodeID(n)
 	if got != "ns=0;i=85" {
 		t.Fatalf("got %q want ns=0;i=85", got)
