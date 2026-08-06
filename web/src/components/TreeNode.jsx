@@ -7,7 +7,7 @@ export default function TreeNode({
   selectedNodeId,
   onSelect,
   loadChildren,
-  checkedIds,
+  isChecked,
   onToggleCheck,
   expandingId,
   monitoredIds,
@@ -19,15 +19,13 @@ export default function TreeNode({
 
   const path = pathPrefix ? `${pathPrefix}/${node.browse_name}` : (node.browse_name || '')
   const inDB = monitoredIds?.has(node.node_id)
-  const checked = checkedIds?.has(node.node_id)
+  const checked = !!isChecked?.(node.node_id, path)
   const expanding = expandingId === node.node_id
 
   useEffect(() => {
     if (!checkRef.current || node.is_leaf) return
-    // Folder indeterminate is computed by parent via checkedIds of descendants —
-    // for folders we only show checked when explicitly in checkedIds (folder key).
-    checkRef.current.indeterminate = !!checkedIds?.has(`partial:${node.node_id}`)
-  }, [checkedIds, node.is_leaf, node.node_id])
+    checkRef.current.indeterminate = false
+  }, [checked, node.is_leaf])
 
   const toggleOpen = async (e) => {
     e.stopPropagation()
@@ -63,7 +61,7 @@ export default function TreeNode({
           ref={checkRef}
           type="checkbox"
           className="tree-check"
-          checked={!!checked && !checkedIds?.has(`partial:${node.node_id}`)}
+          checked={checked}
           disabled={expanding}
           onChange={onCheck}
           onClick={(e) => e.stopPropagation()}
@@ -85,7 +83,7 @@ export default function TreeNode({
           selectedNodeId={selectedNodeId}
           onSelect={onSelect}
           loadChildren={loadChildren}
-          checkedIds={checkedIds}
+          isChecked={isChecked}
           onToggleCheck={onToggleCheck}
           expandingId={expandingId}
           monitoredIds={monitoredIds}

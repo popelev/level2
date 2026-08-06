@@ -17,11 +17,14 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
   const [treeKey, setTreeKey] = useState(0)
   const [msg, setMsg] = useState('')
   const [addrChecked, setAddrChecked] = useState(() => new Map())
+  const [excludedIds, setExcludedIds] = useState(() => new Set())
   const [expandingId, setExpandingId] = useState('')
   const [bulkBusy, setBulkBusy] = useState(false)
+  const [expandGen, setExpandGen] = useState(0)
   const expandCacheRef = useRef(new Map())
   const pendingLeafRef = useRef(null)
   const leafFlushTimer = useRef(0)
+  const expandAbortRef = useRef(0)
 
   useEffect(() => {
     if (initialDeviceId && devices.some((d) => d.id === initialDeviceId)) {
@@ -62,14 +65,20 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     setSelectedNode({ node_id: ROOT_ID, browse_name: 'Root', is_leaf: false })
     setSelectedPath('')
     setAddrChecked(new Map())
+    setExcludedIds(new Set())
     expandCacheRef.current = new Map()
+    expandAbortRef.current += 1
+    setExpandGen((g) => g + 1)
   }
 
   useEffect(() => {
     if (!deviceId) return
     onError('')
     setAddrChecked(new Map())
+    setExcludedIds(new Set())
     expandCacheRef.current = new Map()
+    expandAbortRef.current += 1
+    setExpandGen((g) => g + 1)
     Promise.all([reloadTree(), refreshTags(deviceId)]).catch((e) => onError(String(e.message || e)))
     const t = setInterval(() => {
       refreshTags(deviceId).catch(() => {})
@@ -87,7 +96,26 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     [tags],
   )
 
-  const checkedIds = useMemo(() => new Set(addrChecked.keys()), [addrChecked])
+  const folderPaths = useMemo(() => {
+    const out = []
+    for (const v of addrChecked.values()) {
+      if (v.folder) out.push(v.path || '')
+    }
+    return out
+  }, [addrChecked])
+
+  const isUnderCheckedFolder = useCallback((path) => {
+    for (const fp of folderPaths) {
+      if (path === fp || (fp && String(path || '').startsWith(`${fp}/`))) return true
+    }
+    return false
+  }, [folderPaths])
+
+  const isAddrChecked = useCallback((nodeId, path) => {
+    if (excludedIds.has(nodeId)) return false
+    if (addrChecked.has(nodeId)) return true
+    return isUnderCheckedFolder(path)
+  }, [addrChecked, excludedIds, isUnderCheckedFolder])
 
   const isMonitored = (nodeId) => monitoredIds.has(nodeId)
 
@@ -144,16 +172,45 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     }
   }
 
+  const collectLeavesFromSelection = async (onProgress) => {
+    const leaves = []
+    const folders = []
+    for (const item of addrChecked.values()) {
+      if (item.folder) folders.push(item)
+      else if (!excludedIds.has(item.node_id)) leaves.push(item)
+    }
+    for (let i = 0; i < folders.length; i++) {
+      const f = folders[i]
+      onProgress?.(`Expanding ${f.browse_name} (${i + 1}/${folders.length})…`)
+      let expanded = expandCacheRef.current.get(f.node_id)
+      if (!expanded) {
+        expanded = await getJSONExpand(deviceId, f.node_id, f.browse_name)
+        expandCacheRef.current.set(f.node_id, expanded)
+        setExpandGen((g) => g + 1)
+      }
+      for (const t of expanded) {
+        if (excludedIds.has(t.node_id)) continue
+        const name = leafName(t)
+        const rel = t.browse_path || name
+        const leafPath = leafPathUnderPrefix(f.path, rel)
+        leaves.push({
+          browse_name: name,
+          node_id: t.node_id,
+          path: leafPath,
+          datatype: t.datatype || guessType(name),
+          tag_id: t.id,
+        })
+      }
+    }
+    return leaves
+  }
+
   const writeCheckedToDB = async () => {
     if (!deviceId || addrChecked.size === 0) return
     setBulkBusy(true)
     onError('')
     try {
-      const leaves = []
-      for (const item of addrChecked.values()) {
-        if (item.folder) continue
-        leaves.push(item)
-      }
+      const leaves = await collectLeavesFromSelection((m) => setMsg(m))
       const { tags: payload, skippedDuplicates, renamed } = allocateUniqueTagIds(
         leaves.map((item) => ({
           ...item,
@@ -178,6 +235,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
         onError(result.errors.slice(0, 5).join('; '))
       }
       setAddrChecked(new Map())
+      setExcludedIds(new Set())
       await refreshTags(deviceId)
       await onDevicesChanged()
     } catch (ex) {
@@ -200,6 +258,16 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
           else next.set(nodeId, op)
         }
         return next
+      })
+      setExcludedIds((prev) => {
+        let changed = false
+        const next = new Set(prev)
+        for (const [nodeId, op] of pending) {
+          // Leaf queue never adds exclusions (folder-covered unchecks do that
+          // directly). Checking a leaf clears a prior exclusion.
+          if (op !== null && next.delete(nodeId)) changed = true
+        }
+        return changed ? next : prev
       })
     })
   }, [])
@@ -224,15 +292,53 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     return next
   }
 
+  const prefetchFolderExpand = async (node, path, token) => {
+    setExpandingId(node.node_id)
+    setMsg(`Loading tags under ${node.browse_name}…`)
+    try {
+      let expanded = expandCacheRef.current.get(node.node_id)
+      if (!expanded) {
+        expanded = await getJSONExpand(deviceId, node.node_id, node.browse_name)
+        if (token !== expandAbortRef.current) return
+        expandCacheRef.current.set(node.node_id, expanded)
+        setExpandGen((g) => g + 1)
+      }
+      if (token !== expandAbortRef.current) return
+      setMsg(`Selected ${expanded.length} leaf tag(s) under ${node.browse_name}`)
+    } catch (ex) {
+      if (token !== expandAbortRef.current) return
+      onError(String(ex.message || ex))
+      setMsg('')
+    } finally {
+      if (token === expandAbortRef.current) setExpandingId('')
+    }
+  }
+
   const onToggleAddrCheck = async (node, path, checked) => {
     onError('')
     if (node.is_leaf) {
       if (checked) {
+        if (isUnderCheckedFolder(path)) {
+          // Covered by ancestor folder — clear exclusion only.
+          setExcludedIds((prev) => {
+            if (!prev.has(node.node_id)) return prev
+            const next = new Set(prev)
+            next.delete(node.node_id)
+            return next
+          })
+          return
+        }
         queueLeafCheck(node.node_id, {
           browse_name: node.browse_name,
           node_id: node.node_id,
           path,
           datatype: node.datatype || guessType(node.browse_name),
+        })
+      } else if (isUnderCheckedFolder(path)) {
+        setExcludedIds((prev) => {
+          const next = new Set(prev)
+          next.add(node.node_id)
+          return next
         })
       } else {
         queueLeafCheck(node.node_id, null)
@@ -241,7 +347,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     }
 
     if (!checked) {
-      // Prefer cache; never re-expand just to uncheck.
+      expandAbortRef.current += 1
       const cached = expandCacheRef.current.get(node.node_id)
       startTransition(() => {
         setAddrChecked((prev) => {
@@ -253,58 +359,69 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
           }
           return removeUnderPath(prev, path, node.node_id)
         })
-      })
-      return
-    }
-
-    setExpandingId(node.node_id)
-    setMsg(`Expanding ${node.browse_name}…`)
-    try {
-      let expanded = expandCacheRef.current.get(node.node_id)
-      if (!expanded) {
-        expanded = await getJSONExpand(deviceId, node.node_id, node.browse_name)
-        expandCacheRef.current.set(node.node_id, expanded)
-      }
-      startTransition(() => {
-        setAddrChecked((prev) => {
-          const next = new Map(prev)
-          next.set(node.node_id, {
-            browse_name: node.browse_name,
-            node_id: node.node_id,
-            path,
-            folder: true,
-          })
-          for (const t of expanded) {
-            const name = leafName(t)
-            const rel = t.browse_path || name
-            const leafPath = leafPathUnderPrefix(path, rel)
-            next.set(t.node_id, {
-              browse_name: name,
-              node_id: t.node_id,
-              path: leafPath,
-              datatype: t.datatype || guessType(name),
-              tag_id: t.id,
-            })
+        setExcludedIds((prev) => {
+          if (!prev.size) return prev
+          const next = new Set(prev)
+          if (cached?.length) {
+            for (const t of cached) next.delete(t.node_id)
           }
           return next
         })
       })
-      setMsg(`Selected ${expanded.length} leaf tag(s) under ${node.browse_name}`)
-    } catch (ex) {
-      onError(String(ex.message || ex))
-      setMsg('')
-    } finally {
       setExpandingId('')
+      setMsg('')
+      return
     }
+
+    // Instant folder select — do not wait for OPC expand or put thousands of
+    // leaves into React state. Prefetch expand into cache for count / write.
+    const token = ++expandAbortRef.current
+    startTransition(() => {
+      setAddrChecked((prev) => {
+        const next = new Map(prev)
+        next.set(node.node_id, {
+          browse_name: node.browse_name,
+          node_id: node.node_id,
+          path,
+          folder: true,
+        })
+        return next
+      })
+    })
+    void prefetchFolderExpand(node, path, token)
   }
 
-  const leafCheckedCount = useMemo(() => {
-    let n = 0
-    for (const v of addrChecked.values()) {
-      if (!v.folder) n++
+  const selectionSummary = useMemo(() => {
+    let leafN = 0
+    let folderN = 0
+    let pendingFolders = 0
+    const seen = new Set()
+    for (const [id, v] of addrChecked) {
+      if (v.folder) {
+        folderN++
+        const cached = expandCacheRef.current.get(id)
+        if (!cached) {
+          pendingFolders++
+          continue
+        }
+        for (const t of cached) {
+          if (excludedIds.has(t.node_id) || seen.has(t.node_id)) continue
+          seen.add(t.node_id)
+          leafN++
+        }
+      } else if (!excludedIds.has(id) && !seen.has(id)) {
+        seen.add(id)
+        leafN++
+      }
     }
-    return n
-  }, [addrChecked])
+    return { leafN, folderN, pendingFolders }
+    // expandGen bumps when cache fills so count refreshes without putting leaves in state
+  }, [addrChecked, excludedIds, expandGen])
+
+  const hasSelection = addrChecked.size > 0
+  const selLabel = selectionSummary.pendingFolders
+    ? `${selectionSummary.folderN} folder(s) loading…`
+    : `${selectionSummary.leafN} selected`
 
   return (
     <div className="page">
@@ -373,7 +490,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
                   setSelectedPath(path || '')
                 }}
                 loadChildren={loadChildren}
-                checkedIds={checkedIds}
+                isChecked={isAddrChecked}
                 onToggleCheck={onToggleAddrCheck}
                 expandingId={expandingId}
                 monitoredIds={monitoredIds}
@@ -381,15 +498,21 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
             ))}
           </div>
           <div className="sel-bar">
-            <span className="muted small">{leafCheckedCount} selected</span>
-            <button type="button" disabled={!leafCheckedCount || bulkBusy} onClick={writeCheckedToDB}>
+            <span className="muted small">{selLabel}</span>
+            <button type="button" disabled={!hasSelection || bulkBusy} onClick={writeCheckedToDB}>
               {bulkBusy ? 'Writing…' : 'Write selected to DB'}
             </button>
             <button
               type="button"
               className="secondary"
-              disabled={!addrChecked.size}
-              onClick={() => setAddrChecked(new Map())}
+              disabled={!hasSelection}
+              onClick={() => {
+                expandAbortRef.current += 1
+                setAddrChecked(new Map())
+                setExcludedIds(new Set())
+                setExpandingId('')
+                setMsg('')
+              }}
             >
               Clear
             </button>
