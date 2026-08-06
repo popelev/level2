@@ -15,9 +15,14 @@ func NormalizeValueType(dt ValueType) ValueType {
 		return ValueFloat64
 	case "string":
 		return ValueString
-	case string(ValueDateTime), string(ValueBool), string(ValueInt64), string(ValueFloat64), string(ValueString):
-		return ValueType(strings.ToLower(string(dt)))
+	case "datetime":
+		return ValueDateTime
 	default:
+		s := strings.ToLower(strings.TrimSpace(string(dt)))
+		switch ValueType(s) {
+		case ValueBool, ValueInt64, ValueFloat64, ValueString, ValueDateTime:
+			return ValueType(s)
+		}
 		return dt
 	}
 }
