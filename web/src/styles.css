@@ -265,8 +265,19 @@ body {
 }
 .diag-toolbar {
   gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
 }
-.diag-filter, .diag-check {
+.diag-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.diag-tabs .nav-btn {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+}
+.diag-check {
   display: flex;
   align-items: center;
   gap: 6px;

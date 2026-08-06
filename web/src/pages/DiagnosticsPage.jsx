@@ -78,14 +78,20 @@ export default function DiagnosticsPage({ onError }) {
 
       <section className="panel">
         <div className="panel-head diag-toolbar">
-          <label className="diag-filter">
-            Source
-            <select value={category} onChange={(e) => setCategory(e.target.value)}>
-              {CATEGORIES.map((c) => (
-                <option key={c.id} value={c.id}>{c.label}</option>
-              ))}
-            </select>
-          </label>
+          <div className="diag-tabs" role="tablist" aria-label="Source">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="tab"
+                aria-selected={category === c.id}
+                className={category === c.id ? 'nav-btn active' : 'nav-btn'}
+                onClick={() => setCategory(c.id)}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
           <label className="diag-check">
             <input
               type="checkbox"
