@@ -35,6 +35,42 @@ type Sample struct {
 	Quality   Quality   `json:"quality"`
 }
 
+// SamePayload reports whether value fields and quality match.
+// Time and TagID are ignored (used for historian on-change suppress).
+func (s Sample) SamePayload(other Sample) bool {
+	if s.Quality != other.Quality {
+		return false
+	}
+	if !ptrFloat64Equal(s.ValueNum, other.ValueNum) {
+		return false
+	}
+	if !ptrStringEqual(s.ValueText, other.ValueText) {
+		return false
+	}
+	return ptrBoolEqual(s.ValueBool, other.ValueBool)
+}
+
+func ptrFloat64Equal(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func ptrStringEqual(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+func ptrBoolEqual(a, b *bool) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
 // PollMode is how the collector obtains tag values from the field.
 // Empty Mode on Tag means PollModePoll (legacy).
 type PollMode string

@@ -2,7 +2,7 @@
 
 Design for writing to Timescale **only when the value actually changes**, not on every poll tick. This document covers current behavior, the target model on `gopcua` Subscription / MonitoredItems, config, Siemens limits, fallback, and phased rollout.
 
-**Status:** design. Full OPC Subscription is **not** implemented. Phase 1 (suppress unchanged on the poll path) is the next increment.
+**Status:** Phase 1 done (suppress unchanged on the poll path). Full OPC Subscription (Phase 2) is **not** implemented.
 
 ---
 
@@ -17,10 +17,10 @@ Source of truth: `internal/driver/opcua/driver.go` — the `Subscribe` method is
 5. `api.FanIn` for **every** sample:
    - updates the Live store (`live.Update`);
    - sends to the WebSocket Hub;
-   - **always** forwards the sample into the historian buffer → `flushLoop` → Timescale (`collector.samples`).
+   - forwards into the historian buffer **only when value or quality differ from the previous Live sample** (Phase 1); identical payloads increment `samples_suppressed_unchanged`.
 6. The UI (**DB write list** / `TagTreeTable`) shows per-tag `interval_ms` (e.g. `1000`) and the average wall-clock poll interval.
 
-Result: with a static process, Timescale grows proportional to `tags × (1000/interval_ms)` even when values do not change.
+Result (before Phase 1): with a static process, Timescale grew proportional to `tags × (1000/interval_ms)` even when values did not change. After Phase 1, unchanged polls still refresh Live/WS but skip Timescale.
 
 ```mermaid
 sequenceDiagram
@@ -36,7 +36,7 @@ sequenceDiagram
     loop each tag
       Drv->>Fan: Sample
       Fan->>Live: Update (always)
-      Fan->>Hist: Sample (always, even if value == prev)
+      Fan->>Hist: Sample (only if value/quality changed)
     end
   end
 ```
@@ -233,6 +233,8 @@ File: `web/src/components/TagTreeTable.jsx` (+ `DbWriteListPage`, `tagTree.js`).
 
 ### Phase 1 — suppress unchanged on the poll path (no OPC Subscription)
 
+**Status:** done (FanIn compares Live payload; historian skipped when equal).
+
 **Goal:** immediately reduce Timescale volume with the current Read-poll.
 
 1. In `FanIn` (or adjacent filter): compare with Live → skip historian if equal; Live/WS always.
@@ -276,11 +278,11 @@ File: `web/src/components/TagTreeTable.jsx` (+ `DbWriteListPage`, `tagTree.js`).
 
 **Phase 1**
 
-- [ ] Static mock/demo tag: N ticks → 1 historian write (+ optional heartbeats).
-- [ ] Value change → new write.
-- [ ] Quality-only change → write.
-- [ ] Metrics: suppressed grows, written does not on equal.
-- [ ] Live/WS update on every sample.
+- [x] Static mock/demo tag: N ticks → 1 historian write (+ optional heartbeats).
+- [x] Value change → new write.
+- [x] Quality-only change → write.
+- [x] Metrics: suppressed grows, written does not on equal.
+- [x] Live/WS update on every sample.
 
 **Phase 2**
 

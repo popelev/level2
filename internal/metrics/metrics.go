@@ -13,6 +13,10 @@ var (
 		Name: "level2_samples_written_total",
 		Help: "Samples successfully written to historian",
 	})
+	SamplesSuppressedUnchanged = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "level2_samples_suppressed_unchanged_total",
+		Help: "Samples not sent to historian because value and quality matched Live",
+	})
 	SamplesSpooled = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "level2_samples_spooled_total",
 		Help: "Samples written to disk spool after historian failure",

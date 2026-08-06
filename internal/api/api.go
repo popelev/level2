@@ -16,6 +16,7 @@ import (
 	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/historian/timescale"
 	"github.com/popelev/level2/internal/importexcel"
+	"github.com/popelev/level2/internal/metrics"
 	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/store"
 )
@@ -449,6 +450,8 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 // FanIn updates live store and broadcasts WS from sample stream.
+// Historian (out) receives a sample only when value or quality changed vs Live
+// (or the tag has no previous sample). Live and WS update on every sample.
 func FanIn(ctx context.Context, in <-chan core.Sample, live *store.Live, hub *Hub, out chan<- core.Sample) {
 	for {
 		select {
@@ -458,8 +461,14 @@ func FanIn(ctx context.Context, in <-chan core.Sample, live *store.Live, hub *Hu
 			if !ok {
 				return
 			}
+			prev, hasPrev := live.Get(s.TagID)
+			unchanged := hasPrev && prev.SamePayload(s)
 			live.Update(s)
 			hub.Broadcast(s)
+			if unchanged {
+				metrics.SamplesSuppressedUnchanged.Inc()
+				continue
+			}
 			select {
 			case out <- s:
 			case <-ctx.Done():
