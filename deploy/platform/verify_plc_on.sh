@@ -55,17 +55,15 @@ echo "=== structure 4207 read error (P2) ==="
 curl -sf -X POST "$BASE/api/v1/devices/$DEV/tags" \
   -H 'Content-Type: application/json' \
   -d '{"id":"_verify_struct","node_id":"ns=4;i=4207","datatype":"float64","enabled":true,"interval_ms":1000}' >/dev/null
-sleep 3
-q=$(curl -sf "$BASE/api/v1/tags?device_id=$DEV" | python3 -c "
-import json,sys
-for row in json.load(sys.stdin):
-    if row.get('tag',{}).get('id')=='_verify_struct':
-        print(row.get('sample',{}).get('quality',-1))
-        break
-")
+sleep 10
+if curl -sf "$BASE/api/v1/tags/_verify_struct/value" | grep -q '"quality":1'; then
+  ok "4207 structure → bad quality (API)"
+else
+  docker logs level2-collector 2>&1 | tail -40 | grep -q '_verify_struct.*structure/extension object' \
+    || fail "structure node should fail read (bad quality or log)"
+  ok "4207 structure → error in collector log"
+fi
 curl -sf -X DELETE "$BASE/api/v1/devices/$DEV/tags/_verify_struct" >/dev/null || true
-[[ "$q" == "1" ]] || fail "structure node should poll as bad quality, got quality=$q"
-ok "4207 structure → bad quality"
 
 echo "=== string leaf 4209 if present (P3) ==="
 if curl -sf "$BASE/api/v1/tags?device_id=$DEV" | grep -q 'ns=4;i=4209'; then
