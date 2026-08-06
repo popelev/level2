@@ -46,6 +46,7 @@ function FolderRow({
       <span className="tt-meta muted">—</span>
       <span className="tt-meta muted">—</span>
       <span className="tt-meta muted">—</span>
+      <span className="tt-meta muted">—</span>
       <input
         type="checkbox"
         title="Enable / disable all under folder"
@@ -131,8 +132,14 @@ function LeafRow({
           const v = Number(e.target.value)
           if (v > 0 && v !== tag.interval_ms) onUpdateTag({ ...tag, interval_ms: v })
         }}
-        title="interval_ms"
+        title="interval_ms (configured)"
       />
+      <span
+        className={`tt-meta mono small ${pollClass(tv.poll_avg_ms, tag.interval_ms)}`}
+        title="Average wall-clock interval of last ≤5 OPC reads (collector)"
+      >
+        {formatPollAvg(tv.poll_avg_ms)}
+      </span>
       <input
         type="checkbox"
         checked={!!tag.enabled}
@@ -144,6 +151,19 @@ function LeafRow({
       </button>
     </div>
   )
+}
+
+function formatPollAvg(ms) {
+  if (ms == null || ms <= 0) return '—'
+  return String(Math.round(ms))
+}
+
+function pollClass(avg, configured) {
+  if (avg == null || avg <= 0) return 'muted'
+  const want = configured > 0 ? configured : 1000
+  if (avg > want * 1.5) return 'badq'
+  if (avg > want * 1.2) return 'warn'
+  return 'good'
 }
 
 function TreeBranch(props) {
@@ -220,6 +240,7 @@ export default function TagTreeTable({
         <span>Time</span>
         <span>Type</span>
         <span>ms</span>
+        <span title="Average of last 5 poll intervals">avg</span>
         <span>On</span>
         <span />
       </div>

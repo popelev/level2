@@ -7,35 +7,62 @@ import (
 	"github.com/popelev/level2/internal/core"
 )
 
+const maxPollIntervals = 5
+
+type liveEntry struct {
+	sample    core.Sample
+	lastRecv  time.Time
+	intervals []int64 // ms between last receives (newest last), max 5
+}
+
 // Live holds the latest sample per tag_id for API/WS.
 type Live struct {
 	mu   sync.RWMutex
-	byID map[string]core.Sample
+	byID map[string]*liveEntry
 }
 
 func NewLive() *Live {
-	return &Live{byID: make(map[string]core.Sample)}
+	return &Live{byID: make(map[string]*liveEntry)}
 }
 
 func (l *Live) Update(s core.Sample) {
+	now := time.Now()
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.byID[s.TagID] = s
+	ent, ok := l.byID[s.TagID]
+	if !ok {
+		l.byID[s.TagID] = &liveEntry{sample: s, lastRecv: now}
+		return
+	}
+	if !ent.lastRecv.IsZero() {
+		ms := now.Sub(ent.lastRecv).Milliseconds()
+		if ms > 0 {
+			ent.intervals = append(ent.intervals, ms)
+			if len(ent.intervals) > maxPollIntervals {
+				ent.intervals = append([]int64(nil), ent.intervals[len(ent.intervals)-maxPollIntervals:]...)
+			}
+		}
+	}
+	ent.sample = s
+	ent.lastRecv = now
 }
 
 func (l *Live) Get(tagID string) (core.Sample, bool) {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
-	s, ok := l.byID[tagID]
-	return s, ok
+	ent, ok := l.byID[tagID]
+	if !ok {
+		return core.Sample{}, false
+	}
+	return ent.sample, true
 }
 
 func (l *Live) All() []core.Sample {
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	out := make([]core.Sample, 0, len(l.byID))
-	for _, s := range l.byID {
-		out = append(out, s)
+	for _, ent := range l.byID {
+		out = append(out, ent.sample)
 	}
 	return out
 }
@@ -53,11 +80,14 @@ func (l *Live) SnapshotDevices(devices []core.Device) []TagValue {
 	for _, d := range devices {
 		for _, t := range d.Tags {
 			tv := TagValue{DeviceID: d.ID, Tag: t}
-			if s, ok := l.byID[t.ID]; ok {
-				cp := s
+			if ent, ok := l.byID[t.ID]; ok {
+				cp := ent.sample
 				tv.Sample = &cp
-				ts := s.Time
+				ts := ent.sample.Time
 				tv.UpdatedAt = &ts
+				if avg := avgIntervals(ent.intervals); avg > 0 {
+					tv.PollAvgMs = &avg
+				}
 			}
 			out = append(out, tv)
 		}
@@ -65,9 +95,22 @@ func (l *Live) SnapshotDevices(devices []core.Device) []TagValue {
 	return out
 }
 
+func avgIntervals(xs []int64) int64 {
+	if len(xs) == 0 {
+		return 0
+	}
+	var sum int64
+	for _, v := range xs {
+		sum += v
+	}
+	return sum / int64(len(xs))
+}
+
 type TagValue struct {
 	DeviceID  string       `json:"device_id"`
 	Tag       core.Tag     `json:"tag"`
 	Sample    *core.Sample `json:"sample,omitempty"`
 	UpdatedAt *time.Time   `json:"updated_at,omitempty"`
+	// PollAvgMs is the average wall-clock gap between the last ≤5 samples received by the collector.
+	PollAvgMs *int64 `json:"poll_avg_ms,omitempty"`
 }
