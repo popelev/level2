@@ -11,6 +11,8 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
   const [filter, setFilter] = useState('')
   const [page, setPage] = useState(1)
   const [dbSelected, setDbSelected] = useState(() => new Set())
+  const [bulkBusy, setBulkBusy] = useState('')
+  const [msg, setMsg] = useState('')
 
   useEffect(() => {
     if (initialDeviceId && devices.some((d) => d.id === initialDeviceId)) {
@@ -165,6 +167,58 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
     location.hash = `#/db-list?device=${encodeURIComponent(id)}`
   }
 
+  const syncFromOpc = async () => {
+    if (!deviceId) return
+    if (!window.confirm(`Sync tag parameters from OPC for all ${tags.length} tag(s) by NodeId?`)) return
+    setBulkBusy('sync')
+    onError('')
+    setMsg('')
+    try {
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/sync`, {
+        method: 'POST',
+      })
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json()
+      setMsg(`Synced ${data.total} tag(s); ${data.updated} datatype(s) updated`)
+      await refreshTags(deviceId)
+      await onDevicesChanged()
+    } catch (ex) {
+      onError(String(ex.message || ex))
+    } finally {
+      setBulkBusy('')
+    }
+  }
+
+  const deleteAllTags = async () => {
+    if (!deviceId || tags.length === 0) return
+    if (
+      !window.confirm(
+        `Delete ALL ${tags.length} tag(s) from "${deviceId}"? This cannot be undone.`,
+      )
+    ) {
+      return
+    }
+    setBulkBusy('delete')
+    onError('')
+    setMsg('')
+    try {
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags`, {
+        method: 'DELETE',
+      })
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json()
+      setDbSelected(new Set())
+      setPage(1)
+      setMsg(`Removed ${data.removed} tag(s)`)
+      await refreshTags(deviceId)
+      await onDevicesChanged()
+    } catch (ex) {
+      onError(String(ex.message || ex))
+    } finally {
+      setBulkBusy('')
+    }
+  }
+
   return (
     <div className="page">
       <div className="page-head">
@@ -211,6 +265,25 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
           <p className="hint">
             Only enabled tags are polled. Add tags from Address Space or Import / Export.
           </p>
+          <div className="sel-bar db-actions">
+            <button
+              type="button"
+              className="secondary"
+              disabled={!!bulkBusy || !tags.length}
+              onClick={syncFromOpc}
+            >
+              {bulkBusy === 'sync' ? 'Syncing…' : 'Sync from OPC (by NodeId)'}
+            </button>
+            <button
+              type="button"
+              className="secondary danger-btn"
+              disabled={!!bulkBusy || !tags.length}
+              onClick={deleteAllTags}
+            >
+              {bulkBusy === 'delete' ? 'Removing…' : 'Delete all tags'}
+            </button>
+          </div>
+          {msg && <p className="ok small">{msg}</p>}
           {dbSelected.size > 0 && (
             <div className="sel-bar">
               <span className="muted small">{dbSelected.size} selected</span>

@@ -18,6 +18,13 @@ func (d *Driver) ResolveTagDataType(ctx context.Context, nodeID, browseHint stri
 	return GuessDataType(browseHint)
 }
 
+// ApplyDataTypesFromOPC sets DataType on each tag from OPC UA (matched by tag.NodeID).
+func ApplyDataTypesFromOPC(ctx context.Context, d *Driver, tags []core.Tag) {
+	for i := range tags {
+		tags[i].DataType = d.ResolveTagDataType(ctx, tags[i].NodeID, tags[i].ID)
+	}
+}
+
 func (d *Driver) readOPCDataType(ctx context.Context, nodeID string) (core.ValueType, error) {
 	d.mu.Lock()
 	c := d.client

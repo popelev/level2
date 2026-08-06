@@ -361,6 +361,10 @@ th { color: var(--muted); font-weight: 500; }
 .good { color: var(--accent); }
 .badq { color: var(--bad); }
 .err { color: var(--bad); margin: 0 0 10px; font-size: 0.85rem; }
+.ok { color: var(--accent); margin: 0 0 10px; font-size: 0.85rem; }
+.db-actions { margin-bottom: 8px; }
+button.danger-btn { border-color: #7a3030; color: #f0a0a0; }
+button.danger-btn:hover:not(:disabled) { background: #3a2020; }
 .node-detail {
   margin-top: 10px;
   padding-top: 8px;

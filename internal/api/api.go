@@ -94,6 +94,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/ws/stream", s.handleWS)
 	s.mountProject(mux)
 	s.mountDiagnostics(mux)
+	s.mountTagBulk(mux)
 }
 
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {

@@ -182,6 +182,41 @@ func (s *Store) DeleteTag(deviceID, tagID string) error {
 	return nil
 }
 
+// SetDeviceTags replaces the full tag list for a device (single persist).
+func (s *Store) SetDeviceTags(deviceID string, tags []core.Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx, err := s.deviceIndexLocked(deviceID)
+	if err != nil {
+		return err
+	}
+	cp := make([]core.Tag, len(tags))
+	copy(cp, tags)
+	s.file.Devices[idx].Tags = cp
+	if err := s.saveLocked(); err != nil {
+		return err
+	}
+	s.gen.Add(1)
+	return nil
+}
+
+// ClearDeviceTags removes all tags from a device.
+func (s *Store) ClearDeviceTags(deviceID string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx, err := s.deviceIndexLocked(deviceID)
+	if err != nil {
+		return 0, err
+	}
+	n := len(s.file.Devices[idx].Tags)
+	s.file.Devices[idx].Tags = nil
+	if err := s.saveLocked(); err != nil {
+		return 0, err
+	}
+	s.gen.Add(1)
+	return n, nil
+}
+
 // UpsertDevice creates or updates a device (keeps existing tags on update unless cleared).
 func (s *Store) UpsertDevice(dev core.Device) error {
 	if dev.ID == "" {
