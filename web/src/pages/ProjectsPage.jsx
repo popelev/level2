@@ -227,7 +227,7 @@ export default function ProjectsPage({ devices, onError, onDevicesChanged }) {
         {msg && <p className="good small">{msg}</p>}
       </section>
 
-      <section className="panel" style={{ marginTop: 12 }}>
+      <section className="panel">
         <h3>Clear tags</h3>
         <p className="hint">Remove every monitored tag from a server (DB write list). Servers themselves are kept.</p>
         <div className="row">
@@ -255,7 +255,7 @@ export default function ProjectsPage({ devices, onError, onDevicesChanged }) {
         </div>
       </section>
 
-      <section className="panel" style={{ marginTop: 12 }}>
+      <section className="panel">
         <h3>Validate</h3>
         <p className="hint">Check monitored tags exist on the live Address Space (Variable nodes).</p>
         <div className="row">
@@ -315,7 +315,7 @@ export default function ProjectsPage({ devices, onError, onDevicesChanged }) {
         )}
       </section>
 
-      <section className="panel" style={{ marginTop: 12 }}>
+      <section className="panel">
         <h3>Compare</h3>
         <p className="hint">Side A vs Side B — live runtime or Project.xlsx files.</p>
         <div className="compare-grid">

@@ -101,7 +101,7 @@ body {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 10px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 .cap-stat {
   background: linear-gradient(180deg, var(--bg1), var(--bg2));
@@ -203,6 +203,10 @@ body {
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 12px 14px 14px;
+}
+/* Stacked panels on a page (Capacity, Database, Projects, …) — not grid layouts */
+.page > .panel + .panel {
+  margin-top: 12px;
 }
 .panel h2, .panel h3 { margin: 0 0 10px; font-size: 0.95rem; }
 .panel-head {
