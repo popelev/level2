@@ -66,9 +66,16 @@ SQL matches **both** naming schemes via `IN (...)`.
 ## Panels
 
 - **Gauge** — last `value`; min/max from scale tags (`configFromData`).
-- **Unit / Min / Max** — last sample stats (`value_text` for unit).
-- **Resolved tags** — which child `tag_id`s were found (last hour).
+- **Unit / Min / Max** — last sample stats (`value_text` for unit; `value_num` for scales).
+- **Structure prefix** — echoes the selected variable (text Stat; `reduceOptions.fields` must include strings).
+- **Resolved tags** — which child `tag_id`s were found (last 24h), with roles `value` / `min` / `max` / `unit`.
 - **Trend** — value + min/max scale over time.
+
+### Why Unit can show "No data"
+
+Historian already stores Siemens `sUnit` in `collector.samples.value_text` (e.g. `barg`). Collector string write path is fine.
+
+Grafana **Stat** with empty `reduceOptions.fields` reduces **numeric fields only**, so a string `unit` column becomes "No data". Fix: `fields: "/.*/"` + `textMode: "value"` (same for Structure prefix).
 
 ## Apply after git pull (level2-vm)
 
