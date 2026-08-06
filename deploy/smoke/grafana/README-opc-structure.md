@@ -103,7 +103,11 @@ Historian already stores Siemens `sUnit` in `collector.samples.value_text` (e.g.
 
 Grafana **Stat** with empty `reduceOptions.fields` reduces **numeric fields only**, so a string `unit` column becomes "No data". Fix: `fields: "/.*/"` + `textMode: "value"` (same for Structure prefix).
 
-## Apply after git pull (level2-vm)
+### Short labels / Короткие подписи
+
+Dropdown and row titles hide the common `objects_serverinterfaces_` prefix (`${structure:text}`). SQL still uses the **full** sanitized prefix as the variable value. The old **Structure prefix** / **Prefix → detail** panels were removed as redundant.
+
+### Apply after git pull (level2-vm)
 
 ```bash
 cd ~/level2

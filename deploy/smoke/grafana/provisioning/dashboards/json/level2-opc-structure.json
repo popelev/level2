@@ -65,7 +65,7 @@
           "refId": "Max"
         }
       ],
-      "title": "Value — ${structure}",
+      "title": "Value — ${structure:text}",
       "transformations": [
         {
           "id": "configFromData",
@@ -181,7 +181,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 16, "y": 0 },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
       "id": 4,
       "options": {
         "colorMode": "value",
@@ -202,41 +202,6 @@
         }
       ],
       "title": "Max scale",
-      "type": "stat"
-    },
-    {
-      "datasource": { "type": "postgres", "uid": "timescaledb" },
-      "fieldConfig": {
-        "defaults": {
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [{ "color": "text", "value": null }]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 5, "w": 4, "x": 20, "y": 0 },
-      "id": 5,
-      "options": {
-        "colorMode": "none",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/", "values": false },
-        "textMode": "value"
-      },
-      "targets": [
-        {
-          "datasource": { "type": "postgres", "uid": "timescaledb" },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT '${structure}' AS \"prefix\"",
-          "refId": "A"
-        }
-      ],
-      "title": "Structure prefix",
       "type": "stat"
     },
     {
@@ -262,7 +227,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT role, tag_id, value_num, value_text, time\nFROM (\n  SELECT\n    CASE\n      WHEN tag_id ~ '_(rvalueout|realvalue)$' THEN 'value'\n      WHEN tag_id ~ '_(strscale_min|min_scale)$' THEN 'min'\n      WHEN tag_id ~ '_(strscale_max|max_scale)$' THEN 'max'\n      WHEN tag_id ~ '_(sunit|unit)$' THEN 'unit'\n      ELSE 'other'\n    END AS role,\n    tag_id, value_num, value_text, time,\n    ROW_NUMBER() OVER (PARTITION BY tag_id ORDER BY time DESC) AS rn\n  FROM collector.samples\n  WHERE tag_id IN (\n    '${structure}_rvalueout', '${structure}_realvalue',\n    '${structure}_strscale_min', '${structure}_min_scale',\n    '${structure}_strscale_max', '${structure}_max_scale',\n    '${structure}_sunit', '${structure}_unit'\n  )\n  AND time > NOW() - INTERVAL '24 hours'\n) t\nWHERE rn = 1\nORDER BY role, tag_id",
+          "rawSql": "SELECT role, regexp_replace(tag_id, '^objects_serverinterfaces_', '') AS tag_id, value_num, value_text, time\nFROM (\n  SELECT\n    CASE\n      WHEN tag_id ~ '_(rvalueout|realvalue)$' THEN 'value'\n      WHEN tag_id ~ '_(strscale_min|min_scale)$' THEN 'min'\n      WHEN tag_id ~ '_(strscale_max|max_scale)$' THEN 'max'\n      WHEN tag_id ~ '_(sunit|unit)$' THEN 'unit'\n      ELSE 'other'\n    END AS role,\n    tag_id, value_num, value_text, time,\n    ROW_NUMBER() OVER (PARTITION BY tag_id ORDER BY time DESC) AS rn\n  FROM collector.samples\n  WHERE tag_id IN (\n    '${structure}_rvalueout', '${structure}_realvalue',\n    '${structure}_strscale_min', '${structure}_min_scale',\n    '${structure}_strscale_max', '${structure}_max_scale',\n    '${structure}_sunit', '${structure}_unit'\n  )\n  AND time > NOW() - INTERVAL '24 hours'\n) t\nWHERE rn = 1\nORDER BY role, tag_id",
           "refId": "A"
         }
       ],
@@ -333,7 +298,7 @@
           "refId": "C"
         }
       ],
-      "title": "Trend — value + scale (${structure})",
+      "title": "Trend — value + scale (${structure:text})",
       "type": "timeseries"
     }
   ],
@@ -346,15 +311,15 @@
         "allowCustomValue": true,
         "current": {},
         "datasource": { "type": "postgres", "uid": "timescaledb" },
-        "definition": "SELECT regexp_replace(tag_id, '_(rvalueout|realvalue)$', '') AS __value\nFROM collector.samples\nWHERE time > NOW() - INTERVAL '1 hour'\n  AND tag_id ~ '_(rvalueout|realvalue)$'\nGROUP BY 1\nORDER BY 1",
-        "description": "OPC structure root (sanitized tag_id prefix). Child series resolve as ${structure}_rvalueout|realvalue, _strscale_min|min_scale, _strscale_max|max_scale, _sunit|unit. Custom values allowed (paste prefix).",
+        "definition": "SELECT\n  regexp_replace(tag_id, '_(rvalueout|realvalue)$', '') AS __value,\n  regexp_replace(\n    regexp_replace(tag_id, '_(rvalueout|realvalue)$', ''),\n    '^objects_serverinterfaces_',\n    ''\n  ) AS __text\nFROM collector.samples\nWHERE time > NOW() - INTERVAL '1 hour'\n  AND tag_id ~ '_(rvalueout|realvalue)$'\nGROUP BY 1, 2\nORDER BY 2",
+        "description": "OPC structure root. Dropdown shows short label (without objects_serverinterfaces_); query value stays the full sanitized prefix. Custom paste still uses the full prefix.",
         "hide": 0,
         "includeAll": false,
         "label": "Structure",
         "multi": false,
         "name": "structure",
         "options": [],
-        "query": "SELECT regexp_replace(tag_id, '_(rvalueout|realvalue)$', '') AS __value\nFROM collector.samples\nWHERE time > NOW() - INTERVAL '1 hour'\n  AND tag_id ~ '_(rvalueout|realvalue)$'\nGROUP BY 1\nORDER BY 1",
+        "query": "SELECT\n  regexp_replace(tag_id, '_(rvalueout|realvalue)$', '') AS __value,\n  regexp_replace(\n    regexp_replace(tag_id, '_(rvalueout|realvalue)$', ''),\n    '^objects_serverinterfaces_',\n    ''\n  ) AS __text\nFROM collector.samples\nWHERE time > NOW() - INTERVAL '1 hour'\n  AND tag_id ~ '_(rvalueout|realvalue)$'\nGROUP BY 1, 2\nORDER BY 2",
         "refresh": 2,
         "regex": "",
         "skipUrlSync": false,

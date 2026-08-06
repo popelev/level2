@@ -242,53 +242,10 @@
           ],
           "title": "Max",
           "type": "stat"
-        },
-        {
-          "datasource": { "type": "postgres", "uid": "timescaledb" },
-          "description": "Sanitized structure prefix (click → detail dashboard).",
-          "fieldConfig": {
-            "defaults": {
-              "color": { "mode": "thresholds" },
-              "links": [
-                {
-                  "title": "Open structure detail",
-                  "url": "/d/level2-opc-structure/opc-structure-measure?var-structure=${structure}&from=${__from}&to=${__to}",
-                  "targetBlank": true
-                }
-              ],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [{ "color": "text", "value": null }]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": { "h": 4, "w": 8, "x": 12, "y": 5 },
-          "id": 105,
-          "options": {
-            "colorMode": "none",
-            "graphMode": "none",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/", "values": false },
-            "textMode": "value"
-          },
-          "targets": [
-            {
-              "datasource": { "type": "postgres", "uid": "timescaledb" },
-              "editorMode": "code",
-              "format": "table",
-              "rawQuery": true,
-              "rawSql": "SELECT '${structure}' AS \"prefix\"",
-              "refId": "A"
-            }
-          ],
-          "title": "Prefix → detail",
-          "type": "stat"
         }
       ],
       "repeat": "structure",
-      "title": "${structure}",
+      "title": "${structure:text}",
       "type": "row"
     }
   ],
@@ -303,7 +260,7 @@
           "text": ["All"],
           "value": ["$__all"]
         },
-        "description": "Multi-select OPC structure roots (sanitized prefixes). Edit Custom options (comma-separated) in Dashboard settings → Variables to add more. Same child tag pattern as OPC Structure Measure.",
+        "description": "Multi-select OPC structure roots. Dropdown shows short labels (without objects_serverinterfaces_); values stay full prefixes for queries. Add more via Dashboard settings → Variables (format: shortlabel : full_prefix).",
         "hide": 0,
         "includeAll": true,
         "label": "Structures",
@@ -317,31 +274,31 @@
           },
           {
             "selected": false,
-            "text": "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_temp",
+            "text": "tankhouse_data_2_e3_machines_metso_machines_apm_oil_temp",
             "value": "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_temp"
           },
           {
             "selected": false,
-            "text": "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_level",
+            "text": "tankhouse_data_2_e3_machines_metso_machines_apm_oil_level",
             "value": "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_level"
           },
           {
             "selected": false,
-            "text": "objects_serverinterfaces_tankhouse_data_2_e0_e0_compressed_air_&_instrument_air_air_vessel_e0_scb_920_cp_001",
+            "text": "tankhouse_data_2_e0_e0_compressed_air_&_instrument_air_air_vessel_e0_scb_920_cp_001",
             "value": "objects_serverinterfaces_tankhouse_data_2_e0_e0_compressed_air_&_instrument_air_air_vessel_e0_scb_920_cp_001"
           },
           {
             "selected": false,
-            "text": "objects_serverinterfaces_tankhouse_data_1_e1_ece_201_cathodemass",
+            "text": "tankhouse_data_1_e1_ece_201_cathodemass",
             "value": "objects_serverinterfaces_tankhouse_data_1_e1_ece_201_cathodemass"
           },
           {
             "selected": false,
-            "text": "objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current",
+            "text": "tankhouse_data_1_e1_ece_201_current",
             "value": "objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current"
           }
         ],
-        "query": "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_temp,objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_level,objects_serverinterfaces_tankhouse_data_2_e0_e0_compressed_air_&_instrument_air_air_vessel_e0_scb_920_cp_001,objects_serverinterfaces_tankhouse_data_1_e1_ece_201_cathodemass,objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current",
+        "query": "tankhouse_data_2_e3_machines_metso_machines_apm_oil_temp : objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_temp, tankhouse_data_2_e3_machines_metso_machines_apm_oil_level : objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_level, tankhouse_data_2_e0_e0_compressed_air_&_instrument_air_air_vessel_e0_scb_920_cp_001 : objects_serverinterfaces_tankhouse_data_2_e0_e0_compressed_air_&_instrument_air_air_vessel_e0_scb_920_cp_001, tankhouse_data_1_e1_ece_201_cathodemass : objects_serverinterfaces_tankhouse_data_1_e1_ece_201_cathodemass, tankhouse_data_1_e1_ece_201_current : objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current",
         "skipUrlSync": false,
         "type": "custom"
       }
