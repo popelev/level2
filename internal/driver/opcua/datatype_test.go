@@ -54,6 +54,63 @@ func TestGuessDataType_ModeFlags(t *testing.T) {
 	}
 }
 
+func TestGuessDataType_SiemensDateAndTime(t *testing.T) {
+	cases := []string{
+		"LastCycleDateAndTime",
+		"lastcycledateandtime",
+		"objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_csm_lastcycledateandtime",
+		"DATE_AND_TIME",
+		"MyDate_Time",
+		"CycleDateTime",
+	}
+	for _, name := range cases {
+		if got := GuessDataType(name); got != core.ValueDateTime {
+			t.Fatalf("%q: got %q want datetime", name, got)
+		}
+	}
+}
+
+func TestResolveMappedDataType_ByteStringSiemensDT(t *testing.T) {
+	// OPC Attribute DataType = ByteString → string; name says DATE_AND_TIME → datetime.
+	got := resolveMappedDataType(core.ValueString, "LastCycleDateAndTime")
+	if got != core.ValueDateTime {
+		t.Fatalf("got %q", got)
+	}
+	// Real string node stays string.
+	got = resolveMappedDataType(core.ValueString, "sUnit")
+	if got != core.ValueString {
+		t.Fatalf("sUnit: got %q", got)
+	}
+	// Authoritative OPC Float is kept even if name looks like time.
+	got = resolveMappedDataType(core.ValueFloat64, "LastCycleDateAndTime")
+	if got != core.ValueFloat64 {
+		t.Fatalf("float kept: got %q", got)
+	}
+	// Vendor ns / unmapped → Guess.
+	got = resolveMappedDataType("", "LastCycleDateAndTime")
+	if got != core.ValueDateTime {
+		t.Fatalf("empty map: got %q", got)
+	}
+	got = resolveMappedDataType(core.ValueDateTime, "anything")
+	if got != core.ValueDateTime {
+		t.Fatalf("opc DateTime: got %q", got)
+	}
+}
+
+func TestApplyDataTypesFromOPC_OverwritesWrongFloat64(t *testing.T) {
+	// Disconnected driver → empty OPC map → Guess; Sync must overwrite existing float64.
+	d := &Driver{}
+	tags := []core.Tag{{
+		ID:       "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_csm_lastcycledateandtime",
+		NodeID:   "ns=4;i=6156",
+		DataType: core.ValueFloat64,
+	}}
+	ApplyDataTypesFromOPC(context.Background(), d, tags)
+	if tags[0].DataType != core.ValueDateTime {
+		t.Fatalf("sync overwrite: got %q want datetime", tags[0].DataType)
+	}
+}
+
 func TestBrowseNameHint(t *testing.T) {
 	got := browseNameHint(core.ExpandedTag{BrowsePath: "TankHouse.Data.Dcswitch", ID: "x_dcswitch"})
 	if got != "Dcswitch" {
@@ -71,6 +128,7 @@ func TestFillExpandedDataTypes_GuessFallbackWhenDisconnected(t *testing.T) {
 		{ID: "a_sunit", NodeID: "ns=4;i=1", BrowsePath: "sUnit"},
 		{ID: "a_benable", NodeID: "ns=4;i=2", BrowsePath: "bEnable"},
 		{ID: "a_rvalue", NodeID: "ns=4;i=3", BrowsePath: "rValueOut"},
+		{ID: "a_dt", NodeID: "ns=4;i=6156", BrowsePath: "LastCycleDateAndTime"},
 	}
 	d.fillExpandedDataTypes(context.Background(), tags, nil)
 	if tags[0].DataType != core.ValueString {
@@ -82,4 +140,8 @@ func TestFillExpandedDataTypes_GuessFallbackWhenDisconnected(t *testing.T) {
 	if tags[2].DataType != core.ValueFloat64 {
 		t.Fatalf("rValueOut: got %q", tags[2].DataType)
 	}
+	if tags[3].DataType != core.ValueDateTime {
+		t.Fatalf("LastCycleDateAndTime: got %q", tags[3].DataType)
+	}
 }
+

@@ -12,14 +12,16 @@ import (
 
 // ResolveTagDataType reads OPC UA DataType for nodeID; falls back to browse-name heuristics.
 func (d *Driver) ResolveTagDataType(ctx context.Context, nodeID, browseHint string) core.ValueType {
-	if dt, err := d.readOPCDataType(ctx, nodeID); err == nil && dt != "" {
-		return dt
+	mapped, err := d.readOPCDataType(ctx, nodeID)
+	if err != nil {
+		mapped = ""
 	}
-	return GuessDataType(browseHint)
+	return resolveMappedDataType(mapped, browseHint)
 }
 
 // ApplyDataTypesFromOPC sets DataType on each tag from OPC UA (batched Attribute Read).
-// GuessDataType is used only when a node's DataType Read fails or is unmapped.
+// Always overwrites tag.DataType (Sync from OPC). GuessDataType is used when a node's
+// DataType Read fails/unmapped, and to refine Siemens ByteString DATE_AND_TIME → datetime.
 func ApplyDataTypesFromOPC(ctx context.Context, d *Driver, tags []core.Tag) {
 	if d == nil || len(tags) == 0 {
 		return
@@ -30,15 +32,11 @@ func ApplyDataTypesFromOPC(ctx context.Context, d *Driver, tags []core.Tag) {
 	}
 	types := d.readOPCDataTypesBatch(ctx, ids, nil)
 	for i := range tags {
-		if types[i] != "" {
-			tags[i].DataType = types[i]
-			continue
-		}
 		hint := tags[i].ID
 		if hint == "" {
 			hint = tags[i].NodeID
 		}
-		tags[i].DataType = GuessDataType(hint)
+		tags[i].DataType = resolveMappedDataType(types[i], hint)
 	}
 }
 
@@ -128,6 +126,7 @@ func mapOPCDataType(typeNID *ua.NodeID) core.ValueType {
 		return ""
 	}
 	if typeNID.Namespace() != 0 {
+		// Vendor types (e.g. Siemens DATE_AND_TIME) — caller may refine via name hint.
 		return ""
 	}
 	switch typeNID.IntID() {
@@ -140,6 +139,7 @@ func mapOPCDataType(typeNID *ua.NodeID) core.ValueType {
 	case id.Byte, id.UInt16, id.UInt32, id.UInt64:
 		return core.ValueUint
 	case id.String, id.LocalizedText, id.ByteString:
+		// ByteString is also how Siemens often exposes DATE_AND_TIME; refined by name.
 		return core.ValueString
 	case id.DateTime, id.UtcTime: // DateTime=i=13, UtcTime=i=294 (subtype)
 		return core.ValueDateTime
@@ -148,8 +148,21 @@ func mapOPCDataType(typeNID *ua.NodeID) core.ValueType {
 	}
 }
 
+// resolveMappedDataType combines OPC DataType Attribute mapping with browse-name hints.
+// Siemens DT is frequently ByteString (→ string) or a vendor ns≠0 type (→ empty).
+func resolveMappedDataType(mapped core.ValueType, hint string) core.ValueType {
+	guess := GuessDataType(hint)
+	if mapped == "" {
+		return guess
+	}
+	if guess == core.ValueDateTime && mapped == core.ValueString {
+		return core.ValueDateTime
+	}
+	return mapped
+}
+
 // GuessDataType infers platform type from browse/signal name when OPC metadata is unavailable.
-// Used only as last-resort fallback after DataType Attribute Read fails.
+// Used as fallback after DataType Attribute Read fails, and to refine ByteString→datetime.
 func GuessDataType(browseName string) core.ValueType {
 	n := strings.ToLower(browseName)
 	switch {
@@ -165,13 +178,23 @@ func GuessDataType(browseName string) core.ValueType {
 		return core.ValueBool
 	case strings.HasSuffix(n, "_auto") || strings.HasSuffix(n, "_run") || strings.HasSuffix(n, "_active"):
 		return core.ValueBool
-	case strings.Contains(n, "datetime") || strings.Contains(n, "date_time") || strings.HasSuffix(n, "_time") && !strings.Contains(n, "runtime"):
+	case looksLikeDateTimeName(n):
 		return core.ValueDateTime
 	case strings.HasPrefix(n, "i") || strings.Contains(n, "count"):
 		return core.ValueInt64
 	default:
 		return core.ValueFloat64
 	}
+}
+
+// looksLikeDateTimeName detects OPC DateTime / Siemens DATE_AND_TIME naming
+// (e.g. LastCycleDateAndTime — "dateandtime", not "datetime").
+func looksLikeDateTimeName(n string) bool {
+	if strings.Contains(n, "datetime") || strings.Contains(n, "dateandtime") ||
+		strings.Contains(n, "date_and_time") || strings.Contains(n, "date_time") {
+		return true
+	}
+	return strings.HasSuffix(n, "_time") && !strings.Contains(n, "runtime")
 }
 
 func browseNameHint(t core.ExpandedTag) string {

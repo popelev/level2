@@ -8,7 +8,8 @@ import (
 )
 
 // resolveTagDataType fills tag.DataType from OPC only when the client left it empty.
-// Explicit PUT/UI choices must not be overwritten (sync endpoint refreshes from OPC).
+// Explicit PUT/UI choices must not be overwritten — use POST .../tags/sync to refresh from OPC
+// (sync always overwrites, including wrong float64 → datetime).
 func (s *Server) resolveTagDataType(ctx context.Context, deviceID string, tag *core.Tag) {
 	if tag == nil || tag.NodeID == "" || s.DevHub == nil {
 		return

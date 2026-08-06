@@ -212,12 +212,8 @@ func (d *Driver) fillExpandedDataTypes(ctx context.Context, tags []core.Expanded
 		}
 	})
 	for i := range tags {
-		if types[i] != "" {
-			tags[i].DataType = types[i]
-			continue
-		}
-		// Last resort only — prefer empty never; poll needs a platform type.
-		tags[i].DataType = GuessDataType(browseNameHint(tags[i]))
+		// Last resort Guess when Read fails; also refine ByteString→datetime by name.
+		tags[i].DataType = resolveMappedDataType(types[i], browseNameHint(tags[i]))
 	}
 }
 
