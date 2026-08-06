@@ -168,9 +168,10 @@ func (d *Driver) ProbeNode(ctx context.Context, nodeID string) (exists bool, isL
 }
 
 // ExpandStructure walks hierarchical children and returns leaf Variable tags.
+// Each node is browsed once; children of structures are reused (no double Browse for IsLeaf).
 func (d *Driver) ExpandStructure(ctx context.Context, parentNodeID, parentTagID string, maxDepth int) ([]core.ExpandedTag, error) {
 	if maxDepth <= 0 {
-		maxDepth = 8
+		maxDepth = 16
 	}
 	if parentTagID == "" {
 		parentTagID = "udt"
@@ -184,27 +185,74 @@ func (d *Driver) expandWalk(ctx context.Context, nodeID, tagPrefix, path string,
 	if depth > maxDepth {
 		return nil
 	}
-	children, err := d.BrowseChildren(ctx, nodeID)
+	refs, err := d.browseRefsAt(ctx, nodeID)
 	if err != nil {
 		return err
 	}
-	for _, ch := range children {
-		childPath := ch.BrowseName
-		if path != "" {
-			childPath = path + "." + ch.BrowseName
+	return d.expandFromRefs(ctx, refs, tagPrefix, path, depth, maxDepth, out)
+}
+
+func (d *Driver) browseRefsAt(ctx context.Context, parentNodeID string) ([]*ua.ReferenceDescription, error) {
+	d.mu.Lock()
+	c := d.client
+	d.mu.Unlock()
+	if c == nil {
+		return nil, fmt.Errorf("not connected")
+	}
+	parsed, err := core.ParseNodeID(parentNodeID)
+	if err != nil {
+		return nil, err
+	}
+	nid, err := d.toUANodeID(ctx, parsed)
+	if err != nil {
+		return nil, err
+	}
+	desc := &ua.BrowseDescription{
+		NodeID:          nid,
+		BrowseDirection: ua.BrowseDirectionForward,
+		ReferenceTypeID: ua.NewNumericNodeID(0, id.HierarchicalReferences),
+		IncludeSubtypes: true,
+		NodeClassMask:   uint32(ua.NodeClassObject | ua.NodeClassVariable | ua.NodeClassObjectType | ua.NodeClassVariableType),
+		ResultMask:      uint32(ua.BrowseResultMaskAll),
+	}
+	return d.browseAllReferences(ctx, c, desc)
+}
+
+func (d *Driver) expandFromRefs(ctx context.Context, refs []*ua.ReferenceDescription, tagPrefix, path string, depth, maxDepth int, out *[]core.ExpandedTag) error {
+	if depth > maxDepth {
+		return nil
+	}
+	for _, ref := range refs {
+		if ref == nil || ref.NodeID == nil || ref.NodeID.NodeID == nil {
+			continue
 		}
+		name := ref.BrowseName.Name
+		childPath := name
+		if path != "" {
+			childPath = path + "." + name
+		}
+		childNodeID := formatNodeID(ref.NodeID.NodeID)
 		tagID := sanitizeTagID(tagPrefix + "_" + childPath)
-		if ch.IsLeaf {
-			dt := d.ResolveTagDataType(ctx, ch.NodeID, ch.BrowseName)
+
+		grandRefs, err := d.browseRefsAt(ctx, childNodeID)
+		if err != nil {
+			return err
+		}
+		isVar := ref.NodeClass == ua.NodeClassVariable
+		if isVar && len(grandRefs) == 0 {
+			dt := d.ResolveTagDataType(ctx, childNodeID, name)
 			*out = append(*out, core.ExpandedTag{
 				ID:         tagID,
-				NodeID:     ch.NodeID,
+				NodeID:     childNodeID,
 				BrowsePath: childPath,
 				DataType:   dt,
 			})
 			continue
 		}
-		if err := d.expandWalk(ctx, ch.NodeID, tagPrefix, childPath, depth+1, maxDepth, out); err != nil {
+		if len(grandRefs) == 0 {
+			continue
+		}
+		if err := d.expandFromRefs(ctx, grandRefs, tagPrefix, childPath, depth+1, maxDepth, out); err != nil {
 			return err
 		}
 	}

@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import TreeNode from '../components/TreeNode.jsx'
 import { ROOT_ID, getJSON, guessType, sanitizeId } from '../api.js'
-import { leafPathUnderPrefix, normalizePath, tagIdFromBrowse } from '../tagTree.js'
+import {
+  allocateUniqueTagIds,
+  leafPathUnderPrefix,
+  normalizePath,
+  tagIdFromBrowse,
+} from '../tagTree.js'
 
 export default function MonitorPage({ devices, onError, onDevicesChanged, initialDeviceId }) {
   const [deviceId, setDeviceId] = useState('')
@@ -14,6 +19,9 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
   const [addrChecked, setAddrChecked] = useState(() => new Map())
   const [expandingId, setExpandingId] = useState('')
   const [bulkBusy, setBulkBusy] = useState(false)
+  const expandCacheRef = useRef(new Map())
+  const pendingLeafRef = useRef(null)
+  const leafFlushTimer = useRef(0)
 
   useEffect(() => {
     if (initialDeviceId && devices.some((d) => d.id === initialDeviceId)) {
@@ -54,12 +62,14 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     setSelectedNode({ node_id: ROOT_ID, browse_name: 'Root', is_leaf: false })
     setSelectedPath('')
     setAddrChecked(new Map())
+    expandCacheRef.current = new Map()
   }
 
   useEffect(() => {
     if (!deviceId) return
     onError('')
     setAddrChecked(new Map())
+    expandCacheRef.current = new Map()
     Promise.all([reloadTree(), refreshTags(deviceId)]).catch((e) => onError(String(e.message || e)))
     const t = setInterval(() => {
       refreshTags(deviceId).catch(() => {})
@@ -67,6 +77,10 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     return () => clearInterval(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deviceId])
+
+  useEffect(() => () => {
+    if (leafFlushTimer.current) window.clearTimeout(leafFlushTimer.current)
+  }, [])
 
   const monitoredIds = useMemo(
     () => new Set(tags.map((t) => t.tag.node_id)),
@@ -135,30 +149,34 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     setBulkBusy(true)
     onError('')
     try {
-      let n = 0
+      const leaves = []
       for (const item of addrChecked.values()) {
         if (item.folder) continue
-        const folderPath = normalizePath(
-          item.path.includes('/')
-            ? item.path.slice(0, item.path.lastIndexOf('/'))
-            : '',
-        )
-        const id = tagIdFromBrowse(
-          folderPath,
-          item.browse_name || item.tag_id,
-          sanitizeId,
-        )
-        await upsertTag({
-          id,
-          node_id: item.node_id,
-          path: folderPath,
-          datatype: item.datatype || guessType(item.browse_name),
-          enabled: true,
-          interval_ms: 1000,
-        })
-        n++
+        leaves.push(item)
       }
-      setMsg(`Wrote ${n} tag(s) to DB write list`)
+      const { tags: payload, skippedDuplicates, renamed } = allocateUniqueTagIds(
+        leaves.map((item) => ({
+          ...item,
+          datatype: item.datatype || guessType(item.browse_name),
+        })),
+        sanitizeId,
+      )
+      setMsg(`Writing ${payload.length} tag(s)…`)
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: payload }),
+      })
+      if (!r.ok) throw new Error(await r.text())
+      const result = await r.json()
+      const wrote = result.wrote ?? payload.length
+      const skipped = (result.skipped_duplicates ?? 0) + skippedDuplicates
+      const errN = Array.isArray(result.errors) ? result.errors.length : 0
+      const extra = renamed ? ` (${renamed} id(s) disambiguated)` : ''
+      setMsg(`Wrote ${wrote}, skipped ${skipped} duplicates, errors ${errN}${extra}`)
+      if (errN && result.errors?.length) {
+        onError(result.errors.slice(0, 5).join('; '))
+      }
       setAddrChecked(new Map())
       await refreshTags(deviceId)
       await onDevicesChanged()
@@ -169,73 +187,112 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
     }
   }
 
+  const flushLeafChecks = useCallback(() => {
+    leafFlushTimer.current = 0
+    const pending = pendingLeafRef.current
+    if (!pending?.size) return
+    pendingLeafRef.current = null
+    startTransition(() => {
+      setAddrChecked((prev) => {
+        const next = new Map(prev)
+        for (const [nodeId, op] of pending) {
+          if (op === null) next.delete(nodeId)
+          else next.set(nodeId, op)
+        }
+        return next
+      })
+    })
+  }, [])
+
+  const queueLeafCheck = useCallback((nodeId, value) => {
+    if (!pendingLeafRef.current) pendingLeafRef.current = new Map()
+    pendingLeafRef.current.set(nodeId, value)
+    if (leafFlushTimer.current) return
+    leafFlushTimer.current = window.setTimeout(flushLeafChecks, 40)
+  }, [flushLeafChecks])
+
+  const removeUnderPath = (prev, folderPath, folderNodeId) => {
+    const next = new Map(prev)
+    next.delete(folderNodeId)
+    const prefix = folderPath ? `${folderPath}/` : ''
+    for (const [k, v] of prev) {
+      if (k === folderNodeId) continue
+      if (v.path === folderPath || (prefix && String(v.path || '').startsWith(prefix))) {
+        next.delete(k)
+      }
+    }
+    return next
+  }
+
   const onToggleAddrCheck = async (node, path, checked) => {
     onError('')
     if (node.is_leaf) {
-      setAddrChecked((prev) => {
-        const next = new Map(prev)
-        if (checked) {
+      if (checked) {
+        queueLeafCheck(node.node_id, {
+          browse_name: node.browse_name,
+          node_id: node.node_id,
+          path,
+          datatype: node.datatype || guessType(node.browse_name),
+        })
+      } else {
+        queueLeafCheck(node.node_id, null)
+      }
+      return
+    }
+
+    if (!checked) {
+      // Prefer cache; never re-expand just to uncheck.
+      const cached = expandCacheRef.current.get(node.node_id)
+      startTransition(() => {
+        setAddrChecked((prev) => {
+          if (cached?.length) {
+            const next = new Map(prev)
+            next.delete(node.node_id)
+            for (const t of cached) next.delete(t.node_id)
+            return next
+          }
+          return removeUnderPath(prev, path, node.node_id)
+        })
+      })
+      return
+    }
+
+    setExpandingId(node.node_id)
+    setMsg(`Expanding ${node.browse_name}…`)
+    try {
+      let expanded = expandCacheRef.current.get(node.node_id)
+      if (!expanded) {
+        expanded = await getJSONExpand(deviceId, node.node_id, node.browse_name)
+        expandCacheRef.current.set(node.node_id, expanded)
+      }
+      startTransition(() => {
+        setAddrChecked((prev) => {
+          const next = new Map(prev)
           next.set(node.node_id, {
             browse_name: node.browse_name,
             node_id: node.node_id,
             path,
-            datatype: node.datatype || guessType(node.browse_name),
+            folder: true,
           })
-        } else {
-          next.delete(node.node_id)
-        }
-        return next
-      })
-      return
-    }
-    if (!checked) {
-      setExpandingId(node.node_id)
-      try {
-        const expanded = await getJSONExpand(deviceId, node.node_id, node.browse_name)
-        setAddrChecked((prev) => {
-          const next = new Map(prev)
-          next.delete(node.node_id)
-          for (const t of expanded) next.delete(t.node_id)
+          for (const t of expanded) {
+            const name = leafName(t)
+            const rel = t.browse_path || name
+            const leafPath = leafPathUnderPrefix(path, rel)
+            next.set(t.node_id, {
+              browse_name: name,
+              node_id: t.node_id,
+              path: leafPath,
+              datatype: t.datatype || guessType(name),
+              tag_id: t.id,
+            })
+          }
           return next
         })
-      } catch (ex) {
-        setAddrChecked((prev) => {
-          const next = new Map(prev)
-          next.delete(node.node_id)
-          return next
-        })
-        onError(String(ex.message || ex))
-      } finally {
-        setExpandingId('')
-      }
-      return
-    }
-    setExpandingId(node.node_id)
-    try {
-      const expanded = await getJSONExpand(deviceId, node.node_id, node.browse_name)
-      setAddrChecked((prev) => {
-        const next = new Map(prev)
-        next.set(node.node_id, {
-          browse_name: node.browse_name,
-          node_id: node.node_id,
-          path,
-          folder: true,
-        })
-        for (const t of expanded) {
-          const name = leafName(t)
-          const rel = t.browse_path || name
-          const leafPath = leafPathUnderPrefix(path, rel)
-          next.set(t.node_id, {
-            browse_name: name,
-            node_id: t.node_id,
-            path: leafPath,
-            datatype: t.datatype || guessType(name),
-          })
-        }
-        return next
       })
+      setMsg(`Selected ${expanded.length} leaf tag(s) under ${node.browse_name}`)
     } catch (ex) {
       onError(String(ex.message || ex))
+      setMsg('')
     } finally {
       setExpandingId('')
     }
@@ -326,7 +383,7 @@ export default function MonitorPage({ devices, onError, onDevicesChanged, initia
           <div className="sel-bar">
             <span className="muted small">{leafCheckedCount} selected</span>
             <button type="button" disabled={!leafCheckedCount || bulkBusy} onClick={writeCheckedToDB}>
-              Write selected to DB
+              {bulkBusy ? 'Writing…' : 'Write selected to DB'}
             </button>
             <button
               type="button"
@@ -376,7 +433,7 @@ async function getJSONExpand(deviceId, nodeId, parentTagId) {
       device_id: deviceId,
       node_id: nodeId,
       parent_tag_id: parentTagId || '',
-      max_depth: 8,
+      max_depth: 16,
     }),
   })
   if (!r.ok) throw new Error(await r.text())

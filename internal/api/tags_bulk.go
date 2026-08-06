@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -12,8 +13,89 @@ import (
 )
 
 func (s *Server) mountTagBulk(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/v1/devices/{id}/tags/bulk", s.handleBulkUpsertTags)
 	mux.HandleFunc("POST /api/v1/devices/{id}/tags/sync", s.handleSyncTags)
 	mux.HandleFunc("DELETE /api/v1/devices/{id}/tags", s.handleDeleteAllTags)
+}
+
+// handleBulkUpsertTags upserts many tags in one request / one config persist.
+// Body: { "tags": [ Tag, ... ] }
+// Response: { wrote, added, updated, skipped_duplicates, errors: []string }
+func (s *Server) handleBulkUpsertTags(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		http.Error(w, "config store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	deviceID := r.PathValue("id")
+	var body struct {
+		Tags []core.Tag `json:"tags"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	seenNode := map[string]string{} // node_id -> tag id
+	seenID := map[string]string{}   // tag id -> node_id
+	var clean []core.Tag
+	var errors []string
+	skipped := 0
+
+	for i := range body.Tags {
+		t := body.Tags[i]
+		t.ID = strings.TrimSpace(t.ID)
+		t.NodeID = strings.TrimSpace(t.NodeID)
+		if t.ID == "" || t.NodeID == "" {
+			errors = append(errors, fmt.Sprintf("tag[%d]: id and node_id required", i))
+			continue
+		}
+		if _, err := core.ParseNodeID(t.NodeID); err != nil {
+			errors = append(errors, t.ID+": "+err.Error())
+			continue
+		}
+		if prevID, ok := seenNode[t.NodeID]; ok {
+			skipped++
+			if prevID != t.ID {
+				errors = append(errors, fmt.Sprintf("%s: duplicate node_id (kept %s)", t.ID, prevID))
+			}
+			continue
+		}
+		if prevNode, ok := seenID[t.ID]; ok && prevNode != t.NodeID {
+			// Same id, different node — skip to avoid overwrite; client should disambiguate.
+			skipped++
+			errors = append(errors, fmt.Sprintf("%s: duplicate id for node %s (kept %s)", t.ID, t.NodeID, prevNode))
+			continue
+		}
+		if err := validateTagFields(&t); err != nil {
+			errors = append(errors, t.ID+": "+err.Error())
+			continue
+		}
+		// Prefer client datatype; only resolve when empty (avoids N OPC round-trips).
+		if t.DataType == "" {
+			s.resolveTagDataType(r.Context(), deviceID, &t)
+			_ = validateTagFields(&t)
+		}
+		seenNode[t.NodeID] = t.ID
+		seenID[t.ID] = t.NodeID
+		clean = append(clean, t)
+	}
+
+	added, updated, err := s.Cfg.MergeTags(deviceID, clean, false)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if s.OnDeviceChanged != nil {
+		s.OnDeviceChanged(deviceID, false)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"device_id":           deviceID,
+		"wrote":               added + updated,
+		"added":               added,
+		"updated":             updated,
+		"skipped_duplicates":  skipped,
+		"errors":              errors,
+	})
 }
 
 func (s *Server) handleSyncTags(w http.ResponseWriter, r *http.Request) {
