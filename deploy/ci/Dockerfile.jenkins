@@ -1,10 +1,11 @@
 # Jenkins LTS with Docker CLI + plugins + JCasC (no setup wizard).
+# Only the Docker *client* is needed — builds use the host engine via docker.sock.
+FROM docker:27-cli AS dockercli
+
 FROM jenkins/jenkins:lts-jdk21
 
 USER root
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends docker.io git \
-  && rm -rf /var/lib/apt/lists/*
+COPY --from=dockercli /usr/local/bin/docker /usr/local/bin/docker
 
 # Plugins from plugins.txt (configuration-as-code, git, multibranch, job-dsl, …).
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
