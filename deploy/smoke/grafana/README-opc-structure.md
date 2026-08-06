@@ -28,16 +28,19 @@ Folder: **Level2**. Login: `admin` / `GF_SECURITY_ADMIN_PASSWORD` from `deploy/s
 
 Dashboard **Plant Overview** lists several OPC structure prefixes at once. Each selected structure gets a repeating row: gauge (value + scale) + unit + min/max, with a data link to **OPC Structure Measure**.
 
+**Row JSON quirk (Grafana):** nested panels under a row are loaded only when `collapsed: true`. For an expanded repeating row (`collapsed: false`), Value/Unit/Min/Max must be **siblings after the row** in the top-level `panels` array (row itself keeps `"panels": []`). Nested panels + `collapsed: false` → UI shows `(0 panels)`.
+
 ### How to add structures / Как добавить структуры
 
 ### RU
 
 1. Откройте **Plant Overview**.
 2. Вверху переменная **Structures** (multi-select) — выберите нужные префиксы или **All**.
-3. Чтобы **добавить новый** префикс в список:
-   - **Dashboard settings → Variables → Structures** → поле **Custom options** (значения через запятую, без пробелов вокруг `,`) → **Update** → **Save dashboard**.
+3. Под каждым заголовком структуры сразу видны Value / Unit / Min / Max.
+4. Чтобы **добавить новый** префикс в список:
+   - **Dashboard settings → Variables → Structures** → **Custom options** в формате `shortlabel : full_prefix` (через запятую) → **Update** → **Save dashboard**.
    - Либо правьте `query` / `options` в `level2-plant-overview.json` в git (provisioning перезапишет UI-правки при recreate).
-4. Клик по Value / Unit / Prefix → drill-down на `level2-opc-structure` с `var-structure=…`.
+5. Клик по Value / Unit → drill-down на `level2-opc-structure` с `var-structure=…`.
 
 Префиксы — sanitized `tag_id` без суффикса `_rvalueout` / `_realvalue` (см. таблицу ниже). Примеры из lab уже засеяны (oil temp/level, air vessel, cathode mass/current).
 
@@ -45,8 +48,9 @@ Dashboard **Plant Overview** lists several OPC structure prefixes at once. Each 
 
 1. Open **Plant Overview**.
 2. Use multi-select **Structures** (or **All**).
-3. To **add** a prefix: **Dashboard settings → Variables → Structures → Custom options** (comma-separated), save; or edit the provisioned JSON in git so recreate keeps it.
-4. Panel links open **OPC Structure Measure** with that structure.
+3. Gauges for each structure appear under the repeating row titles.
+4. To **add** a prefix: **Dashboard settings → Variables → Structures → Custom options** (`shortlabel : full_prefix`, comma-separated), save; or edit the provisioned JSON in git so recreate keeps it.
+5. Panel links open **OPC Structure Measure** with that structure.
 
 ## How to use — OPC Structure Measure / Шаблон одной структуры
 
