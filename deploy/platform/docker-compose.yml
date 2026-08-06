@@ -18,10 +18,13 @@ services:
       LEVEL2_SIM_BROWSER: ${LEVEL2_SIM_BROWSER:-1}
       SPOOL_DIR: /var/lib/level2/spool
       UI_DIR: /usr/share/level2/ui
+      # Same Timescale volume as smoke (read-only) so Statfs reports DB disk free space
+      LEVEL2_DB_DATA_PATH: ${LEVEL2_DB_DATA_PATH:-/var/lib/level2/dbdisk}
     volumes:
       # whole dir so Excel import can rewrite config.yaml (+ .tmp)
       - ./:/etc/level2/cfg
       - collector_spool:/var/lib/level2/spool
+      - smoke_timeseries:/var/lib/level2/dbdisk:ro
     ports:
       - "8080:8080"
     command: ["-config", "/etc/level2/cfg/config.yaml"]
@@ -30,6 +33,10 @@ services:
 
 volumes:
   collector_spool:
+  # Created by deploy/smoke (project name "smoke" → smoke_timeseries)
+  smoke_timeseries:
+    external: true
+    name: smoke_timeseries
 
 networks:
   smoke_default:

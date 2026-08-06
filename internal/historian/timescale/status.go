@@ -156,7 +156,27 @@ func resolveFreeBytes(usedBytes int64) (free *int64, source string, capacity *in
 			return &f, "env_limit", capacity
 		}
 	}
+
+	for _, path := range dbDiskPaths() {
+		n, err := diskFree(path)
+		if err != nil || n < 0 {
+			continue
+		}
+		return &n, "statfs:" + path, nil
+	}
 	return nil, "unavailable", nil
+}
+
+// dbDiskPaths returns candidate filesystem paths for Statfs (Timescale data volume).
+func dbDiskPaths() []string {
+	if p := strings.TrimSpace(os.Getenv("LEVEL2_DB_DATA_PATH")); p != "" {
+		return []string{p}
+	}
+	return []string{
+		"/var/lib/level2/dbdisk",
+		"/var/lib/postgresql/data",
+		"/var/lib/postgresql",
+	}
 }
 
 // MaskDatabaseURL redacts the password in a Postgres URL.

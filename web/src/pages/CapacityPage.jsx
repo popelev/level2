@@ -85,7 +85,7 @@ export default function CapacityPage({ onError }) {
               <div className="cap-value">{formatETA(data.eta_seconds)}</div>
               <div className="cap-sub muted small">
                 {!freeKnown
-                  ? 'Set LEVEL2_DB_CAPACITY_BYTES for ETA'
+                  ? 'Free space unavailable (mount DB volume or set LEVEL2_DB_CAPACITY_BYTES)'
                   : growth > 0
                     ? `~${formatBytes(growth)}/s growth`
                     : 'no recent writes'}

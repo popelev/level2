@@ -2,6 +2,8 @@
 
 Go service: OPC UA leaf tags → TimescaleDB (`collector.samples`) + REST/WS API + Admin UI.
 
+Capacity / free disk: collector mounts the smoke Timescale volume (`smoke_timeseries`) read-only at `/var/lib/level2/dbdisk` and uses `Statfs` for free space. Optional override: `LEVEL2_DB_CAPACITY_BYTES`.
+
 ## PLC off
 
 ```bash
