@@ -167,15 +167,28 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
     location.hash = `#/db-list?device=${encodeURIComponent(id)}`
   }
 
-  const syncFromOpc = async () => {
+  const syncFromOpc = async (tagIds = null) => {
     if (!deviceId) return
-    if (!window.confirm(`Sync tag parameters from OPC for all ${tags.length} tag(s) by NodeId?`)) return
-    setBulkBusy('sync')
+    const all = !tagIds?.length
+    const n = all ? tags.length : tagIds.length
+    if (n === 0) return
+    if (
+      !window.confirm(
+        all
+          ? `Sync parameters from OPC for all ${n} tag(s) by NodeId?`
+          : `Sync parameters from OPC for ${n} selected tag(s) by NodeId?`,
+      )
+    ) {
+      return
+    }
+    setBulkBusy(all ? 'sync-all' : 'sync-sel')
     onError('')
     setMsg('')
     try {
       const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/sync`, {
         method: 'POST',
+        headers: tagIds?.length ? { 'Content-Type': 'application/json' } : undefined,
+        body: tagIds?.length ? JSON.stringify({ tag_ids: tagIds }) : undefined,
       })
       if (!r.ok) throw new Error(await r.text())
       const data = await r.json()
@@ -270,9 +283,9 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
               type="button"
               className="secondary"
               disabled={!!bulkBusy || !tags.length}
-              onClick={syncFromOpc}
+              onClick={() => syncFromOpc()}
             >
-              {bulkBusy === 'sync' ? 'Syncing…' : 'Sync from OPC (by NodeId)'}
+              {bulkBusy === 'sync-all' ? 'Syncing…' : 'Sync all from OPC'}
             </button>
             <button
               type="button"
@@ -287,6 +300,14 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
           {dbSelected.size > 0 && (
             <div className="sel-bar">
               <span className="muted small">{dbSelected.size} selected</span>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!!bulkBusy}
+                onClick={() => syncFromOpc([...dbSelected])}
+              >
+                {bulkBusy === 'sync-sel' ? 'Syncing…' : 'Sync selected from OPC'}
+              </button>
               <button
                 type="button"
                 className="secondary"

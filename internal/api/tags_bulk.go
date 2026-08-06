@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
@@ -25,32 +27,70 @@ func (s *Server) handleSyncTags(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+
+	var body struct {
+		TagIDs []string `json:"tag_ids"`
+	}
+	if r.Body != nil && r.ContentLength != 0 {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+	}
+	syncOnly := map[string]struct{}{}
+	for _, id := range body.TagIDs {
+		id = strings.TrimSpace(id)
+		if id != "" {
+			syncOnly[id] = struct{}{}
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
 	updated := 0
 	var errors []string
 	drv := s.opcDriver(deviceID)
-	oldTypes := make([]core.ValueType, len(tags))
+
+	var toSync []core.Tag
+	var syncIdx []int
 	for i := range tags {
-		oldTypes[i] = tags[i].DataType
+		if len(syncOnly) > 0 {
+			if _, ok := syncOnly[tags[i].ID]; !ok {
+				continue
+			}
+		}
+		toSync = append(toSync, tags[i])
+		syncIdx = append(syncIdx, i)
+	}
+	if len(toSync) == 0 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"device_id": deviceID,
+			"total":     0,
+			"updated":   0,
+			"errors":    []string{},
+		})
+		return
+	}
+
+	oldTypes := make([]core.ValueType, len(toSync))
+	for i := range toSync {
+		oldTypes[i] = toSync[i].DataType
 	}
 	if drv != nil {
-		opcuaDriver.ApplyDataTypesFromOPC(ctx, drv, tags)
+		opcuaDriver.ApplyDataTypesFromOPC(ctx, drv, toSync)
 	} else {
-		for i := range tags {
-			tags[i].DataType = opcuaDriver.GuessDataType(tags[i].ID)
+		for i := range toSync {
+			toSync[i].DataType = opcuaDriver.GuessDataType(toSync[i].ID)
 		}
 	}
-	for i := range tags {
-		if err := validateTagFields(&tags[i]); err != nil {
-			errors = append(errors, tags[i].ID+": "+err.Error())
-			tags[i].DataType = oldTypes[i]
+	for j := range toSync {
+		if err := validateTagFields(&toSync[j]); err != nil {
+			errors = append(errors, toSync[j].ID+": "+err.Error())
+			toSync[j].DataType = oldTypes[j]
 			continue
 		}
-		if tags[i].DataType != oldTypes[i] {
+		if toSync[j].DataType != oldTypes[j] {
 			updated++
 		}
+		tags[syncIdx[j]] = toSync[j]
 	}
 	if err := s.Cfg.SetDeviceTags(deviceID, tags); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -61,7 +101,7 @@ func (s *Server) handleSyncTags(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"device_id": deviceID,
-		"total":     len(tags),
+		"total":     len(toSync),
 		"updated":   updated,
 		"errors":    errors,
 	})
