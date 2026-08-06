@@ -12,6 +12,7 @@ import (
 func (s *Server) mountDiagnostics(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/diagnostics/logs", s.handleDiagLogs)
 	mux.HandleFunc("DELETE /api/v1/diagnostics/logs", s.handleDiagClear)
+	mux.HandleFunc("POST /api/v1/diagnostics/reset", s.handleDiagReset)
 	mux.HandleFunc("GET /api/v1/diagnostics/capacity", s.handleCapacity)
 }
 
@@ -38,6 +39,22 @@ func (s *Server) handleDiagClear(w http.ResponseWriter, r *http.Request) {
 		s.Diag.Clear()
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// handleDiagReset clears the diagnostics ring log and last-hour incident counters
+// used by Overview (Recent errors + “drops / last hour” pills).
+func (s *Server) handleDiagReset(w http.ResponseWriter, r *http.Request) {
+	if s.Diag != nil {
+		s.Diag.Clear()
+	}
+	inc := s.Incidents
+	if inc == nil {
+		inc = diag.DefaultIncidents()
+	}
+	if inc != nil {
+		inc.Clear()
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "reset"})
 }
 
 func diagMetrics() map[string]float64 {

@@ -272,6 +272,12 @@ a.nav-btn {
   margin-bottom: 8px;
 }
 .panel-head h2 { margin: 0; }
+.panel-head-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
 .pager-wrap {
   display: flex;
   justify-content: center;

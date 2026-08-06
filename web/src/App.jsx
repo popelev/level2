@@ -331,6 +331,7 @@ export default function App() {
           health={health}
           ready={ready}
           onError={setErr}
+          onStatusRefresh={refreshStatus}
           onNavigate={(name) => go(name, name === 'monitor' || name === 'db-list' ? deviceQ : undefined)}
         />
       )}

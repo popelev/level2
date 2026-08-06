@@ -52,6 +52,16 @@ func DefaultIncidents() *IncidentTracker {
 	return defaultIncidents
 }
 
+// Clear drops all recorded incidents (Overview “drops / last hour” counters).
+func (t *IncidentTracker) Clear() {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	t.events = nil
+	t.mu.Unlock()
+}
+
 // Record appends an incident (UTC now). Empty kind is ignored.
 func (t *IncidentTracker) Record(kind, deviceID string) {
 	if t == nil || kind == "" {

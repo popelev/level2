@@ -121,7 +121,7 @@ Admin UI navigation (`http://<host>:8080/`):
 2. **DB write list** — enabled tags polled into Timescale; **Sync from OPC** overwrites datatypes (see [docs/opc-datatype-sync.md](docs/opc-datatype-sync.md)).
 3. **Import / Export** — Excel tag list for one server (`…/tags.xlsx`, `…/tags/import`).
 4. **Projects** — `Project.xlsx` (Servers + Tags), import merge/replace, validate/compare against Address Space.
-5. **Overview / Diagnostics / Capacity / Database** — readiness pills, OPC/DB ring log, free DB space, lab **wipe samples**.
+5. **Overview / Diagnostics / Capacity / Database** — readiness pills, OPC/DB ring log, **Reset alarms** (clears Recent errors + last-hour drop counters), free DB space, lab **wipe samples**.
 6. **Grafana** (smoke `:3000`) — template [OPC Structure Measure](deploy/smoke/grafana/README-opc-structure.md) (pick structure → value / scale / unit).
 
 PLC-less mode: `LEVEL2_SIM_BROWSER=1` — in-memory browse/expand and synthetic samples.
@@ -188,6 +188,7 @@ Full table: [deploy/platform/README.md](deploy/platform/README.md#api).
 | GET/POST | `/api/v1/devices/…/tags…` | CRUD / import / export / sync |
 | GET | `/api/v1/ws/stream` | live WebSocket |
 | GET | `/api/v1/diagnostics/logs` | ring log |
+| POST | `/api/v1/diagnostics/reset` | clear ring log + Overview drop counters |
 | GET | `/api/v1/database/status` | DB status / capacity |
 | POST | `/api/v1/database/wipe-samples?confirm=wipe` | wipe historian samples (lab); optional `{"clear_tags":true}` |
 | GET | `/metrics` | Prometheus |

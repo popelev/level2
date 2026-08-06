@@ -42,6 +42,7 @@ curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns%3D4%3Bi%3D4207'
 | GET | `/api/v1/ws/stream` | live samples WebSocket |
 | GET | `/api/v1/diagnostics/logs?category=&errors_only=&limit=` | OPC/DB ring log |
 | DELETE | `/api/v1/diagnostics/logs` | clear ring log |
+| POST | `/api/v1/diagnostics/reset` | clear ring log **and** last-hour incident counters (Overview alarms) |
 | GET | `/api/v1/diagnostics/capacity` | DB size, ETA, capacity policy fields |
 | GET | `/api/v1/database/capacity-policy` | capacity percent + full-disk policy |
 | PUT | `/api/v1/database/capacity-policy` | persist policy to YAML |

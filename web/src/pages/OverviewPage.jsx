@@ -35,7 +35,7 @@ function dropsLine(n, label = 'drops') {
   )
 }
 
-export default function OverviewPage({ health, ready, onError, onNavigate }) {
+export default function OverviewPage({ health, ready, onError, onNavigate, onStatusRefresh }) {
   const [data, setData] = useState(null)
 
   const load = useCallback(async () => {
@@ -51,6 +51,27 @@ export default function OverviewPage({ health, ready, onError, onNavigate }) {
     }, 4000)
     return () => clearInterval(t)
   }, [load, onError])
+
+  const resetAlarms = async () => {
+    if (
+      !window.confirm(
+        'Clear Recent errors and reset last-hour drop counters (collector / OPC / DB)? This does not change live connection state.',
+      )
+    ) {
+      return
+    }
+    onError('')
+    try {
+      const r = await fetch('/api/v1/diagnostics/reset', { method: 'POST' })
+      if (!r.ok) throw new Error(await r.text())
+      await load()
+      if (onStatusRefresh) {
+        await onStatusRefresh().catch(() => {})
+      }
+    } catch (e) {
+      onError(String(e.message || e))
+    }
+  }
 
   const collectorReady = ready === 'ready' || data?.collector_ready
   const disc = (data?.devices_disconnected ?? 0) > 0
@@ -161,9 +182,14 @@ export default function OverviewPage({ health, ready, onError, onNavigate }) {
           <section className="panel">
             <div className="panel-head">
               <h3 style={{ margin: 0 }}>Recent errors</h3>
-              <button type="button" className="secondary small-btn" onClick={() => onNavigate('diag')}>
-                Open diagnostics
-              </button>
+              <div className="panel-head-actions">
+                <button type="button" className="secondary small-btn danger-btn" onClick={resetAlarms}>
+                  Reset alarms
+                </button>
+                <button type="button" className="secondary small-btn" onClick={() => onNavigate('diag')}>
+                  Open diagnostics
+                </button>
+              </div>
             </div>
             {errors.length === 0 ? (
               <p className="muted">No recent OPC/DB warnings or errors.</p>

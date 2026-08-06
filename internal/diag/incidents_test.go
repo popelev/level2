@@ -47,3 +47,16 @@ func TestIncidentTracker_RingCap(t *testing.T) {
 		t.Fatalf("want capped 3, got %d", got)
 	}
 }
+
+func TestIncidentTracker_Clear(t *testing.T) {
+	tr := NewIncidentTracker(100, time.Hour)
+	tr.Record(IncidentOPCDisconnect, "a")
+	tr.Record(IncidentCollectorDown, "")
+	tr.Clear()
+	if got := tr.Count(IncidentOPCDisconnect, time.Hour); got != 0 {
+		t.Fatalf("after clear opc=%d", got)
+	}
+	if got := tr.Count(IncidentCollectorDown, time.Hour); got != 0 {
+		t.Fatalf("after clear collector=%d", got)
+	}
+}
