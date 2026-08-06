@@ -63,6 +63,13 @@ func mapDataValue(tag TagView, dv *ua.DataValue, now time.Time) (core.Sample, er
 		}
 		str, _ = core.TruncateString(str)
 		s.ValueText = &str
+	case core.ValueDateTime:
+		tm, err := asDateTime(v)
+		if err != nil {
+			return s, err
+		}
+		str := tm.UTC().Format(time.RFC3339Nano)
+		s.ValueText = &str
 	default:
 		return s, fmt.Errorf("unsupported datatype %q", tag.DataType)
 	}
@@ -129,5 +136,19 @@ func asString(v any) (string, error) {
 		return string(x), nil
 	default:
 		return "", fmt.Errorf("expected string, got %T", v)
+	}
+}
+
+func asDateTime(v any) (time.Time, error) {
+	switch x := v.(type) {
+	case time.Time:
+		return x, nil
+	case *time.Time:
+		if x == nil {
+			return time.Time{}, fmt.Errorf("nil time")
+		}
+		return *x, nil
+	default:
+		return time.Time{}, fmt.Errorf("expected datetime, got %T", v)
 	}
 }

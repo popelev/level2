@@ -73,12 +73,11 @@ func Load(path string) (*File, error) {
 			if _, err := core.ParseNodeID(t.NodeID); err != nil {
 				return nil, fmt.Errorf("tag %q: %w", t.ID, err)
 			}
-			t.DataType = core.ValueType(strings.ToLower(string(t.DataType)))
-			switch t.DataType {
-			case core.ValueBool, core.ValueInt64, core.ValueFloat64, core.ValueString:
-			case "":
+			t.DataType = core.NormalizeValueType(core.ValueType(strings.ToLower(string(t.DataType))))
+			if t.DataType == "" {
 				t.DataType = core.ValueFloat64
-			default:
+			}
+			if !core.ValidValueType(t.DataType) {
 				return nil, fmt.Errorf("tag %q: unsupported datatype %q", t.ID, t.DataType)
 			}
 			if t.IntervalMs <= 0 {

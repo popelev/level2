@@ -75,6 +75,8 @@ func mapOPCDataType(typeNID *ua.NodeID) core.ValueType {
 		return core.ValueInt64
 	case id.String, id.LocalizedText, id.ByteString:
 		return core.ValueString
+	case id.DateTime:
+		return core.ValueDateTime
 	default:
 		return ""
 	}
@@ -96,6 +98,8 @@ func GuessDataType(browseName string) core.ValueType {
 		return core.ValueBool
 	case strings.HasSuffix(n, "_auto") || strings.HasSuffix(n, "_run") || strings.HasSuffix(n, "_active"):
 		return core.ValueBool
+	case strings.Contains(n, "datetime") || strings.Contains(n, "date_time") || strings.HasSuffix(n, "_time") && !strings.Contains(n, "runtime"):
+		return core.ValueDateTime
 	case strings.HasPrefix(n, "i") || strings.Contains(n, "count"):
 		return core.ValueInt64
 	default:

@@ -209,7 +209,7 @@ func (s *Server) handleProjectValidate(w http.ResponseWriter, r *http.Request) {
 						} else if actual == string(core.ValueBool) && t.DataType != core.ValueBool {
 							row.Status = "type_mismatch"
 							row.Detail = "sample is bool, tag is " + string(t.DataType)
-						} else if actual == string(core.ValueString) && t.DataType != core.ValueString {
+						} else if actual == string(core.ValueString) && t.DataType != core.ValueString && t.DataType != core.ValueDateTime {
 							row.Status = "type_mismatch"
 							row.Detail = "sample is string, tag is " + string(t.DataType)
 						}

@@ -40,6 +40,23 @@ func TestMapString(t *testing.T) {
 	}
 }
 
+func TestMapDateTime(t *testing.T) {
+	tag := TagView{Tag: core.Tag{ID: "ts", DataType: core.ValueDateTime}}
+	when := time.Date(2026, 8, 6, 12, 0, 0, 0, time.UTC)
+	v, err := ua.NewVariant(when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dv := &ua.DataValue{Status: ua.StatusOK, Value: v}
+	s, err := mapDataValue(tag, dv, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.ValueText == nil || *s.ValueText == "" {
+		t.Fatalf("got %#v", s.ValueText)
+	}
+}
+
 func TestMapStructureStatus(t *testing.T) {
 	tag := TagView{Tag: core.Tag{ID: "s", DataType: core.ValueFloat64}}
 	dv := &ua.DataValue{Status: ua.StatusCode(0x80110000)} // BadDataTypeIDUnknown

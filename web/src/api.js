@@ -39,6 +39,7 @@ export function guessType(name) {
   if (n.endsWith('_maintenance') || n.endsWith('_operation') || n.includes('harvesting')) return 'bool'
   if (n.includes('_mode_') && !n.includes('rvalue')) return 'bool'
   if (n.endsWith('_active')) return 'bool'
+  if (n.includes('datetime') || n.includes('date_time') || (n.endsWith('_time') && !n.includes('runtime'))) return 'datetime'
   if (n.startsWith('s') && (n.includes('unit') || n.includes('name') || n.includes('text'))) return 'string'
   if (n.startsWith('i') || n.includes('count')) return 'int64'
   return 'float64'

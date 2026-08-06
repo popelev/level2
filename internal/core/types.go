@@ -9,10 +9,11 @@ import (
 type ValueType string
 
 const (
-	ValueBool    ValueType = "bool"
-	ValueInt64   ValueType = "int64"
-	ValueFloat64 ValueType = "float64"
-	ValueString  ValueType = "string"
+	ValueBool     ValueType = "bool"
+	ValueInt64    ValueType = "int64"
+	ValueFloat64  ValueType = "float64"
+	ValueString   ValueType = "string"
+	ValueDateTime ValueType = "datetime"
 )
 
 // Quality mirrors OPC UA status at a coarse level.

@@ -130,6 +130,9 @@ func synthesize(t core.Tag, now time.Time, age time.Duration) core.Sample {
 	case core.ValueString:
 		u := "demo"
 		s.ValueText = &u
+	case core.ValueDateTime:
+		u := time.Now().UTC().Format(time.RFC3339Nano)
+		s.ValueText = &u
 	default:
 		s.Quality = core.QualityBad
 	}

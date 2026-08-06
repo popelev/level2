@@ -65,6 +65,8 @@ func typeDisplayName(dt core.ValueType) string {
 		return "Int16"
 	case core.ValueString:
 		return "String"
+	case core.ValueDateTime:
+		return "DateTime"
 	default:
 		return "Float"
 	}
@@ -78,6 +80,8 @@ func opcTypeCode(dt core.ValueType) string {
 		return "i=4"
 	case core.ValueString:
 		return "i=12"
+	case core.ValueDateTime:
+		return "i=13"
 	default:
 		return "i=10"
 	}

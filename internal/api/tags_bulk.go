@@ -106,15 +106,14 @@ func validateTagFields(t *core.Tag) error {
 	if t.IntervalMs <= 0 {
 		t.IntervalMs = 1000
 	}
-	switch t.DataType {
-	case core.ValueBool, core.ValueInt64, core.ValueFloat64, core.ValueString:
-		return nil
-	case "":
+	t.DataType = core.NormalizeValueType(t.DataType)
+	if t.DataType == "" {
 		t.DataType = core.ValueFloat64
-		return nil
-	default:
+	}
+	if !core.ValidValueType(t.DataType) {
 		return errUnsupportedDataType(t.DataType)
 	}
+	return nil
 }
 
 type errUnsupportedDataType core.ValueType

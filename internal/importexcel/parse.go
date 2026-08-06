@@ -174,6 +174,8 @@ func mapDataType(typeName, typeCode string) core.ValueType {
 		return core.ValueBool
 	case "string", "bytestring":
 		return core.ValueString
+	case "datetime", "date_time", "datetim", "timestamp", "utctime":
+		return core.ValueDateTime
 	case "int16", "int32", "int64", "sbyte", "byte", "uint16", "uint32", "integer", "int":
 		return core.ValueInt64
 	}
@@ -187,6 +189,8 @@ func mapDataType(typeName, typeCode string) core.ValueType {
 		return core.ValueFloat64
 	case "i=12":
 		return core.ValueString
+	case "i=13":
+		return core.ValueDateTime
 	}
-	return ""
+	return core.NormalizeValueType(core.ValueType(n))
 }

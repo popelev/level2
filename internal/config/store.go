@@ -122,11 +122,11 @@ func (s *Store) UpsertTag(deviceID string, tag core.Tag) error {
 	if tag.IntervalMs <= 0 {
 		tag.IntervalMs = 1000
 	}
-	switch tag.DataType {
-	case core.ValueBool, core.ValueInt64, core.ValueFloat64, core.ValueString:
-	case "":
+	tag.DataType = core.NormalizeValueType(tag.DataType)
+	if tag.DataType == "" {
 		tag.DataType = core.ValueFloat64
-	default:
+	}
+	if !core.ValidValueType(tag.DataType) {
 		return fmt.Errorf("unsupported datatype %q", tag.DataType)
 	}
 	s.mu.Lock()
