@@ -65,11 +65,17 @@ else
 fi
 curl -sf -X DELETE "$BASE/api/v1/devices/$DEV/tags/_verify_struct" >/dev/null || true
 
-echo "=== string leaf 4209 if present (P3) ==="
-if curl -sf "$BASE/api/v1/tags?device_id=$DEV" | grep -q 'ns=4;i=4209'; then
-  curl -sf "$BASE/api/v1/tags?device_id=$DEV" | grep 'ns=4;i=4209' | grep -q 'value_text\|value_num' && ok "string tag sampled" || ok "string tag configured (value optional)"
+echo "=== string leaf 4209 (P3) ==="
+if ! curl -sf "$BASE/api/v1/tags?device_id=$DEV" | grep -q 'ns=4;i=4209'; then
+  curl -sf -X POST "$BASE/api/v1/devices/$DEV/tags" \
+    -H 'Content-Type: application/json' \
+    -d '{"id":"opc_measure_sunit","node_id":"ns=4;i=4209","datatype":"string","enabled":true,"interval_ms":2000}' >/dev/null
+  sleep 8
+fi
+if curl -sf "$BASE/api/v1/tags/opc_measure_sunit/value" | grep -qE 'value_text|quality'; then
+  ok "string tag 4209 sampled"
 else
-  echo "SKIP P3: add ns=4;i=4209 to config for full string check"
+  echo "WARN P3: string value not yet in live store (node may differ on PLC)"
 fi
 
 echo "=== expand UDT 4207 (P4) ==="
