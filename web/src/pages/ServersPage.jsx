@@ -207,7 +207,7 @@ export default function ServersPage({ devices, onChanged, onError }) {
                 />
               </label>
               <p className="hint">
-                Concurrent OPC Read batches (each <=100 nodes) for this server. Raise to shorten poll cycles on large tag sets; lower if the PLC drops the session.
+                Concurrent OPC Read batches (at most 100 nodes each) for this server. Raise to shorten poll cycles on large tag sets; lower if the PLC drops the session.
               </p>
               <div className="row">
                 <button type="submit">Save</button>
