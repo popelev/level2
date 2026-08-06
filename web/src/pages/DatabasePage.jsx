@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { formatBytes, getJSON } from '../api.js'
 
+const WIPE_CONFIRM = 'WIPE'
+
 export default function DatabasePage({ onError }) {
   const [data, setData] = useState(null)
+  const [wipeConfirm, setWipeConfirm] = useState('')
+  const [clearTagsToo, setClearTagsToo] = useState(false)
+  const [wipeBusy, setWipeBusy] = useState(false)
+  const [wipeMsg, setWipeMsg] = useState('')
 
   const load = useCallback(async () => {
     const [st, pol] = await Promise.all([
@@ -20,6 +26,43 @@ export default function DatabasePage({ onError }) {
     }, 5000)
     return () => clearInterval(t)
   }, [load, onError])
+
+  const wipeSamples = async () => {
+    if (wipeConfirm !== WIPE_CONFIRM) return
+    setWipeBusy(true)
+    setWipeMsg('')
+    onError('')
+    try {
+      const r = await fetch('/api/v1/database/wipe-samples?confirm=wipe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clear_tags: clearTagsToo }),
+      })
+      const text = await r.text()
+      if (!r.ok) throw new Error(`${r.status} ${text}`)
+      let out = {}
+      try {
+        out = JSON.parse(text)
+      } catch {
+        /* ignore */
+      }
+      const parts = [
+        `History wiped via ${out.method || 'unknown'}`,
+        out.approx_rows_before != null ? `(~${out.approx_rows_before} rows before)` : '',
+      ]
+      if (out.clear_tags) {
+        parts.push(`· tags removed: ${out.tags_removed ?? 0} on ${out.devices_cleared ?? 0} device(s)`)
+      }
+      setWipeMsg(parts.filter(Boolean).join(' '))
+      setWipeConfirm('')
+      setClearTagsToo(false)
+      await load()
+    } catch (e) {
+      onError(String(e.message || e))
+    } finally {
+      setWipeBusy(false)
+    }
+  }
 
   const ok = data?.ready || data?.ping_ok
 
@@ -127,6 +170,48 @@ export default function DatabasePage({ onError }) {
                 <div className="mono">{data.limit_bytes != null ? formatBytes(data.limit_bytes) : '—'}</div>
               </div>
             </div>
+          </section>
+
+          <section className="panel">
+            <h3>Clear history</h3>
+            <p className="hint">
+              Wipe all historian samples in <span className="mono">collector.samples</span> (TRUNCATE).
+              Servers stay configured. Per-server tag cleanup without wiping history is on{' '}
+              <strong>Projects → Clear tags</strong>.
+            </p>
+            <label className="row" style={{ gap: 8, alignItems: 'center', marginTop: 10 }}>
+              <input
+                type="checkbox"
+                checked={clearTagsToo}
+                onChange={(e) => setClearTagsToo(e.target.checked)}
+                disabled={wipeBusy || !ok}
+              />
+              <span>Also clear all monitored tags (config only)</span>
+            </label>
+            <div className="row" style={{ marginTop: 12, gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+              <label className="muted small">
+                Type <span className="mono">{WIPE_CONFIRM}</span> to confirm
+                <input
+                  type="text"
+                  className="mono"
+                  value={wipeConfirm}
+                  onChange={(e) => setWipeConfirm(e.target.value)}
+                  placeholder={WIPE_CONFIRM}
+                  autoComplete="off"
+                  disabled={wipeBusy || !ok}
+                  style={{ display: 'block', marginTop: 4, minWidth: 120 }}
+                />
+              </label>
+              <button
+                type="button"
+                className="secondary danger-btn"
+                disabled={wipeBusy || !ok || wipeConfirm !== WIPE_CONFIRM}
+                onClick={() => wipeSamples()}
+              >
+                {wipeBusy ? 'Wiping…' : 'Wipe database samples'}
+              </button>
+            </div>
+            {wipeMsg && <p className="good small" style={{ marginTop: 10 }}>{wipeMsg}</p>}
           </section>
         </>
       )}

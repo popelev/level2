@@ -45,6 +45,7 @@ curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns%3D4%3Bi%3D4207'
 | GET | `/api/v1/diagnostics/capacity` | DB size, ETA, capacity policy fields |
 | GET | `/api/v1/database/capacity-policy` | capacity percent + full-disk policy |
 | PUT | `/api/v1/database/capacity-policy` | persist policy to YAML |
+| POST | `/api/v1/database/wipe-samples?confirm=wipe` | TRUNCATE historian samples; optional JSON `{"clear_tags":true}` |
 | GET | `/metrics` | Prometheus |
 
 External clients (any language) reading/writing via this API: [docs/external-client-api.md](../../docs/external-client-api.md).

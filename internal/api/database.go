@@ -2,11 +2,15 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"runtime"
 	"sync"
 	"time"
 
+	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/historian/timescale"
 	"github.com/popelev/level2/internal/metrics"
 )
@@ -15,6 +19,7 @@ func (s *Server) mountDatabase(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/database/status", s.handleDatabaseStatus)
 	mux.HandleFunc("GET /api/v1/database/capacity-policy", s.handleGetCapacityPolicy)
 	mux.HandleFunc("PUT /api/v1/database/capacity-policy", s.handlePutCapacityPolicy)
+	mux.HandleFunc("POST /api/v1/database/wipe-samples", s.handleWipeSamples)
 }
 
 func (s *Server) handleDatabaseStatus(w http.ResponseWriter, r *http.Request) {
@@ -189,6 +194,74 @@ func (s *Server) handlePutCapacityPolicy(w http.ResponseWriter, r *http.Request)
 		"capacity_percent": snap.Database.CapacityPercent,
 		"full_policy":      snap.Database.FullPolicy,
 		"status":           "saved",
+	})
+}
+
+type wipeSamplesBody struct {
+	ClearTags bool `json:"clear_tags"`
+}
+
+// handleWipeSamples truncates historian time-series (collector.samples).
+// Requires ?confirm=wipe. Optional JSON body {"clear_tags":true} also clears
+// monitored tags on every device (config only — same as Projects → Clear tags).
+func (s *Server) handleWipeSamples(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("confirm") != "wipe" {
+		http.Error(w, `missing confirm=wipe query parameter`, http.StatusBadRequest)
+		return
+	}
+	if s.DB == nil {
+		http.Error(w, "historian not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var body wipeSamplesBody
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+	}
+
+	result, err := s.DB.WipeSamples(r.Context())
+	if err != nil {
+		diag.DBWrite(diag.LevelError, "historian wipe samples failed", err.Error(), 0)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	tagsRemoved := 0
+	devicesCleared := 0
+	if body.ClearTags {
+		if s.Cfg == nil {
+			http.Error(w, "samples wiped but config store unavailable for clear_tags", http.StatusInternalServerError)
+			return
+		}
+		for _, d := range s.Cfg.Devices() {
+			n, err := s.Cfg.ClearDeviceTags(d.ID)
+			if err != nil {
+				diag.DBWrite(diag.LevelError, "historian wipe clear_tags failed", err.Error(), tagsRemoved)
+				http.Error(w, fmt.Sprintf("samples wiped (%s) but clear_tags failed on %s: %v", result.Method, d.ID, err), http.StatusInternalServerError)
+				return
+			}
+			tagsRemoved += n
+			devicesCleared++
+			if s.OnDeviceChanged != nil {
+				s.OnDeviceChanged(d.ID, false)
+			}
+		}
+	}
+
+	detail := fmt.Sprintf("method=%s approx_rows_before=%d clear_tags=%v tags_removed=%d",
+		result.Method, result.ApproxRows, body.ClearTags, tagsRemoved)
+	diag.DBWrite(diag.LevelWarn, "historian samples wiped", detail, int(result.ApproxRows))
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":            "wiped",
+		"method":            result.Method,
+		"approx_rows_before": result.ApproxRows,
+		"clear_tags":        body.ClearTags,
+		"tags_removed":      tagsRemoved,
+		"devices_cleared":   devicesCleared,
 	})
 }
 
