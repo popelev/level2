@@ -106,7 +106,9 @@ func TestResolveEmptyDataTypesBatch_GuessWhenDisconnected(t *testing.T) {
 }
 
 func TestResolveTagDataType_KeepsExplicit(t *testing.T) {
-	s := &Server{}
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	// DevHub required by resolveTagDataType early-return; normalize does not need a live entry.
+	s := &Server{DevHub: devruntime.NewHub(log, true)}
 	tg := core.Tag{ID: "x", NodeID: "ns=4;i=1", DataType: "float"}
 	s.resolveTagDataType(context.Background(), "d", &tg)
 	if tg.DataType != core.ValueFloat64 {

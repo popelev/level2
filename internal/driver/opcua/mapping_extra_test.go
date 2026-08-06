@@ -62,7 +62,8 @@ func TestResolveTagDataType_DisconnectedGuess(t *testing.T) {
 }
 
 func TestLooksLikeStringNameTable(t *testing.T) {
-	yes := []string{"sunit", "tank_sunit", "unit", "name", "text", "sunitx", "foo.sName", "a_sText"}
+	// looksLikeStringName is called with lowercased hints from GuessDataType.
+	yes := []string{"sunit", "tank_sunit", "unit", "name", "text", "sunitx", "foo.sname", "a_stext"}
 	for _, n := range yes {
 		if !looksLikeStringName(n) {
 			t.Fatalf("want true: %q", n)
