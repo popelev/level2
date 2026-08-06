@@ -44,9 +44,17 @@ func (d *Driver) Connect(ctx context.Context) error {
 
 	config.ApplyDeviceEnvOverlay(&d.device)
 
+	endpoints, err := opcua.GetEndpoints(ctx, d.device.Endpoint)
+	if err != nil {
+		return fmt.Errorf("opcua get endpoints: %w", err)
+	}
+	ep, err := opcua.SelectEndpoint(endpoints, ua.SecurityPolicyURINone, ua.MessageSecurityModeNone)
+	if err != nil {
+		return fmt.Errorf("opcua select endpoint: %w", err)
+	}
+
 	opts := []opcua.Option{
-		opcua.SecurityMode(ua.MessageSecurityModeNone),
-		opcua.SecurityPolicy(ua.SecurityPolicyURINone),
+		opcua.SecurityFromEndpoint(ep, ua.MessageSecurityModeNone, ua.SecurityPolicyURINone),
 	}
 	if d.device.Username != "" {
 		opts = append(opts, opcua.AuthUsername(d.device.Username, d.device.Password))
@@ -54,12 +62,12 @@ func (d *Driver) Connect(ctx context.Context) error {
 		opts = append(opts, opcua.AuthAnonymous())
 	}
 
-	c, err := opcua.NewClient(d.device.Endpoint, opts...)
+	c, err := opcua.NewClient(ep.EndpointURL, opts...)
 	if err != nil {
 		return fmt.Errorf("opcua new client: %w", err)
 	}
 	if err := c.Connect(ctx); err != nil {
-		return fmt.Errorf("opcua connect %s: %w", d.device.Endpoint, err)
+		return fmt.Errorf("opcua connect %s: %w", ep.EndpointURL, err)
 	}
 	d.client = c
 	d.alive.Store(true)
