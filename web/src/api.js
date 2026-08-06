@@ -27,7 +27,7 @@ export function formatSampleTime(sample, updatedAt) {
   const t = sample?.time ?? sample?.Time ?? updatedAt
   if (!t) return '—'
   const d = new Date(t)
-  if (Number.isNaN(d.getTime())) return '—'
+  if (Number.isNaN(d.getTime()) || d.getFullYear() < 1970) return '—'
   return d.toLocaleTimeString()
 }
 

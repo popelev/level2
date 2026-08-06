@@ -166,7 +166,23 @@ func PrepareTags(tags []core.Tag) ([]TagView, error) {
 	return out, nil
 }
 
+// Siemens and other servers reject very large Read requests (BadTooManyOperations).
+const maxNodesPerRead = 100
+
 func (d *Driver) pollOnce(ctx context.Context, tags []TagView, out chan<- core.Sample) error {
+	for start := 0; start < len(tags); start += maxNodesPerRead {
+		end := start + maxNodesPerRead
+		if end > len(tags) {
+			end = len(tags)
+		}
+		if err := d.pollBatch(ctx, tags[start:end], out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (d *Driver) pollBatch(ctx context.Context, tags []TagView, out chan<- core.Sample) error {
 	d.mu.Lock()
 	c := d.client
 	d.mu.Unlock()

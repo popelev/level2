@@ -56,7 +56,8 @@ func (l *Live) SnapshotDevices(devices []core.Device) []TagValue {
 			if s, ok := l.byID[t.ID]; ok {
 				cp := s
 				tv.Sample = &cp
-				tv.UpdatedAt = s.Time
+				ts := s.Time
+				tv.UpdatedAt = &ts
 			}
 			out = append(out, tv)
 		}
@@ -68,5 +69,5 @@ type TagValue struct {
 	DeviceID  string       `json:"device_id"`
 	Tag       core.Tag     `json:"tag"`
 	Sample    *core.Sample `json:"sample,omitempty"`
-	UpdatedAt time.Time    `json:"updated_at,omitempty"`
+	UpdatedAt *time.Time   `json:"updated_at,omitempty"`
 }
