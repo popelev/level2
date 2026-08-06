@@ -210,36 +210,6 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
     }
   }
 
-  const deleteAllTags = async () => {
-    if (!deviceId || tags.length === 0) return
-    if (
-      !window.confirm(
-        `Delete ALL ${tags.length} tag(s) from "${deviceId}"? This cannot be undone.`,
-      )
-    ) {
-      return
-    }
-    setBulkBusy('delete')
-    onError('')
-    setMsg('')
-    try {
-      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags`, {
-        method: 'DELETE',
-      })
-      if (!r.ok) throw new Error(await r.text())
-      const data = await r.json()
-      setDbSelected(new Set())
-      setPage(1)
-      setMsg(`Removed ${data.removed} tag(s)`)
-      await refreshTags(deviceId)
-      await onDevicesChanged()
-    } catch (ex) {
-      onError(String(ex.message || ex))
-    } finally {
-      setBulkBusy('')
-    }
-  }
-
   return (
     <div className="page">
       <div className="page-head">
@@ -316,14 +286,6 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
               title="Sync datatypes from OPC for tags with bad quality"
             >
               {bulkBusy === 'sync-bad' ? 'Syncing…' : `Sync bad (${badTags.length})`}
-            </button>
-            <button
-              type="button"
-              className="secondary danger-btn"
-              disabled={!!bulkBusy || !tags.length}
-              onClick={deleteAllTags}
-            >
-              {bulkBusy === 'delete' ? 'Removing…' : 'Delete all tags'}
             </button>
           </div>
           {msg && <p className="ok small">{msg}</p>}

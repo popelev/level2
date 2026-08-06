@@ -15,6 +15,7 @@ export default function ProjectsPage({ devices, onError, onDevicesChanged }) {
   const [fileB, setFileB] = useState(null)
   const [diffRows, setDiffRows] = useState([])
   const [diffOnly, setDiffOnly] = useState(true)
+  const [clearDevice, setClearDevice] = useState('')
 
   const downloadProject = () => {
     window.location.href = '/api/v1/project.xlsx'
@@ -125,6 +126,35 @@ export default function ProjectsPage({ devices, onError, onDevicesChanged }) {
     }
   }
 
+  const deleteAllTags = async () => {
+    const id = clearDevice || devices[0]?.id
+    if (!id) return
+    const count = devices.find((d) => d.id === id)?.tag_count ?? '?'
+    if (
+      !window.confirm(
+        `Delete ALL ${count} tag(s) from server "${id}"? This cannot be undone.`,
+      )
+    ) {
+      return
+    }
+    setBusy(true)
+    onError('')
+    setMsg('')
+    try {
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(id)}/tags`, {
+        method: 'DELETE',
+      })
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json()
+      setMsg(`Removed ${data.removed} tag(s) from ${id}`)
+      await onDevicesChanged()
+    } catch (ex) {
+      onError(String(ex.message || ex))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const filteredVal = valFilter
     ? valRows.filter((r) => r.status === valFilter)
     : valRows
@@ -195,6 +225,34 @@ export default function ProjectsPage({ devices, onError, onDevicesChanged }) {
           </div>
         )}
         {msg && <p className="good small">{msg}</p>}
+      </section>
+
+      <section className="panel" style={{ marginTop: 12 }}>
+        <h3>Clear tags</h3>
+        <p className="hint">Remove every monitored tag from a server (DB write list). Servers themselves are kept.</p>
+        <div className="row">
+          <label className="server-pick">
+            Server
+            <select
+              value={clearDevice || devices[0]?.id || ''}
+              onChange={(e) => setClearDevice(e.target.value)}
+            >
+              {devices.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.id} ({d.tag_count ?? 0})
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            className="secondary danger-btn"
+            disabled={busy || !devices.length}
+            onClick={deleteAllTags}
+          >
+            Delete all tags
+          </button>
+        </div>
       </section>
 
       <section className="panel" style={{ marginTop: 12 }}>
