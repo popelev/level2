@@ -369,7 +369,6 @@ th { color: var(--muted); font-weight: 500; }
   gap: 10px;
   flex-wrap: wrap;
 }
-.badq { color: var(--bad); }
 button.danger-btn { border-color: #7a3030; color: #f0a0a0; }
 button.danger-btn:hover:not(:disabled) { background: #3a2020; }
 .node-detail {
