@@ -198,6 +198,7 @@ func GuessDataType(browseName string) core.ValueType {
 // looksLikeStringName detects Siemens/generic string leaves: sUnit, unit, *_sunit, sName, sText.
 // Uses the last path/id segment so full tag ids (…_current_sunit) still match.
 func looksLikeStringName(n string) bool {
+	n = strings.ToLower(n)
 	if strings.Contains(n, "sunit") {
 		return true
 	}
@@ -220,6 +221,7 @@ func looksLikeStringName(n string) bool {
 // looksLikeDateTimeName detects OPC DateTime / Siemens DATE_AND_TIME naming
 // (e.g. LastCycleDateAndTime — "dateandtime", not "datetime"; leaf "Time" / *_time).
 func looksLikeDateTimeName(n string) bool {
+	n = strings.ToLower(n)
 	if strings.Contains(n, "runtime") || strings.Contains(n, "timeout") ||
 		strings.Contains(n, "lifetime") {
 		return false

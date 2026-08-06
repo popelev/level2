@@ -11,11 +11,15 @@ import (
 // Explicit PUT/UI choices must not be overwritten — use POST .../tags/sync to refresh from OPC
 // (sync always overwrites, including wrong float64 → datetime).
 func (s *Server) resolveTagDataType(ctx context.Context, deviceID string, tag *core.Tag) {
-	if tag == nil || tag.NodeID == "" || s.DevHub == nil {
+	if tag == nil || tag.NodeID == "" {
 		return
 	}
+	// Normalize aliases (float→float64) even when OPC hub is unavailable.
 	if core.NormalizeValueType(tag.DataType) != "" && core.ValidValueType(tag.DataType) {
 		tag.DataType = core.NormalizeValueType(tag.DataType)
+		return
+	}
+	if s.DevHub == nil {
 		return
 	}
 	ent, ok := s.DevHub.Entry(deviceID)
