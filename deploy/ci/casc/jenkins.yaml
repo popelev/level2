@@ -15,8 +15,6 @@ jenkins:
   authorizationStrategy:
     loggedInUsersCanDoAnything:
       allowAnonymousRead: false
-  remotingSecurity:
-    enabled: true
 
 security:
   # Lab only: allow Job DSL seed from CasC without manual script approval.

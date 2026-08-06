@@ -9,6 +9,7 @@ Jenkins next to the lab stack (same VM / Docker host), configured with **JCasC**
 From the repo root on the lab VM (`~/level2`):
 
 ```bash
+sudo mkdir -p /var/jenkins_home
 docker compose -f deploy/ci/docker-compose.yml --env-file deploy/ci/.env.example up -d --build
 ```
 
@@ -73,6 +74,17 @@ Mount the host Docker socket (`/var/run/docker.sock`). The controller runs **sib
 - `golang:1.24` → `go test ./...`
 - `node:22-bookworm` → `npm ci` / `npm run build` under `web/`
 - `docker build -f deploy/platform/Dockerfile` → collector + embedded UI
+
+`jenkins_home` is bind-mounted to **`/var/jenkins_home` on the host** (same path inside the container). That way `docker run -v "$PWD":/src` from the Jenkinsfile resolves the workspace on the Docker host. A named volume alone breaks sibling mounts (empty `/src`, `go test` fails with “no main module”).
+
+First bring-up creates the directory if missing:
+
+```bash
+sudo mkdir -p /var/jenkins_home
+sudo chown root:root /var/jenkins_home
+```
+
+(Compose runs the Jenkins container as `root`, matching the socket.)
 
 Do **not** put Jenkins on the public internet; bind to LAN / VPN only.
 
