@@ -21,7 +21,14 @@ ok "readyz 200, connected"
 
 echo "=== live float 4208 (P1) ==="
 curl -sf "$BASE/api/v1/tags?device_id=$DEV" | grep -q 'ns=4;i=4208' || fail "tag 4208 missing in config"
-curl -sf "$BASE/api/v1/tags?device_id=$DEV" | grep -q '"quality":0' || fail "expected good quality on live tags"
+q4208=$(curl -sf "$BASE/api/v1/tags?device_id=$DEV" | python3 -c "
+import json,sys
+for row in json.load(sys.stdin):
+    if row.get('tag',{}).get('id')=='opc_measure_rvalue':
+        print(row.get('sample',{}).get('quality',-1))
+        break
+")
+[[ "$q4208" == "0" ]] || fail "opc_measure_rvalue quality=$q4208 (want good)"
 val=$(curl -sf "$BASE/api/v1/tags/opc_measure_rvalue/value" | grep -o '"value_num":[0-9.eE+-]*' | head -1)
 [[ -n "$val" ]] || fail "no value_num for opc_measure_rvalue"
 ok "4208 live $val"
