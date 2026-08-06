@@ -128,15 +128,61 @@ body {
   margin-bottom: 8px;
 }
 .panel-head h2 { margin: 0; }
-.pager {
+.pager-wrap {
   display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 12px;
-  flex-wrap: wrap;
   margin-top: 10px;
   padding-top: 8px;
   border-top: 1px solid var(--line);
+}
+.tag-pager {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.tag-pager .pager-nav {
+  border: none;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  min-width: 36px;
+  padding: 6px 10px;
+  background: linear-gradient(180deg, var(--bg1), var(--bg0));
+  color: var(--text);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.tag-pager .pager-nav:hover:not(:disabled) {
+  background: var(--bg2);
+}
+.tag-pager .pager-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.tag-pager .pager-page {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-right: 1px solid var(--line);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.tag-pager .pager-input {
+  width: 2.75rem;
+  text-align: center;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg2);
+  color: var(--text);
+}
+.tag-pager .pager-of {
+  font-size: 0.85rem;
 }
 
 .address {

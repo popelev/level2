@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import TagTreeTable from '../components/TagTreeTable.jsx'
+import TagPager from '../components/TagPager.jsx'
 import { getJSON } from '../api.js'
 
 const PAGE_SIZE = 50
@@ -260,26 +261,8 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
             />
           </div>
           {sortedFiltered.length > PAGE_SIZE && (
-            <div className="pager">
-              <button
-                type="button"
-                className="secondary small-btn"
-                disabled={pageClamped <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-              >
-                Previous
-              </button>
-              <span className="muted small">
-                Page {pageClamped} of {totalPages} ({PAGE_SIZE} per page)
-              </span>
-              <button
-                type="button"
-                className="secondary small-btn"
-                disabled={pageClamped >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              >
-                Next
-              </button>
+            <div className="pager-wrap">
+              <TagPager page={pageClamped} totalPages={totalPages} onPageChange={setPage} />
             </div>
           )}
         </section>
