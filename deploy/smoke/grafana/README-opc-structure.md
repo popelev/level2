@@ -93,7 +93,7 @@ SQL matches **both** naming schemes via `IN (...)`.
 
 - **Gauge** — last `value`; min/max from scale tags (`configFromData`).
 - **Unit / Min / Max** — last sample stats (`value_text` for unit; `value_num` for scales).
-- **Trend** — value + min/max scale over time.
+- **Trend** — value over time (min/max scale stay on Stat panels / gauge only).
 
 ### Why Unit can show "No data"
 

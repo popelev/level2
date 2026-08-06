@@ -219,22 +219,7 @@
           },
           "unit": "none"
         },
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "min" },
-            "properties": [
-              { "id": "custom.lineStyle", "value": { "dash": [4, 4], "fill": "dash" } },
-              { "id": "color", "value": { "fixedColor": "semi-dark-blue", "mode": "fixed" } }
-            ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "max" },
-            "properties": [
-              { "id": "custom.lineStyle", "value": { "dash": [4, 4], "fill": "dash" } },
-              { "id": "color", "value": { "fixedColor": "semi-dark-red", "mode": "fixed" } }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": { "h": 12, "w": 24, "x": 0, "y": 10 },
       "id": 7,
@@ -250,25 +235,9 @@
           "rawQuery": true,
           "rawSql": "SELECT\n  time AS \"time\",\n  value_num AS \"value\"\nFROM collector.samples\nWHERE\n  tag_id IN ('${structure}_rvalueout', '${structure}_realvalue')\n  AND $__timeFilter(time)\nORDER BY 1",
           "refId": "A"
-        },
-        {
-          "datasource": { "type": "postgres", "uid": "timescaledb" },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  time AS \"time\",\n  value_num AS \"min\"\nFROM collector.samples\nWHERE\n  tag_id IN ('${structure}_strscale_min', '${structure}_min_scale')\n  AND $__timeFilter(time)\nORDER BY 1",
-          "refId": "B"
-        },
-        {
-          "datasource": { "type": "postgres", "uid": "timescaledb" },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT\n  time AS \"time\",\n  value_num AS \"max\"\nFROM collector.samples\nWHERE\n  tag_id IN ('${structure}_strscale_max', '${structure}_max_scale')\n  AND $__timeFilter(time)\nORDER BY 1",
-          "refId": "C"
         }
       ],
-      "title": "Trend — value + scale (${structure:text})",
+      "title": "Trend — value (${structure:text})",
       "type": "timeseries"
     }
   ],
