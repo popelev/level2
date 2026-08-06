@@ -20,6 +20,13 @@ func TestMapOPCDataType_DateTime(t *testing.T) {
 	if got := mapOPCDataType(nid); got != core.ValueDateTime {
 		t.Fatalf("got %q", got)
 	}
+	utc := ua.NewNumericNodeID(0, id.UtcTime) // i=294 subtype of DateTime
+	if got := mapOPCDataType(utc); got != core.ValueDateTime {
+		t.Fatalf("UtcTime: got %q", got)
+	}
+	if id.DateTime != 13 {
+		t.Fatalf("DateTime node id: got %d want 13", id.DateTime)
+	}
 }
 
 func TestMapOPCDataType_UInt(t *testing.T) {

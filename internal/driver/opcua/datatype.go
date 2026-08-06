@@ -77,7 +77,7 @@ func mapOPCDataType(typeNID *ua.NodeID) core.ValueType {
 		return core.ValueUint
 	case id.String, id.LocalizedText, id.ByteString:
 		return core.ValueString
-	case id.DateTime:
+	case id.DateTime, id.UtcTime: // DateTime=i=13, UtcTime=i=294 (subtype)
 		return core.ValueDateTime
 	default:
 		return ""

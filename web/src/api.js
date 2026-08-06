@@ -17,13 +17,26 @@ export function formatBytes(n) {
   return `${x < 10 && i > 0 ? x.toFixed(2) : x.toFixed(i === 0 ? 0 : 1)} ${units[i]}`
 }
 
+function looksLikeISODateTime(s) {
+  return /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2})/.test(String(s))
+}
+
 export function formatValue(sample) {
   if (!sample) return '—'
   const num = sample.value_num ?? sample.ValueNum
   const text = sample.value_text ?? sample.ValueText
   const bool = sample.value_bool ?? sample.ValueBool
   if (num != null) return Number(num).toFixed(3)
-  if (text != null) return text
+  if (text != null && text !== '') {
+    // Datetime samples store RFC3339 in value_text — show locale datetime.
+    if (looksLikeISODateTime(text)) {
+      const d = new Date(text)
+      if (!Number.isNaN(d.getTime()) && d.getFullYear() >= 1970) {
+        return d.toLocaleString()
+      }
+    }
+    return text
+  }
   if (bool != null) return String(bool)
   return '—'
 }

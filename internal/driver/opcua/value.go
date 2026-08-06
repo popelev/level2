@@ -3,11 +3,17 @@ package opcua
 import (
 	"fmt"
 	"math"
+	"reflect"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gopcua/opcua/ua"
 	"github.com/popelev/level2/internal/core"
 )
+
+// OPC UA DateTime / Windows FILETIME: 100-ns ticks since 1601-01-01 UTC.
+const opcFiletimeEpoch = int64(116444736000000000)
 
 // ErrStructureNode indicates the OPC node is a custom structure / extension object.
 var ErrStructureNode = fmt.Errorf("node is a structure/extension object; use leaf node or expand (M2)")
@@ -190,7 +196,101 @@ func asDateTime(v any) (time.Time, error) {
 			return time.Time{}, fmt.Errorf("nil time")
 		}
 		return *x, nil
+	case int64:
+		return numericToTime(x), nil
+	case int32:
+		return numericToTime(int64(x)), nil
+	case uint64:
+		return numericToTime(int64(x)), nil
+	case uint32:
+		return numericToTime(int64(x)), nil
+	case float64:
+		// Some stacks surface FILETIME / unix as float64.
+		return numericToTime(int64(x)), nil
+	case string:
+		return parseDateTimeString(x)
+	case []byte:
+		return parseDateTimeString(string(x))
 	default:
+		// ua.DateTime (older gopcua) or any int64-backed / Time()-providing type.
+		if tm, ok := timeFromReflect(v); ok {
+			return tm, nil
+		}
 		return time.Time{}, fmt.Errorf("expected datetime, got %T", v)
 	}
+}
+
+func filetimeToTime(ft int64) time.Time {
+	if ft == 0 {
+		return time.Time{}
+	}
+	// Same conversion as gopcua ua.Buffer.ReadTime.
+	return time.Unix(0, (ft-opcFiletimeEpoch)*100).UTC()
+}
+
+// numericToTime accepts OPC FILETIME ticks or unix seconds/millis.
+func numericToTime(n int64) time.Time {
+	if n == 0 {
+		return time.Time{}
+	}
+	if n > opcFiletimeEpoch/10 { // FILETIME-scale (≃ after ~year 0160)
+		return filetimeToTime(n)
+	}
+	if n > 1_000_000_000_000 { // unix millis
+		return time.UnixMilli(n).UTC()
+	}
+	return time.Unix(n, 0).UTC()
+}
+
+func parseDateTimeString(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return time.Time{}, fmt.Errorf("empty datetime string")
+	}
+	layouts := []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05",
+		"2006-01-02",
+	}
+	for _, layout := range layouts {
+		if tm, err := time.Parse(layout, s); err == nil {
+			return tm.UTC(), nil
+		}
+	}
+	// Numeric FILETIME or unix seconds/millis encoded as string.
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return numericToTime(n), nil
+	}
+	return time.Time{}, fmt.Errorf("cannot parse datetime %q", s)
+}
+
+func timeFromReflect(v any) (time.Time, bool) {
+	if v == nil {
+		return time.Time{}, false
+	}
+	rv := reflect.ValueOf(v)
+	// Method Time() time.Time (e.g. historical ua.DateTime).
+	if m := rv.MethodByName("Time"); m.IsValid() && m.Type().NumIn() == 0 && m.Type().NumOut() == 1 {
+		if m.Type().Out(0) == reflect.TypeOf(time.Time{}) {
+			out := m.Call(nil)
+			return out[0].Interface().(time.Time), true
+		}
+	}
+	// Named type with underlying int64 / uint64 (FILETIME).
+	for rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return time.Time{}, false
+		}
+		rv = rv.Elem()
+	}
+	switch rv.Kind() {
+	case reflect.Int, reflect.Int64, reflect.Int32:
+		return numericToTime(rv.Int()), true
+	case reflect.Uint, reflect.Uint64, reflect.Uint32:
+		return numericToTime(int64(rv.Uint())), true
+	}
+	return time.Time{}, false
 }
