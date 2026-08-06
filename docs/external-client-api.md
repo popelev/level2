@@ -4,7 +4,7 @@ Design for **third-party programs** (any language) that read or write process va
 
 **Status:** reads and discovery work today (lab-open API). PLC writes are planned — see [opc-write-mode.md](opc-write-mode.md) (`PUT` currently **501**). This document is the client-facing contract plan; it does not ship OpenAPI generators or SDKs yet.
 
-Related: [opc-subscription-mode.md](opc-subscription-mode.md) (historian on-change / subscribe), [db-capacity-policy.md](db-capacity-policy.md).
+Related: [opc-subscription-mode.md](opc-subscription-mode.md) (historian on-change / subscribe), [opc-datatype-sync.md](opc-datatype-sync.md) (Sync / expand types), [db-capacity-policy.md](db-capacity-policy.md).
 
 ---
 

@@ -36,7 +36,7 @@ curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns%3D4%3Bi%3D4207'
 | GET | `/api/v1/devices/{id}/tags.xlsx` | export plant-format tag list |
 | POST | `/api/v1/devices/{id}/tags/import` | multipart `file=.xlsx` (`?replace=1` to replace tags) |
 | POST | `/api/v1/devices/{id}/tags` | upsert one tag |
-| POST | `/api/v1/devices/{id}/tags/sync` | refresh datatypes from OPC by NodeId (`{"tag_ids":[]}` optional = all) |
+| POST | `/api/v1/devices/{id}/tags/sync` | **overwrite** datatypes from OPC DataType Attribute (batched); `{"tag_ids":[]}` = all — see [docs/opc-datatype-sync.md](../../docs/opc-datatype-sync.md) |
 | DELETE | `/api/v1/devices/{id}/tags` | remove all tags on device |
 | PUT | `/api/v1/tags/{id}/value` | 501 until write phase — [docs/opc-write-mode.md](../../docs/opc-write-mode.md) |
 | GET | `/api/v1/ws/stream` | live samples WebSocket |

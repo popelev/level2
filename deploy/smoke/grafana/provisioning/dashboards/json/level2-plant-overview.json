@@ -1,0 +1,355 @@
+{
+  "annotations": { "list": [] },
+  "description": "Plant overview: multi-select OPC structure prefixes → repeating gauge rows (value + unit + min/max). Click a panel to open OPC Structure Measure. Same Siemens/generic tag suffixes as level2-opc-structure.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "dashboard",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "OPC Structure Measure (template)",
+      "tooltip": "",
+      "type": "link",
+      "url": "/d/level2-opc-structure/opc-structure-measure"
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "panels": [
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "description": "Latest value. Axis min/max from scale tags. Click → OPC Structure Measure for this prefix.",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "links": [
+                {
+                  "title": "Open structure detail",
+                  "url": "/d/level2-opc-structure/opc-structure-measure?var-structure=${structure}&from=${__from}&to=${__to}",
+                  "targetBlank": true
+                }
+              ],
+              "mappings": [],
+              "max": 100,
+              "min": 0,
+              "thresholds": {
+                "mode": "percentage",
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 80 },
+                  { "color": "red", "value": 90 }
+                ]
+              },
+              "unit": "none"
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 1 },
+          "id": 101,
+          "links": [
+            {
+              "title": "Open structure detail",
+              "url": "/d/level2-opc-structure/opc-structure-measure?var-structure=${structure}&from=${__from}&to=${__to}",
+              "targetBlank": true
+            }
+          ],
+          "options": {
+            "minVizHeight": 75,
+            "minVizWidth": 75,
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true,
+            "sizing": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "postgres", "uid": "timescaledb" },
+              "editorMode": "code",
+              "format": "time_series",
+              "rawQuery": true,
+              "rawSql": "SELECT\n  time AS \"time\",\n  value_num AS \"value\"\nFROM collector.samples\nWHERE\n  tag_id IN ('${structure}_rvalueout', '${structure}_realvalue')\n  AND $__timeFilter(time)\nORDER BY 1",
+              "refId": "A"
+            },
+            {
+              "datasource": { "type": "postgres", "uid": "timescaledb" },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT value_num AS \"min\"\nFROM collector.samples\nWHERE tag_id IN ('${structure}_strscale_min', '${structure}_min_scale')\nORDER BY time DESC\nLIMIT 1",
+              "refId": "Min"
+            },
+            {
+              "datasource": { "type": "postgres", "uid": "timescaledb" },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT value_num AS \"max\"\nFROM collector.samples\nWHERE tag_id IN ('${structure}_strscale_max', '${structure}_max_scale')\nORDER BY time DESC\nLIMIT 1",
+              "refId": "Max"
+            }
+          ],
+          "title": "Value",
+          "transformations": [
+            {
+              "id": "configFromData",
+              "options": {
+                "configRefId": "Min",
+                "mappings": [
+                  {
+                    "fieldName": "min",
+                    "handlerKey": "min",
+                    "reducerId": "lastNotNull"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "configFromData",
+              "options": {
+                "configRefId": "Max",
+                "mappings": [
+                  {
+                    "fieldName": "max",
+                    "handlerKey": "max",
+                    "reducerId": "lastNotNull"
+                  }
+                ]
+              }
+            }
+          ],
+          "type": "gauge"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "links": [
+                {
+                  "title": "Open structure detail",
+                  "url": "/d/level2-opc-structure/opc-structure-measure?var-structure=${structure}&from=${__from}&to=${__to}",
+                  "targetBlank": true
+                }
+              ],
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{ "color": "blue", "value": null }]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 4, "x": 8, "y": 1 },
+          "id": 102,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/", "values": false },
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "postgres", "uid": "timescaledb" },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT COALESCE(value_text, value_num::text) AS \"unit\"\nFROM collector.samples\nWHERE tag_id IN ('${structure}_sunit', '${structure}_unit')\nORDER BY time DESC\nLIMIT 1",
+              "refId": "A"
+            }
+          ],
+          "title": "Unit",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{ "color": "text", "value": null }]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 12, "y": 1 },
+          "id": 103,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "postgres", "uid": "timescaledb" },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT value_num AS \"min\"\nFROM collector.samples\nWHERE tag_id IN ('${structure}_strscale_min', '${structure}_min_scale')\nORDER BY time DESC\nLIMIT 1",
+              "refId": "A"
+            }
+          ],
+          "title": "Min",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "decimals": 2,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{ "color": "text", "value": null }]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 4, "x": 16, "y": 1 },
+          "id": 104,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+            "textMode": "auto"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "postgres", "uid": "timescaledb" },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT value_num AS \"max\"\nFROM collector.samples\nWHERE tag_id IN ('${structure}_strscale_max', '${structure}_max_scale')\nORDER BY time DESC\nLIMIT 1",
+              "refId": "A"
+            }
+          ],
+          "title": "Max",
+          "type": "stat"
+        },
+        {
+          "datasource": { "type": "postgres", "uid": "timescaledb" },
+          "description": "Sanitized structure prefix (click → detail dashboard).",
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "thresholds" },
+              "links": [
+                {
+                  "title": "Open structure detail",
+                  "url": "/d/level2-opc-structure/opc-structure-measure?var-structure=${structure}&from=${__from}&to=${__to}",
+                  "targetBlank": true
+                }
+              ],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [{ "color": "text", "value": null }]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": { "h": 4, "w": 8, "x": 12, "y": 5 },
+          "id": 105,
+          "options": {
+            "colorMode": "none",
+            "graphMode": "none",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": { "calcs": ["lastNotNull"], "fields": "/.*/", "values": false },
+            "textMode": "value"
+          },
+          "targets": [
+            {
+              "datasource": { "type": "postgres", "uid": "timescaledb" },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT '${structure}' AS \"prefix\"",
+              "refId": "A"
+            }
+          ],
+          "title": "Prefix → detail",
+          "type": "stat"
+        }
+      ],
+      "repeat": "structure",
+      "title": "${structure}",
+      "type": "row"
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["level2", "opc", "structure", "overview", "plant"],
+  "templating": {
+    "list": [
+      {
+        "allValue": null,
+        "current": {
+          "selected": true,
+          "text": ["All"],
+          "value": ["$__all"]
+        },
+        "description": "Multi-select OPC structure roots (sanitized prefixes). Edit Custom options (comma-separated) in Dashboard settings → Variables to add more. Same child tag pattern as OPC Structure Measure.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Structures",
+        "multi": true,
+        "name": "structure",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_temp",
+            "value": "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_temp"
+          },
+          {
+            "selected": false,
+            "text": "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_level",
+            "value": "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_level"
+          },
+          {
+            "selected": false,
+            "text": "objects_serverinterfaces_tankhouse_data_2_e0_e0_compressed_air_&_instrument_air_air_vessel_e0_scb_920_cp_001",
+            "value": "objects_serverinterfaces_tankhouse_data_2_e0_e0_compressed_air_&_instrument_air_air_vessel_e0_scb_920_cp_001"
+          },
+          {
+            "selected": false,
+            "text": "objects_serverinterfaces_tankhouse_data_1_e1_ece_201_cathodemass",
+            "value": "objects_serverinterfaces_tankhouse_data_1_e1_ece_201_cathodemass"
+          },
+          {
+            "selected": false,
+            "text": "objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current",
+            "value": "objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current"
+          }
+        ],
+        "query": "objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_temp,objects_serverinterfaces_tankhouse_data_2_e3_machines_metso_machines_apm_oil_level,objects_serverinterfaces_tankhouse_data_2_e0_e0_compressed_air_&_instrument_air_air_vessel_e0_scb_920_cp_001,objects_serverinterfaces_tankhouse_data_1_e1_ece_201_cathodemass,objects_serverinterfaces_tankhouse_data_1_e1_ece_201_current",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "time": { "from": "now-15m", "to": "now" },
+  "timezone": "browser",
+  "title": "Plant Overview",
+  "uid": "level2-plant-overview",
+  "version": 1
+}

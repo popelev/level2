@@ -1,6 +1,6 @@
 # OPC UA: writing tag values to the PLC
 
-Design for **writing process values** from Level2 into OPC UA nodes (Siemens S7-1500 and similar). Distinct from [historian on-change / subscription mode](opc-subscription-mode.md) (“DB write”) and from UI labels such as “Write to DB”, which mean *add tag to the poll/historian list*.
+Design for **writing process values** from Level2 into OPC UA nodes (Siemens S7-1500 and similar). Distinct from [historian on-change / subscription mode](opc-subscription-mode.md) (“DB write”) and from UI labels such as “Write to DB”, which mean *add tag to the poll/historian list*. Datatype Sync / expand: [opc-datatype-sync.md](opc-datatype-sync.md).
 
 External programs (any language) should call the same REST write once it exists — gateway role, read paths, and client contract: [external-client-api.md](external-client-api.md).
 

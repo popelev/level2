@@ -40,7 +40,7 @@ flowchart LR
 **Data flow (short):**
 
 1. Driver (OPC UA or SIM) reads enabled tags → samples channel.
-2. `FanIn` updates the live store, sends to WS and the historian buffer.
+2. `FanIn` updates Live + WS on every sample; forwards to the historian only when **value or quality** changed (Phase 1 suppress — [docs/opc-subscription-mode.md](docs/opc-subscription-mode.md)).
 3. `flushLoop` writes batches to Timescale; on error — spool to disk and later replay.
 4. API + UI read live/history/diagnostics/capacity.
 
@@ -90,8 +90,8 @@ sequenceDiagram
   loop every interval (min. interval_ms)
     Drv->>Drv: Read in batches of 100 NodeId
     Drv->>Fan: Sample
-    Fan->>Live: Update
-    Fan->>Flush: Sample
+    Fan->>Live: Update (always)
+    Fan->>Flush: Sample (only if value/quality changed)
   end
   Flush->>TS: WriteBatch
   alt write error
@@ -113,15 +113,16 @@ Admin UI navigation (`http://<host>:8080/`):
 | Connectivity | **Servers**, **Address Space** |
 | Data | **DB write list**, **Import / Export** |
 | Config | **Projects**, **Database** |
-| System | **Diagnostics**, **Capacity** |
+| System | **Diagnostics**, **Capacity**, **Jenkins** (external `:8081`) |
 
 **Typical tag workflow**
 
-1. **Address Space** — browse the OPC tree (`GET /browse`), expand (`POST /expand`), pick leaf → add to the poll list.
-2. **DB write list** — enabled tags that are actually polled and written to Timescale; live values update in the UI.
+1. **Address Space** — browse the OPC tree (`GET /browse`), expand (`POST /expand`), pick leaf/folder → add to the poll list (DataType from OPC in batches; UI shows progress).
+2. **DB write list** — enabled tags polled into Timescale; **Sync from OPC** overwrites datatypes (see [docs/opc-datatype-sync.md](docs/opc-datatype-sync.md)).
 3. **Import / Export** — Excel tag list for one server (`…/tags.xlsx`, `…/tags/import`).
 4. **Projects** — `Project.xlsx` (Servers + Tags), import merge/replace, validate/compare against Address Space.
-5. **Overview / Diagnostics / Capacity / Database** — readiness and quality summary, OPC/DB ring log, free DB space, `DATABASE_URL` status.
+5. **Overview / Diagnostics / Capacity / Database** — readiness pills, OPC/DB ring log, free DB space, lab **wipe samples**.
+6. **Grafana** (smoke `:3000`) — template [OPC Structure Measure](deploy/smoke/grafana/README-opc-structure.md) (pick structure → value / scale / unit).
 
 PLC-less mode: `LEVEL2_SIM_BROWSER=1` — in-memory browse/expand and synthetic samples.
 
@@ -191,7 +192,7 @@ Full table: [deploy/platform/README.md](deploy/platform/README.md#api).
 | POST | `/api/v1/database/wipe-samples?confirm=wipe` | wipe historian samples (lab); optional `{"clear_tags":true}` |
 | GET | `/metrics` | Prometheus |
 
-Writing values to the PLC (`PUT /api/v1/tags/{id}/value`) is still **501** — design: [docs/opc-write-mode.md](docs/opc-write-mode.md). On-change historian / subscription: [docs/opc-subscription-mode.md](docs/opc-subscription-mode.md). External programs (Python/C#/JS/…) as HTTP/WS clients: [docs/external-client-api.md](docs/external-client-api.md).
+Writing values to the PLC (`PUT /api/v1/tags/{id}/value`) is still **501** — design: [docs/opc-write-mode.md](docs/opc-write-mode.md). On-change historian / subscription: [docs/opc-subscription-mode.md](docs/opc-subscription-mode.md). Datatype expand + Sync: [docs/opc-datatype-sync.md](docs/opc-datatype-sync.md). External programs (Python/C#/JS/…) as HTTP/WS clients: [docs/external-client-api.md](docs/external-client-api.md). Capacity / wipe: [docs/db-capacity-policy.md](docs/db-capacity-policy.md).
 
 ---
 

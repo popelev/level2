@@ -4,7 +4,7 @@ Design for writing to Timescale **only when the value actually changes**, not on
 
 **Status:** Phase 1 done (suppress unchanged on the poll path). Full OPC Subscription (Phase 2) is **not** implemented.
 
-Related (orthogonal): writing values **to the PLC** — see [opc-write-mode.md](opc-write-mode.md). That path is separate from historian “DB write” / on-change suppress.
+Related (orthogonal): writing values **to the PLC** — see [opc-write-mode.md](opc-write-mode.md). Datatype expand / Sync from OPC — [opc-datatype-sync.md](opc-datatype-sync.md). Those paths are separate from historian “DB write” / on-change suppress.
 
 ---
 

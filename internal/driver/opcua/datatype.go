@@ -20,8 +20,9 @@ func (d *Driver) ResolveTagDataType(ctx context.Context, nodeID, browseHint stri
 }
 
 // ApplyDataTypesFromOPC sets DataType on each tag from OPC UA (batched Attribute Read).
-// Always overwrites tag.DataType (Sync from OPC). GuessDataType is used when a node's
-// DataType Read fails/unmapped, and to refine Siemens ByteString DATE_AND_TIME → datetime.
+// Always overwrites tag.DataType (Sync from OPC) — including previously valid float64.
+// GuessDataType is used when a node's DataType Read fails/unmapped, and to refine
+// Siemens ByteString/wrong-Float DATE_AND_TIME or bare Time → datetime.
 func ApplyDataTypesFromOPC(ctx context.Context, d *Driver, tags []core.Tag) {
 	if d == nil || len(tags) == 0 {
 		return
@@ -150,14 +151,19 @@ func mapOPCDataType(typeNID *ua.NodeID) core.ValueType {
 }
 
 // resolveMappedDataType combines OPC DataType Attribute mapping with browse-name hints.
-// Siemens DT is frequently ByteString (→ string) or a vendor ns≠0 type (→ empty).
+// Siemens DT is frequently ByteString (→ string), vendor ns≠0 (→ empty), or mis-advertised
+// as Float/Double while the Value is still a DATE_AND_TIME ByteArray — name refine wins then.
 func resolveMappedDataType(mapped core.ValueType, hint string) core.ValueType {
 	guess := GuessDataType(hint)
 	if mapped == "" {
 		return guess
 	}
-	if guess == core.ValueDateTime && mapped == core.ValueString {
+	// Prefer name-based Siemens refine when the Attribute type is ambiguous/wrong for plant tags.
+	if guess == core.ValueDateTime && (mapped == core.ValueString || mapped == core.ValueFloat64) {
 		return core.ValueDateTime
+	}
+	if guess == core.ValueString && mapped == core.ValueFloat64 {
+		return core.ValueString
 	}
 	return mapped
 }
@@ -212,13 +218,25 @@ func looksLikeStringName(n string) bool {
 }
 
 // looksLikeDateTimeName detects OPC DateTime / Siemens DATE_AND_TIME naming
-// (e.g. LastCycleDateAndTime — "dateandtime", not "datetime").
+// (e.g. LastCycleDateAndTime — "dateandtime", not "datetime"; leaf "Time" / *_time).
 func looksLikeDateTimeName(n string) bool {
+	if strings.Contains(n, "runtime") || strings.Contains(n, "timeout") ||
+		strings.Contains(n, "lifetime") {
+		return false
+	}
 	if strings.Contains(n, "datetime") || strings.Contains(n, "dateandtime") ||
-		strings.Contains(n, "date_and_time") || strings.Contains(n, "date_time") {
+		strings.Contains(n, "date_and_time") || strings.Contains(n, "date_time") ||
+		strings.Contains(n, "timestamp") {
 		return true
 	}
-	return strings.HasSuffix(n, "_time") && !strings.Contains(n, "runtime")
+	base := n
+	if i := strings.LastIndexAny(n, "._"); i >= 0 && i+1 < len(n) {
+		base = n[i+1:]
+	}
+	if base == "time" || base == "date" {
+		return true
+	}
+	return strings.HasSuffix(n, "_time")
 }
 
 func browseNameHint(t core.ExpandedTag) string {
