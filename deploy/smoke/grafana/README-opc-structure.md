@@ -93,19 +93,17 @@ SQL matches **both** naming schemes via `IN (...)`.
 
 - **Gauge** — last `value`; min/max from scale tags (`configFromData`).
 - **Unit / Min / Max** — last sample stats (`value_text` for unit; `value_num` for scales).
-- **Structure prefix** — echoes the selected variable (text Stat; `reduceOptions.fields` must include strings).
-- **Resolved tags** — child leaf names relative to the selected structure (`rvalueout`, `strscale_min`, …), not the full `tag_id` path.
 - **Trend** — value + min/max scale over time.
 
 ### Why Unit can show "No data"
 
 Historian already stores Siemens `sUnit` in `collector.samples.value_text` (e.g. `barg`). Collector string write path is fine.
 
-Grafana **Stat** with empty `reduceOptions.fields` reduces **numeric fields only**, so a string `unit` column becomes "No data". Fix: `fields: "/.*/"` + `textMode: "value"` (same for Structure prefix).
+Grafana **Stat** with empty `reduceOptions.fields` reduces **numeric fields only**, so a string `unit` column becomes "No data". Fix: `fields: "/.*/"` + `textMode: "value"`.
 
 ### Short labels / Короткие подписи
 
-Dropdown and row titles hide the common `objects_serverinterfaces_` prefix (`${structure:text}`). SQL still uses the **full** sanitized prefix as the variable value. The old **Structure prefix** / **Prefix → detail** panels were removed as redundant.
+Dropdown and row titles hide the common `objects_serverinterfaces_` prefix (`${structure:text}`). SQL still uses the **full** sanitized prefix as the variable value.
 
 ### Apply after git pull (level2-vm)
 

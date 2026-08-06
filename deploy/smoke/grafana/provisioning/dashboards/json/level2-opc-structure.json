@@ -109,7 +109,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 8, "y": 0 },
+      "gridPos": { "h": 10, "w": 5, "x": 8, "y": 0 },
       "id": 2,
       "options": {
         "colorMode": "value",
@@ -145,7 +145,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 4, "x": 12, "y": 0 },
+      "gridPos": { "h": 10, "w": 5, "x": 13, "y": 0 },
       "id": 3,
       "options": {
         "colorMode": "value",
@@ -181,7 +181,7 @@
         },
         "overrides": []
       },
-      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "gridPos": { "h": 10, "w": 6, "x": 18, "y": 0 },
       "id": 4,
       "options": {
         "colorMode": "value",
@@ -203,36 +203,6 @@
       ],
       "title": "Max scale",
       "type": "stat"
-    },
-    {
-      "datasource": { "type": "postgres", "uid": "timescaledb" },
-      "description": "Resolved child tags for this structure. tag_id shown relative to the selected structure (no long path prefix).",
-      "fieldConfig": {
-        "defaults": {
-          "custom": { "align": "left", "inspect": false },
-          "mappings": []
-        },
-        "overrides": []
-      },
-      "gridPos": { "h": 5, "w": 16, "x": 8, "y": 5 },
-      "id": 6,
-      "options": {
-        "cellHeight": "sm",
-        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": false },
-        "showHeader": true
-      },
-      "targets": [
-        {
-          "datasource": { "type": "postgres", "uid": "timescaledb" },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT role,\n  CASE\n    WHEN tag_id LIKE '${structure}_%' THEN substr(tag_id, length('${structure}') + 2)\n    ELSE regexp_replace(tag_id, '^objects_serverinterfaces_', '')\n  END AS tag_id,\n  value_num, value_text, time\nFROM (\n  SELECT\n    CASE\n      WHEN tag_id ~ '_(rvalueout|realvalue)$' THEN 'value'\n      WHEN tag_id ~ '_(strscale_min|min_scale)$' THEN 'min'\n      WHEN tag_id ~ '_(strscale_max|max_scale)$' THEN 'max'\n      WHEN tag_id ~ '_(sunit|unit)$' THEN 'unit'\n      ELSE 'other'\n    END AS role,\n    tag_id, value_num, value_text, time,\n    ROW_NUMBER() OVER (PARTITION BY tag_id ORDER BY time DESC) AS rn\n  FROM collector.samples\n  WHERE tag_id IN (\n    '${structure}_rvalueout', '${structure}_realvalue',\n    '${structure}_strscale_min', '${structure}_min_scale',\n    '${structure}_strscale_max', '${structure}_max_scale',\n    '${structure}_sunit', '${structure}_unit'\n  )\n  AND time > NOW() - INTERVAL '24 hours'\n) t\nWHERE rn = 1\nORDER BY role, tag_id",
-          "refId": "A"
-        }
-      ],
-      "title": "Resolved tags (last 24h)",
-      "type": "table"
     },
     {
       "datasource": { "type": "postgres", "uid": "timescaledb" },

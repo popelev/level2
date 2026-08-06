@@ -68,7 +68,7 @@ Explore → TimescaleDB → table like `opcua` (Telegraf measurement name).
 Provisioned dashboards (folder **Level2**):
 
 - **Level2 Trends** — smoke / legacy example series
-- **OPC Structure Measure** — template: pick structure root once → gauge + trend for `rValueOut`/`realValue` + scale + unit — see [grafana/README-opc-structure.md](grafana/README-opc-structure.md)
+- **OPC Structure Measure** — template: pick structure root once → gauge / unit / min / max / trend for `rValueOut`/`realValue` + scale — see [grafana/README-opc-structure.md](grafana/README-opc-structure.md)
 
 ```text
 http://<VM-IP>:3000/d/level2-opc-structure/opc-structure-measure

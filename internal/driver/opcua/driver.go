@@ -13,6 +13,7 @@ import (
 	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
 	"github.com/popelev/level2/internal/diag"
+	"golang.org/x/sync/errgroup"
 )
 
 // Driver is an OPC UA client that polls leaf nodes (M1).
@@ -201,17 +202,35 @@ func PrepareTags(tags []core.Tag) ([]TagView, error) {
 // Siemens and other servers reject very large Read requests (BadTooManyOperations).
 const maxNodesPerRead = 100
 
+// maxConcurrentReads limits in-flight Read requests per device poll.
+// Sequential batches of 100 with ~3k tags wall-clock ~6s; limited parallelism
+// cuts cycle time without raising NodesToRead (Siemens-safe).
+const maxConcurrentReads = 4
+
 func (d *Driver) pollOnce(ctx context.Context, tags []TagView, out chan<- core.Sample) error {
-	for start := 0; start < len(tags); start += maxNodesPerRead {
-		end := start + maxNodesPerRead
-		if end > len(tags) {
-			end = len(tags)
-		}
-		if err := d.pollBatch(ctx, tags[start:end], out); err != nil {
-			return err
-		}
+	ranges := chunkRanges(len(tags), maxNodesPerRead)
+	if len(ranges) == 0 {
+		return nil
 	}
-	return nil
+	workers := pollReadConcurrency(len(ranges), maxConcurrentReads)
+	if workers <= 1 {
+		for _, r := range ranges {
+			if err := d.pollBatch(ctx, tags[r[0]:r[1]], out); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(workers)
+	for _, r := range ranges {
+		start, end := r[0], r[1]
+		g.Go(func() error {
+			return d.pollBatch(gctx, tags[start:end], out)
+		})
+	}
+	return g.Wait()
 }
 
 func (d *Driver) pollBatch(ctx context.Context, tags []TagView, out chan<- core.Sample) error {
