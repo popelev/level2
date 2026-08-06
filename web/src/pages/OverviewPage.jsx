@@ -25,6 +25,16 @@ function formatTime(iso) {
   return d.toLocaleTimeString()
 }
 
+function dropsLine(n, label = 'drops') {
+  const c = Number(n) || 0
+  const cls = c > 0 ? 'badq' : 'muted'
+  return (
+    <div className={`cap-sub small ${cls}`}>
+      {c} {label} / last hour
+    </div>
+  )
+}
+
 export default function OverviewPage({ health, ready, onError, onNavigate }) {
   const [data, setData] = useState(null)
 
@@ -46,6 +56,9 @@ export default function OverviewPage({ health, ready, onError, onNavigate }) {
   const disc = (data?.devices_disconnected ?? 0) > 0
   const badTags = (data?.quality_bad ?? 0) > 0
   const errors = data?.recent_errors || []
+  const collectorDrops = data?.collector_down_last_hour ?? 0
+  const opcDrops = data?.opc_disconnects_last_hour ?? 0
+  const dbDrops = data?.db_write_errors_last_hour ?? 0
 
   return (
     <div className="page">
@@ -74,6 +87,7 @@ export default function OverviewPage({ health, ready, onError, onNavigate }) {
               <div className={`cap-sub small ${collectorReady ? 'good' : 'badq'}`}>
                 {data.ready_detail || (collectorReady ? 'ready' : 'not ready')}
               </div>
+              {dropsLine(collectorDrops)}
             </div>
             <div className={`cap-stat${disc ? '' : ' accent'}`}>
               <div className="cap-label">Servers</div>
@@ -83,6 +97,7 @@ export default function OverviewPage({ health, ready, onError, onNavigate }) {
                 {' · '}
                 <span className={disc ? 'badq' : ''}>{data.devices_disconnected ?? 0} down</span>
               </div>
+              {dropsLine(opcDrops)}
             </div>
             <div className={`cap-stat${badTags ? '' : ' accent'}`}>
               <div className="cap-label">Tags</div>
@@ -111,6 +126,7 @@ export default function OverviewPage({ health, ready, onError, onNavigate }) {
                   <span className="badq"> · {Math.round(data.write_errors_total)} err</span>
                 )}
               </div>
+              {dropsLine(dbDrops, 'errors')}
             </div>
             <div className={`cap-stat${data.database_connected ? ' accent' : ''}`}>
               <div className="cap-label">Database</div>

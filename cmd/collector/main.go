@@ -19,9 +19,9 @@ import (
 	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/driver/mock"
 	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
-	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/historian/timescale"
 	"github.com/popelev/level2/internal/metrics"
+	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/spool"
 	"github.com/popelev/level2/internal/store"
 )
@@ -62,6 +62,8 @@ func main() {
 	live := store.NewLive()
 	diagBuf := diag.NewBuffer(3000)
 	diag.SetDefault(diagBuf)
+	incidents := diag.NewIncidentTracker(4096, time.Hour)
+	diag.SetDefaultIncidents(incidents)
 	wsHub := api.NewHub()
 	raw := make(chan core.Sample, 2048)
 	toHist := make(chan core.Sample, 2048)
@@ -110,16 +112,17 @@ func main() {
 	go replaySpool(ctx, log, hist, sp)
 
 	apiSrv := &api.Server{
-		Log:     log,
-		Live:    live,
-		Hub:     wsHub,
-		Diag:    diagBuf,
-		DevHub:  devHub,
-		History: hist,
-		DB:      hist,
-		Cfg:     cfgStore,
-		Tags:    cfgStore.AllTags,
-		Devices: cfgStore.Devices,
+		Log:       log,
+		Live:      live,
+		Hub:       wsHub,
+		Diag:      diagBuf,
+		Incidents: incidents,
+		DevHub:    devHub,
+		History:   hist,
+		DB:        hist,
+		Cfg:       cfgStore,
+		Tags:      cfgStore.AllTags,
+		Devices:   cfgStore.Devices,
 		ReadyCheck: func() bool {
 			return useSim || devHub.AnyConnected()
 		},
@@ -138,6 +141,8 @@ func main() {
 			}
 		},
 	}
+
+	go watchReady(ctx, apiSrv.ReadyCheck)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -236,6 +241,7 @@ func runDevice(ctx context.Context, log *slog.Logger, cfgStore *config.Store, de
 		if err != nil {
 			diag.OPCRead(diag.LevelWarn, deviceID, "", "opc subscribe ended", err.Error())
 		}
+		// Intentional Disconnect (config reload) — OPC drops are recorded in driver markDown.
 		_ = drv.Disconnect(ctx)
 		wait := bo.Next()
 		select {
@@ -262,6 +268,28 @@ func watchConfig(ctx context.Context, cancel context.CancelFunc, cfgStore *confi
 	}
 }
 
+// watchReady records collector becoming not-ready (mirrors /readyz).
+func watchReady(ctx context.Context, ready func() bool) {
+	if ready == nil {
+		return
+	}
+	was := ready()
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			now := ready()
+			if was && !now {
+				diag.RecordCollectorDown()
+			}
+			was = now
+		}
+	}
+}
+
 func flushLoop(ctx context.Context, log *slog.Logger, hist core.Historian, sp *spool.FileSpool, in <-chan core.Sample) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -274,6 +302,7 @@ func flushLoop(ctx context.Context, log *slog.Logger, hist core.Historian, sp *s
 		buf = make([]core.Sample, 0, 256)
 		if err := hist.WriteBatch(ctx, batch); err != nil {
 			metrics.WriteErrors.Inc()
+			diag.RecordDBWriteError()
 			log.Error("write batch", "err", err, "n", len(batch))
 			diag.DBWrite(diag.LevelError, "historian write batch failed", err.Error(), len(batch))
 			if serr := sp.Enqueue(batch); serr != nil {
@@ -333,6 +362,7 @@ func replaySpool(ctx context.Context, log *slog.Logger, hist core.Historian, sp 
 			}
 			if err := hist.WriteBatch(ctx, batch); err != nil {
 				log.Warn("spool replay failed", "err", err)
+				diag.RecordDBWriteError()
 				diag.DBWrite(diag.LevelError, "spool replay write failed", err.Error(), len(batch))
 				continue
 			}

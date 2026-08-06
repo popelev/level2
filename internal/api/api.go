@@ -33,6 +33,8 @@ type Server struct {
 	Cfg      *config.Store
 	Hub      *Hub
 	Diag     *diag.Buffer
+	// Incidents tracks downtime / failure edges for last-hour counters (optional).
+	Incidents *diag.IncidentTracker
 	// ReadyCheck mirrors /readyz (optional; falls back to DevHub.AnyConnected).
 	ReadyCheck func() bool
 	// OnDeviceChanged is called after device create/update/delete (optional).

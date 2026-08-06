@@ -78,6 +78,9 @@ function StatusPills({ summary }) {
   const samplesWritten = summary.samples_written_total ?? summary.db_write?.samples_written_total ?? 0
   const writeErrors = summary.write_errors_total ?? summary.db_write?.write_errors_total ?? 0
   const spoolDepth = summary.spool_depth ?? summary.db_write?.spool_depth ?? 0
+  const collectorDrops = summary.collector_down_last_hour ?? 0
+  const opcDrops = summary.opc_disconnects_last_hour ?? 0
+  const dbDrops = summary.db_write_errors_last_hour ?? 0
 
   const opcOk = total === 0 ? ready : connected > 0 && connected === total
   const opcLabel = total === 0
@@ -100,7 +103,7 @@ function StatusPills({ summary }) {
   const pollLabel = summary.poll_avg_ms != null
     ? `Poll: ${formatPollMs(summary.poll_avg_ms)}`
     : 'Poll: —'
-  const writeErr = writeErrors > 0 || spoolDepth > 0
+  const writeErr = writeErrors > 0 || spoolDepth > 0 || dbDrops > 0
   const dbLabel = `DB: ${formatRate(samplesPerSec)}`
 
   return (
@@ -110,11 +113,14 @@ function StatusPills({ summary }) {
       </span>
       <span
         className={`pill ${ready ? 'ok' : 'bad'}`}
-        title="Same as /readyz: collector is ready when OPC is connected (or SIM mode)"
+        title={`Same as /readyz: collector is ready when OPC is connected (or SIM mode). ${collectorDrops} not-ready drops / last hour`}
       >
         {ready ? 'Collector: ready' : 'Collector: not ready'}
       </span>
-      <span className={`pill ${opcOk ? 'ok' : 'bad'}`} title="OPC UA devices connected vs configured">
+      <span
+        className={`pill ${opcOk ? 'ok' : 'bad'}`}
+        title={`OPC UA devices connected vs configured. ${opcDrops} disconnects / last hour`}
+      >
         {opcLabel}
       </span>
       <span
@@ -131,7 +137,7 @@ function StatusPills({ summary }) {
       </span>
       <span
         className={`pill ${writeErr ? 'bad' : (samplesPerSec > 0 ? 'ok' : '')}`}
-        title={`Historian write rate · written ${Math.round(samplesWritten).toLocaleString()} · errors ${Math.round(writeErrors)} · spool ${Math.round(spoolDepth)}`}
+        title={`Historian write rate · written ${Math.round(samplesWritten).toLocaleString()} · errors ${Math.round(writeErrors)} · spool ${Math.round(spoolDepth)} · ${dbDrops} write errors / last hour`}
       >
         {dbLabel}
       </span>

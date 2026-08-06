@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
 	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
-	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/driver/simbrowser"
 )
 
@@ -71,11 +71,15 @@ func (h *Hub) Browser(deviceID string) (core.Browser, error) {
 }
 
 func (h *Hub) Status() map[string]bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	out := make(map[string]bool, len(h.entries))
 	for id, e := range h.entries {
-		out[id] = e.Connected && e.Driver.Connected()
+		ok := e.Driver != nil && e.Driver.Connected()
+		// Keep Entry.Connected in sync so UI / readyz reflect live reconnects
+		// (initial Upsert may have failed while runDevice later succeeds).
+		e.Connected = ok
+		out[id] = ok
 	}
 	return out
 }

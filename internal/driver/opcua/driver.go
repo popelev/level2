@@ -36,6 +36,13 @@ func New(device core.Device, log *slog.Logger) *Driver {
 
 func (d *Driver) Connected() bool { return d.alive.Load() }
 
+// markDown records a connected→disconnected edge once (unexpected poll/link loss).
+func (d *Driver) markDown(record bool) {
+	if was := d.alive.Swap(false); was && record {
+		diag.RecordOPCDisconnect(d.device.ID)
+	}
+}
+
 func (d *Driver) Connect(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -80,6 +87,7 @@ func (d *Driver) Connect(ctx context.Context) error {
 func (d *Driver) Disconnect(ctx context.Context) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	// Intentional close (config reload / shutdown) — do not count as a drop.
 	d.alive.Store(false)
 	if d.client == nil {
 		return nil
@@ -127,7 +135,7 @@ func (d *Driver) Subscribe(ctx context.Context, tags []core.Tag, out chan<- core
 			if err := d.pollOnce(ctx, enabled, out); err != nil {
 				d.log.Warn("opcua poll failed", "err", err)
 				diag.OPCRead(diag.LevelWarn, d.device.ID, "", "opc poll failed", err.Error())
-				d.alive.Store(false)
+				d.markDown(true)
 				_ = d.Disconnect(ctx)
 				if cerr := d.Connect(ctx); cerr != nil {
 					d.log.Error("opcua reconnect failed", "err", cerr)

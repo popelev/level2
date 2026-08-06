@@ -14,25 +14,29 @@ func (s *Server) mountStatus(mux *http.ServeMux) {
 
 // statusSummary is a lightweight console header / overview payload (no secrets).
 type statusSummary struct {
-	APIOK               bool         `json:"api_ok"`
-	CollectorReady      bool         `json:"collector_ready"`
-	ReadyDetail         string       `json:"ready_detail"`
-	DevicesTotal        int          `json:"devices_total"`
-	DevicesConnected    int          `json:"devices_connected"`
-	DevicesDisconnected int          `json:"devices_disconnected"`
-	TagsTotal           int          `json:"tags_total"`
-	TagsEnabled         int          `json:"tags_enabled"`
-	QualityGood         int          `json:"quality_good"`
-	QualityBad          int          `json:"quality_bad"`
-	QualityUnknown      int          `json:"quality_unknown"`
-	QualityGoodPct      *float64     `json:"quality_good_pct,omitempty"`
-	PollAvgMs           *int64       `json:"poll_avg_ms,omitempty"`
-	SamplesWritten      float64      `json:"samples_written_total"`
-	SamplesPerSec       float64      `json:"samples_per_sec"`
-	WriteErrors         float64      `json:"write_errors_total"`
-	SpoolDepth          float64      `json:"spool_depth"`
-	DatabaseConnected   bool         `json:"database_connected"`
-	RecentErrors        []diag.Entry `json:"recent_errors"`
+	APIOK                  bool           `json:"api_ok"`
+	CollectorReady         bool           `json:"collector_ready"`
+	ReadyDetail            string         `json:"ready_detail"`
+	CollectorDownLastHour  int            `json:"collector_down_last_hour"`
+	DevicesTotal           int            `json:"devices_total"`
+	DevicesConnected       int            `json:"devices_connected"`
+	DevicesDisconnected    int            `json:"devices_disconnected"`
+	OPCDisconnectsLastHour int            `json:"opc_disconnects_last_hour"`
+	OPCDisconnectsByDevice map[string]int `json:"opc_disconnects_by_device,omitempty"`
+	TagsTotal              int            `json:"tags_total"`
+	TagsEnabled            int            `json:"tags_enabled"`
+	QualityGood            int            `json:"quality_good"`
+	QualityBad             int            `json:"quality_bad"`
+	QualityUnknown         int            `json:"quality_unknown"`
+	QualityGoodPct         *float64       `json:"quality_good_pct,omitempty"`
+	PollAvgMs              *int64         `json:"poll_avg_ms,omitempty"`
+	SamplesWritten         float64        `json:"samples_written_total"`
+	SamplesPerSec          float64        `json:"samples_per_sec"`
+	WriteErrors            float64        `json:"write_errors_total"`
+	DBWriteErrorsLastHour  int            `json:"db_write_errors_last_hour"`
+	SpoolDepth             float64        `json:"spool_depth"`
+	DatabaseConnected      bool           `json:"database_connected"`
+	RecentErrors           []diag.Entry   `json:"recent_errors"`
 }
 
 func (s *Server) handleStatusSummary(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +131,19 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 
 	if s.Diag != nil {
 		out.RecentErrors = s.Diag.Query("all", true, 8)
+	}
+
+	inc := s.Incidents
+	if inc == nil {
+		inc = diag.DefaultIncidents()
+	}
+	if inc != nil {
+		out.CollectorDownLastHour = inc.Count(diag.IncidentCollectorDown, 0)
+		out.OPCDisconnectsLastHour = inc.Count(diag.IncidentOPCDisconnect, 0)
+		out.DBWriteErrorsLastHour = inc.Count(diag.IncidentDBWriteError, 0)
+		if by := inc.CountByDevice(diag.IncidentOPCDisconnect, 0); len(by) > 0 {
+			out.OPCDisconnectsByDevice = by
+		}
 	}
 
 	return out
