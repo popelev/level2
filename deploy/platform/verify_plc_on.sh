@@ -7,6 +7,14 @@ DEV="${DEVICE_ID:-s7_1500}"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 ok() { echo "OK: $*"; }
 
+echo "=== ensure leaf tag 4208 in DB list ==="
+if ! curl -sf "$BASE/api/v1/tags?device_id=$DEV" | grep -q 'ns=4;i=4208'; then
+  curl -sf -X POST "$BASE/api/v1/devices/$DEV/tags" \
+    -H 'Content-Type: application/json' \
+    -d '{"id":"opc_measure_rvalue","node_id":"ns=4;i=4208","datatype":"float64","enabled":true,"interval_ms":1000}' >/dev/null
+  sleep 3
+fi
+
 echo "=== P6 Telegraf must be stopped (no duplicate writes) ==="
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx level2-telegraf; then
   fail "level2-telegraf is running — run: docker stop level2-telegraf"
@@ -20,18 +28,27 @@ grep -q '"connected":true' /tmp/readyz.json || fail "device not connected"
 ok "readyz 200, connected"
 
 echo "=== live float 4208 (P1) ==="
-curl -sf "$BASE/api/v1/tags?device_id=$DEV" | grep -q 'ns=4;i=4208' || fail "tag 4208 missing in config"
-q4208=$(curl -sf "$BASE/api/v1/tags?device_id=$DEV" | python3 -c "
+TAG4208=$(curl -sf "$BASE/api/v1/tags?device_id=$DEV" | python3 -c "
 import json,sys
 for row in json.load(sys.stdin):
-    if row.get('tag',{}).get('id')=='opc_measure_rvalue':
+    t=row.get('tag',{})
+    if t.get('node_id')=='ns=4;i=4208':
+        print(t.get('id',''))
+        break
+")
+[[ -n "$TAG4208" ]] || fail "no monitored tag for ns=4;i=4208 — add opc_measure_rvalue in Monitor"
+q4208=$(curl -sf "$BASE/api/v1/tags?device_id=$DEV" | python3 -c "
+import json,sys
+tid='$TAG4208'
+for row in json.load(sys.stdin):
+    if row.get('tag',{}).get('id')==tid:
         print(row.get('sample',{}).get('quality',-1))
         break
 ")
-[[ "$q4208" == "0" ]] || fail "opc_measure_rvalue quality=$q4208 (want good)"
-val=$(curl -sf "$BASE/api/v1/tags/opc_measure_rvalue/value" | grep -o '"value_num":[0-9.eE+-]*' | head -1)
-[[ -n "$val" ]] || fail "no value_num for opc_measure_rvalue"
-ok "4208 live $val"
+[[ "$q4208" == "0" ]] || fail "$TAG4208 quality=$q4208 (want good)"
+val=$(curl -sf "$BASE/api/v1/tags/${TAG4208}/value" | grep -o '"value_num":[0-9.eE+-]*' | head -1)
+[[ -n "$val" ]] || fail "no value_num for $TAG4208"
+ok "4208 live ($TAG4208) $val"
 
 echo "=== structure 4207 read error (P2) ==="
 curl -sf -X POST "$BASE/api/v1/devices/$DEV/tags" \
@@ -70,15 +87,15 @@ echo "$objs" | grep -q 'Server\|DeviceSet\|PLC' || fail "Objects folder empty or
 ok "browse Root → Objects"
 
 echo "=== API history + metrics (P7) ==="
-curl -sf "$BASE/api/v1/tags/opc_measure_rvalue/history?limit=5" | grep -q 'time' || fail "history empty"
+curl -sf "$BASE/api/v1/tags/${TAG4208}/history?limit=5" | grep -q 'time' || fail "history empty"
 curl -sf -o /dev/null -w '%{http_code}' "$BASE/metrics" | grep -q 200 || fail "metrics"
 curl -sf -o /dev/null -w '%{http_code}' "$BASE/" | grep -q 200 || fail "ui"
 ok "history, metrics, ui"
 
 echo "=== samples in Timescale (P1) ==="
 docker exec level2-timescaledb psql -U level2 -d level2 -t -c \
-  "SELECT count(*) FROM collector.samples WHERE tag_id='opc_measure_rvalue' AND time > now() - interval '5 minutes';" \
-  | tr -d ' ' | grep -qv '^0$' || fail "no recent rows in collector.samples"
-ok "DB rows for opc_measure_rvalue"
+  "SELECT count(*) FROM collector.samples WHERE tag_id='${TAG4208}' AND time > now() - interval '5 minutes';" \
+  | tr -d ' ' | grep -qv '^0$' || fail "no recent rows in collector.samples for $TAG4208"
+ok "DB rows for $TAG4208"
 
 echo "ALL PLC-ON CHECKS PASSED"

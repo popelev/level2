@@ -15,7 +15,13 @@ echo "=== expand ==="
 printf '%s' "{\"device_id\":\"${DEV}\",\"node_id\":\"ns=4;i=4207\",\"parent_tag_id\":\"tank\"}" > /tmp/expand.json
 curl -sf -X POST http://127.0.0.1:8080/api/v1/expand -H 'Content-Type: application/json' -d @/tmp/expand.json; echo
 echo "=== live tag value ==="
-curl -sf http://127.0.0.1:8080/api/v1/tags/opc_measure_rvalue/value; echo
+TAG=$(curl -sf "http://127.0.0.1:8080/api/v1/tags?device_id=${DEV}" | python3 -c "
+import json,sys
+rows=json.load(sys.stdin)
+if not rows: raise SystemExit(1)
+print(rows[0]['tag']['id'])
+")
+curl -sf "http://127.0.0.1:8080/api/v1/tags/${TAG}/value"; echo
 echo "=== ui ==="
 curl -sf -o /dev/null -w 'ui:%{http_code}\n' http://127.0.0.1:8080/
 echo "=== metrics ==="
