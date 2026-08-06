@@ -95,21 +95,28 @@ func (h *Historian) Capacity(ctx context.Context) (CapacityStats, error) {
 		return out, fmt.Errorf("database size: %w", err)
 	}
 
-	_ = h.pool.QueryRow(qCtx, `
+	if err := h.pool.QueryRow(qCtx, `SELECT hypertable_size('collector.samples')`).Scan(&out.SamplesSizeBytes); err != nil {
+		_ = h.pool.QueryRow(qCtx, `
 SELECT COALESCE(
   (SELECT pg_total_relation_size(c.oid)
    FROM pg_class c
    JOIN pg_namespace n ON n.oid = c.relnamespace
    WHERE n.nspname = 'collector' AND c.relname = 'samples'),
   0)`).Scan(&out.SamplesSizeBytes)
+	}
 
-	_ = h.pool.QueryRow(qCtx, `
+	if err := h.pool.QueryRow(qCtx, `SELECT approximate_row_count('collector.samples')`).Scan(&out.SamplesApproxRows); err != nil {
+		_ = h.pool.QueryRow(qCtx, `
 SELECT COALESCE(
-  (SELECT c.reltuples::bigint
+  (SELECT GREATEST(c.reltuples::bigint, 0)
    FROM pg_class c
    JOIN pg_namespace n ON n.oid = c.relnamespace
    WHERE n.nspname = 'collector' AND c.relname = 'samples'),
   0)`).Scan(&out.SamplesApproxRows)
+	}
+	if out.SamplesApproxRows < 0 {
+		out.SamplesApproxRows = 0
+	}
 
 	_ = h.pool.QueryRow(qCtx, `
 SELECT COUNT(*) FROM collector.samples WHERE time > now() - interval '5 minutes'`).Scan(&out.SamplesLast5Min)
@@ -165,8 +172,21 @@ func MaskDatabaseURL(raw string) string {
 	if u.User != nil {
 		user := u.User.Username()
 		if _, has := u.User.Password(); has {
-			u.User = url.UserPassword(user, "***")
-		} else if user != "" {
+			// Avoid url.UserPassword encoding "***" as %2A%2A%2A.
+			u.User = url.User(user)
+			masked := u.String()
+			// Insert :*** before @host
+			at := strings.Index(masked, "@")
+			schemeEnd := strings.Index(masked, "://")
+			if at > 0 && schemeEnd >= 0 {
+				credEnd := schemeEnd + 3 + len(user)
+				if credEnd <= at {
+					return masked[:credEnd] + ":***" + masked[at:]
+				}
+			}
+			return maskInlinePassword(raw)
+		}
+		if user != "" {
 			u.User = url.User(user)
 		}
 	}
