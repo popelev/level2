@@ -89,7 +89,7 @@ func GuessDataType(browseName string) core.ValueType {
 		return core.ValueBool
 	case strings.HasSuffix(n, "_auto") || strings.HasSuffix(n, "_run") || strings.HasSuffix(n, "_active"):
 		return core.ValueBool
-	case strings.HasPrefix(n, "i") || strings.Contains(n, "count") || strings.Contains(n, "int"):
+	case strings.HasPrefix(n, "i") || strings.Contains(n, "count"):
 		return core.ValueInt64
 	default:
 		return core.ValueFloat64
