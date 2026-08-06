@@ -2,6 +2,8 @@
 
 Design for **writing process values** from Level2 into OPC UA nodes (Siemens S7-1500 and similar). Distinct from [historian on-change / subscription mode](opc-subscription-mode.md) (“DB write”) and from UI labels such as “Write to DB”, which mean *add tag to the poll/historian list*.
 
+External programs (any language) should call the same REST write once it exists — gateway role, read paths, and client contract: [external-client-api.md](external-client-api.md).
+
 **Status:** not implemented. REST stub returns **501**. This document is the plan only.
 
 ---
@@ -404,3 +406,4 @@ Disable Set controls when:
 | Address Space UI | `web/src/pages/MonitorPage.jsx` |
 | API docs (501 note) | [README.md](../README.md), [deploy/platform/README.md](../deploy/platform/README.md) |
 | Related: on-change / subscribe | [opc-subscription-mode.md](opc-subscription-mode.md) |
+| Related: external HTTP/WS clients | [external-client-api.md](external-client-api.md) |

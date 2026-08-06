@@ -47,6 +47,8 @@ curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns%3D4%3Bi%3D4207'
 | PUT | `/api/v1/database/capacity-policy` | persist policy to YAML |
 | GET | `/metrics` | Prometheus |
 
+External clients (any language) reading/writing via this API: [docs/external-client-api.md](../../docs/external-client-api.md).
+
 ## PLC on
 
 Set `LEVEL2_SIM_BROWSER=0`, copy OPC credentials from smoke (or fill `.env`):
