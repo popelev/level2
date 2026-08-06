@@ -50,6 +50,12 @@ export default function DatabasePage({ onError }) {
         `History wiped via ${out.method || 'unknown'}`,
         out.approx_rows_before != null ? `(~${out.approx_rows_before} rows before)` : '',
       ]
+      if (out.reseeded != null || out.live_cleared != null) {
+        parts.push(`· re-seeded ${out.reseeded ?? 0} (cleared Live ${out.live_cleared ?? 0})`)
+      }
+      if (out.reseed_error) {
+        parts.push(`· reseed warning: ${out.reseed_error}`)
+      }
       if (out.clear_tags) {
         parts.push(`· tags removed: ${out.tags_removed ?? 0} on ${out.devices_cleared ?? 0} device(s)`)
       }
@@ -176,6 +182,8 @@ export default function DatabasePage({ onError }) {
             <h3>Clear history</h3>
             <p className="hint">
               Wipe all historian samples in <span className="mono">collector.samples</span> (TRUNCATE).
+              After wipe the collector clears Live and re-seeds Timescale from the last Live snapshot
+              so charts refill immediately (Phase 1 on-change suppress otherwise keeps the historian empty).
               Servers stay configured. Per-server tag cleanup without wiping history is on{' '}
               <strong>Projects → Clear tags</strong>.
             </p>

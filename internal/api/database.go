@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,9 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/popelev/level2/internal/core"
 	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/historian/timescale"
 	"github.com/popelev/level2/internal/metrics"
+	"github.com/popelev/level2/internal/store"
 )
 
 func (s *Server) mountDatabase(mux *http.ServeMux) {
@@ -204,6 +207,8 @@ type wipeSamplesBody struct {
 // handleWipeSamples truncates historian time-series (collector.samples).
 // Requires ?confirm=wipe. Optional JSON body {"clear_tags":true} also clears
 // monitored tags on every device (config only — same as Projects → Clear tags).
+// After a successful wipe: snapshot Live → clear Live → WriteBatch the snapshot
+// so Timescale is re-seeded immediately and FanIn will not suppress the next poll.
 func (s *Server) handleWipeSamples(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("confirm") != "wipe" {
 		http.Error(w, `missing confirm=wipe query parameter`, http.StatusBadRequest)
@@ -251,18 +256,52 @@ func (s *Server) handleWipeSamples(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	detail := fmt.Sprintf("method=%s approx_rows_before=%d clear_tags=%v tags_removed=%d",
-		result.Method, result.ApproxRows, body.ClearTags, tagsRemoved)
+	liveCleared, reseeded, reseedErr := reseedAfterWipe(r.Context(), s.Live, s.DB.WriteBatch)
+	if reseedErr != nil {
+		diag.DBWrite(diag.LevelError, "historian wipe reseed failed", reseedErr.Error(), liveCleared)
+	}
+
+	detail := fmt.Sprintf("method=%s approx_rows_before=%d clear_tags=%v tags_removed=%d live_cleared=%d reseeded=%d",
+		result.Method, result.ApproxRows, body.ClearTags, tagsRemoved, liveCleared, reseeded)
 	diag.DBWrite(diag.LevelWarn, "historian samples wiped", detail, int(result.ApproxRows))
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"status":            "wiped",
-		"method":            result.Method,
+	out := map[string]any{
+		"status":             "wiped",
+		"method":             result.Method,
 		"approx_rows_before": result.ApproxRows,
-		"clear_tags":        body.ClearTags,
-		"tags_removed":      tagsRemoved,
-		"devices_cleared":   devicesCleared,
-	})
+		"clear_tags":         body.ClearTags,
+		"tags_removed":       tagsRemoved,
+		"devices_cleared":    devicesCleared,
+		"live_cleared":       liveCleared,
+		"reseeded":           reseeded,
+	}
+	if reseedErr != nil {
+		out["reseed_error"] = reseedErr.Error()
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// reseedAfterWipe snapshots Live, clears it (so FanIn has no prev for suppress),
+// then writes the snapshot as a fresh WriteBatch. Clear happens even when the
+// batch is empty or writeBatch is nil; write errors leave Live cleared so the
+// next poll still refills the historian.
+func reseedAfterWipe(ctx context.Context, live *store.Live, writeBatch func(context.Context, []core.Sample) error) (cleared, written int, err error) {
+	if live == nil {
+		return 0, 0, nil
+	}
+	snap := live.All()
+	cleared = live.Clear()
+	if len(snap) == 0 || writeBatch == nil {
+		return cleared, 0, nil
+	}
+	now := time.Now().UTC()
+	for i := range snap {
+		snap[i].Time = now
+	}
+	if err := writeBatch(ctx, snap); err != nil {
+		return cleared, 0, err
+	}
+	return cleared, len(snap), nil
 }
 
 var (

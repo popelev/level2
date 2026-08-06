@@ -54,6 +54,18 @@ func TestLive_UpdateGetAndSnapshot(t *testing.T) {
 	if len(l.All()) != 1 {
 		t.Fatalf("All=%d", len(l.All()))
 	}
+	if n := l.Clear(); n != 1 {
+		t.Fatalf("Clear=%d", n)
+	}
+	if len(l.All()) != 0 {
+		t.Fatalf("All after Clear=%d", len(l.All()))
+	}
+	if _, ok := l.Get("t1"); ok {
+		t.Fatal("expected miss after Clear")
+	}
+	if n := l.Clear(); n != 0 {
+		t.Fatalf("second Clear=%d", n)
+	}
 }
 
 func TestAvgIntervals(t *testing.T) {

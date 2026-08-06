@@ -54,3 +54,15 @@ database:
 ```
 
 See also [deploy/platform/README.md](../deploy/platform/README.md).
+
+## Lab wipe samples
+
+`POST /api/v1/database/wipe-samples?confirm=wipe` truncates `collector.samples`.
+
+Because Phase 1 FanIn suppresses historian writes when value/quality match the Live store, a bare truncate would leave Timescale empty until some tag actually changes. After a successful wipe the collector therefore:
+
+1. Snapshots all Live samples.
+2. Clears the Live store (so the next poll is a “first sample”).
+3. Writes the snapshot back with `WriteBatch` (`reseeded`, `live_cleared` in the JSON response; `reseed_error` if the batch fails — Live stays cleared so the next poll still refills).
+
+Optional body `{"clear_tags":true}` also clears monitored tags in config (same as Projects → Clear tags). Details on on-change suppress: [opc-subscription-mode.md](opc-subscription-mode.md) Phase 1.

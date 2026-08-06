@@ -1,4 +1,4 @@
-# OPC UA: poll vs subscribe (on-change) mode
+﻿# OPC UA: poll vs subscribe (on-change) mode
 
 Design for writing to Timescale **only when the value actually changes**, not on every poll tick. This document covers current behavior, the target model on `gopcua` Subscription / MonitoredItems, config, Siemens limits, fallback, and phased rollout.
 
@@ -245,6 +245,8 @@ File: `web/src/components/TagTreeTable.jsx` (+ `DbWriteListPage`, `tagTree.js`).
 4. (Opt.) UI Mode select + `mode` field in config — persist only for now; driver ignores and always polls.
 5. Stub `PollMode` in `core` — readiness for Phase 2.
 
+**Lab wipe interaction:** `POST /api/v1/database/wipe-samples` truncates Timescale only. Without a Live reset, the next identical poll would still **suppress** (Live still holds the last payload) and the historian would stay empty until a value/quality change. After a successful wipe the API therefore: (1) snapshots Live, (2) **clears Live**, (3) **WriteBatch**s that snapshot as fresh samples (`reseeded` / `live_cleared` in the response). Charts refill immediately; the next poll is treated as a first sample (no suppress against stale Live).
+
 **Out of scope:** CreateSubscription, MonitoredItems.
 
 ### Phase 2 — real OPC Subscription
@@ -271,6 +273,7 @@ File: `web/src/components/TagTreeTable.jsx` (+ `DbWriteListPage`, `tagTree.js`).
 | Float “jitter” → still many writes | Deadband (Phase 3) or comparison rounding (carefully, opt-in) |
 | UI “freezes” if Live is not written | Live always updates |
 | Missing rare changes on bad suppress | Compare quality; first sample always write; equality tests |
+| Empty historian after lab wipe | Wipe clears Live + re-seeds Timescale from Live snapshot (see Phase 1 note) |
 | Siemens rejects a large subscription | Chunks + poll fallback |
 | Mixing min(interval_ms) for the poll group | Phase 2: poll group only from poll tags; subscribe does not affect ticker |
 
@@ -285,6 +288,7 @@ File: `web/src/components/TagTreeTable.jsx` (+ `DbWriteListPage`, `tagTree.js`).
 - [x] Quality-only change → write.
 - [x] Metrics: suppressed grows, written does not on equal.
 - [x] Live/WS update on every sample.
+- [x] After wipe-samples: Live cleared + snapshot re-seeded; identical post-wipe sample is not suppressed.
 
 **Phase 2**
 

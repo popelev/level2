@@ -67,6 +67,19 @@ func (l *Live) All() []core.Sample {
 	return out
 }
 
+// Clear removes every cached sample. Used after historian wipe so FanIn treats
+// the next poll as a first sample (no Phase 1 suppress against stale Live).
+func (l *Live) Clear() int {
+	if l == nil {
+		return 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := len(l.byID)
+	l.byID = make(map[string]*liveEntry)
+	return n
+}
+
 // SnapshotTags returns configured tags merged with live values.
 func (l *Live) SnapshotTags(tags []core.Tag) []TagValue {
 	return l.SnapshotDevices([]core.Device{{Tags: tags}})
