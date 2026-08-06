@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildTagTree, collectLeaves } from '../tagTree.js'
 import { formatQuality, formatSampleTime, formatValue } from '../api.js'
 
-const TYPES = ['bool', 'int64', 'float64', 'string', 'datetime']
+const TYPES = ['bool', 'int64', 'uint', 'float64', 'string', 'datetime']
 
 function FolderRow({
   node,

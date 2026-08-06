@@ -146,7 +146,7 @@ type TagView struct {
 
 func ValidateLeafTag(t TagView) error {
 	switch t.DataType {
-	case core.ValueBool, core.ValueInt64, core.ValueFloat64, core.ValueString, core.ValueDateTime:
+	case core.ValueBool, core.ValueInt64, core.ValueUint, core.ValueFloat64, core.ValueString, core.ValueDateTime:
 		return nil
 	default:
 		return fmt.Errorf("tag %q: unsupported datatype %q", t.ID, t.DataType)

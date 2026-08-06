@@ -176,15 +176,19 @@ func mapDataType(typeName, typeCode string) core.ValueType {
 		return core.ValueString
 	case "datetime", "date_time", "datetim", "timestamp", "utctime":
 		return core.ValueDateTime
-	case "int16", "int32", "int64", "sbyte", "byte", "uint16", "uint32", "integer", "int":
+	case "int16", "int32", "int64", "sbyte", "integer", "int":
 		return core.ValueInt64
+	case "byte", "uint16", "uint32", "uint64", "uint", "unsigned", "unsignedint":
+		return core.ValueUint
 	}
 	// Fallback on OPC UA type NodeId like i=10 (Float), i=1 (Boolean), i=4 (Int16)
 	switch strings.TrimSpace(typeCode) {
 	case "i=1":
 		return core.ValueBool
-	case "i=4", "i=6", "i=8", "i=2", "i=3", "i=5", "i=7":
+	case "i=2", "i=4", "i=6", "i=8":
 		return core.ValueInt64
+	case "i=3", "i=5", "i=7", "i=9":
+		return core.ValueUint
 	case "i=10", "i=11":
 		return core.ValueFloat64
 	case "i=12":

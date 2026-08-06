@@ -57,6 +57,22 @@ func TestMapDateTime(t *testing.T) {
 	}
 }
 
+func TestMapUint(t *testing.T) {
+	tag := TagView{Tag: core.Tag{ID: "u", DataType: core.ValueUint}}
+	v, err := ua.NewVariant(uint32(42))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dv := &ua.DataValue{Status: ua.StatusOK, Value: v}
+	s, err := mapDataValue(tag, dv, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.ValueNum == nil || *s.ValueNum != 42 {
+		t.Fatalf("got %#v", s.ValueNum)
+	}
+}
+
 func TestMapStructureStatus(t *testing.T) {
 	tag := TagView{Tag: core.Tag{ID: "s", DataType: core.ValueFloat64}}
 	dv := &ua.DataValue{Status: ua.StatusCode(0x80110000)} // BadDataTypeIDUnknown

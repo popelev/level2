@@ -22,6 +22,21 @@ func TestMapOPCDataType_DateTime(t *testing.T) {
 	}
 }
 
+func TestMapOPCDataType_UInt(t *testing.T) {
+	for _, tid := range []uint32{id.Byte, id.UInt16, id.UInt32, id.UInt64} {
+		nid := ua.NewNumericNodeID(0, tid)
+		if got := mapOPCDataType(nid); got != core.ValueUint {
+			t.Fatalf("opc id %d → %q, want uint", tid, got)
+		}
+	}
+	for _, tid := range []uint32{id.SByte, id.Int16, id.Int32, id.Int64} {
+		nid := ua.NewNumericNodeID(0, tid)
+		if got := mapOPCDataType(nid); got != core.ValueInt64 {
+			t.Fatalf("opc id %d → %q, want int64", tid, got)
+		}
+	}
+}
+
 func TestGuessDataType_ModeFlags(t *testing.T) {
 	if got := GuessDataType("group_mode_203_maintenance"); got != core.ValueBool {
 		t.Fatalf("got %q", got)

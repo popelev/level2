@@ -63,6 +63,8 @@ func typeDisplayName(dt core.ValueType) string {
 		return "Boolean"
 	case core.ValueInt64:
 		return "Int16"
+	case core.ValueUint:
+		return "UInt32"
 	case core.ValueString:
 		return "String"
 	case core.ValueDateTime:
@@ -78,6 +80,8 @@ func opcTypeCode(dt core.ValueType) string {
 		return "i=1"
 	case core.ValueInt64:
 		return "i=4"
+	case core.ValueUint:
+		return "i=7"
 	case core.ValueString:
 		return "i=12"
 	case core.ValueDateTime:

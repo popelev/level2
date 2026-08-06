@@ -71,8 +71,10 @@ func mapOPCDataType(typeNID *ua.NodeID) core.ValueType {
 		return core.ValueBool
 	case id.Float, id.Double:
 		return core.ValueFloat64
-	case id.SByte, id.Byte, id.Int16, id.UInt16, id.Int32, id.UInt32, id.Int64, id.UInt64:
+	case id.SByte, id.Int16, id.Int32, id.Int64:
 		return core.ValueInt64
+	case id.Byte, id.UInt16, id.UInt32, id.UInt64:
+		return core.ValueUint
 	case id.String, id.LocalizedText, id.ByteString:
 		return core.ValueString
 	case id.DateTime:

@@ -7,8 +7,14 @@ import (
 	"github.com/popelev/level2/internal/core"
 )
 
+// resolveTagDataType fills tag.DataType from OPC only when the client left it empty.
+// Explicit PUT/UI choices must not be overwritten (sync endpoint refreshes from OPC).
 func (s *Server) resolveTagDataType(ctx context.Context, deviceID string, tag *core.Tag) {
 	if tag == nil || tag.NodeID == "" || s.DevHub == nil {
+		return
+	}
+	if core.NormalizeValueType(tag.DataType) != "" && core.ValidValueType(tag.DataType) {
+		tag.DataType = core.NormalizeValueType(tag.DataType)
 		return
 	}
 	ent, ok := s.DevHub.Entry(deviceID)
@@ -23,5 +29,7 @@ func (s *Server) resolveTagDataType(ctx context.Context, deviceID string, tag *c
 	if hint == "" {
 		hint = tag.NodeID
 	}
-	tag.DataType = drv.ResolveTagDataType(ctx, tag.NodeID, hint)
+	if dt := drv.ResolveTagDataType(ctx, tag.NodeID, hint); dt != "" {
+		tag.DataType = dt
+	}
 }

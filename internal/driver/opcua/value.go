@@ -50,6 +50,13 @@ func mapDataValue(tag TagView, dv *ua.DataValue, now time.Time) (core.Sample, er
 		}
 		f := float64(n)
 		s.ValueNum = &f
+	case core.ValueUint:
+		n, err := asUint64(v)
+		if err != nil {
+			return s, err
+		}
+		f := float64(n)
+		s.ValueNum = &f
 	case core.ValueBool:
 		b, ok := v.(bool)
 		if !ok {
@@ -125,6 +132,41 @@ func asInt64(v any) (int64, error) {
 		return int64(x), nil
 	default:
 		return 0, fmt.Errorf("expected int, got %T", v)
+	}
+}
+
+func asUint64(v any) (uint64, error) {
+	switch x := v.(type) {
+	case uint8:
+		return uint64(x), nil
+	case uint16:
+		return uint64(x), nil
+	case uint32:
+		return uint64(x), nil
+	case uint64:
+		return x, nil
+	case int8:
+		if x < 0 {
+			return 0, fmt.Errorf("negative value for uint")
+		}
+		return uint64(x), nil
+	case int16:
+		if x < 0 {
+			return 0, fmt.Errorf("negative value for uint")
+		}
+		return uint64(x), nil
+	case int32:
+		if x < 0 {
+			return 0, fmt.Errorf("negative value for uint")
+		}
+		return uint64(x), nil
+	case int64:
+		if x < 0 {
+			return 0, fmt.Errorf("negative value for uint")
+		}
+		return uint64(x), nil
+	default:
+		return 0, fmt.Errorf("expected uint, got %T", v)
 	}
 }
 

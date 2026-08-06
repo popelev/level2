@@ -99,6 +99,11 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
   const updateTag = async (tag) => {
     if (!deviceId || !tag?.id) return
     onError('')
+    // Optimistic local update so controlled Type select does not snap back
+    // while PUT is in flight or races with the 3s refresh.
+    setTags((prev) =>
+      prev.map((tv) => (tv.tag.id === tag.id ? { ...tv, tag: { ...tv.tag, ...tag } } : tv)),
+    )
     try {
       const r = await fetch(
         `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag.id)}`,
@@ -109,9 +114,18 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
         },
       )
       if (!r.ok) throw new Error(await r.text())
+      const saved = await r.json().catch(() => null)
+      if (saved?.datatype) {
+        setTags((prev) =>
+          prev.map((tv) =>
+            tv.tag.id === tag.id ? { ...tv, tag: { ...tv.tag, ...saved } } : tv,
+          ),
+        )
+      }
       await refreshTags(deviceId)
     } catch (ex) {
       onError(String(ex.message || ex))
+      await refreshTags(deviceId).catch(() => {})
     }
   }
 

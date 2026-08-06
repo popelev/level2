@@ -11,6 +11,7 @@ type ValueType string
 const (
 	ValueBool     ValueType = "bool"
 	ValueInt64    ValueType = "int64"
+	ValueUint     ValueType = "uint"
 	ValueFloat64  ValueType = "float64"
 	ValueString   ValueType = "string"
 	ValueDateTime ValueType = "datetime"

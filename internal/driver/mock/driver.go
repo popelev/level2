@@ -124,6 +124,9 @@ func synthesize(t core.Tag, now time.Time, age time.Duration) core.Sample {
 	case core.ValueInt64:
 		n := float64(int64(100 + 10*math.Sin(sec/7)))
 		s.ValueNum = &n
+	case core.ValueUint:
+		n := float64(uint64(50 + 20*math.Sin(sec/6)))
+		s.ValueNum = &n
 	case core.ValueBool:
 		b := int(sec/3)%2 == 0
 		s.ValueBool = &b
