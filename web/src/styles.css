@@ -176,11 +176,17 @@ body {
 .meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; max-width: min(820px, 100%); }
 .status-strip .pill { white-space: nowrap; }
 .pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-height: 1.75rem;
   border: 1px solid var(--line);
   padding: 4px 10px;
   border-radius: 999px;
   font-family: var(--mono);
   font-size: 0.75rem;
+  line-height: 1.2;
 }
 .pill.ok { color: var(--accent); border-color: #2f6b55; }
 .pill.bad { color: var(--bad); border-color: #6b3535; }
