@@ -22,9 +22,10 @@ fi
 ok "Telegraf not running"
 
 echo "=== readyz / devices (P1) ==="
-code=$(curl -s -o /tmp/readyz.json -w '%{http_code}' "$BASE/readyz")
+code=$(curl -s -o /tmp/readyz.txt -w '%{http_code}' "$BASE/readyz")
 [[ "$code" == "200" ]] || fail "readyz HTTP $code"
-grep -q '"connected":true' /tmp/readyz.json || fail "device not connected"
+curl -sf "$BASE/api/v1/devices" | grep -q "\"id\":\"$DEV\"" || fail "device $DEV missing"
+curl -sf "$BASE/api/v1/devices" | grep -q '"connected":true' || fail "device not connected"
 ok "readyz 200, connected"
 
 echo "=== live float 4208 (P1) ==="
