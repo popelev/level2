@@ -54,7 +54,7 @@ func (d *Driver) Connect(ctx context.Context) error {
 	}
 
 	opts := []opcua.Option{
-		opcua.SecurityFromEndpoint(ep, ua.MessageSecurityModeNone, ua.SecurityPolicyURINone),
+		opcua.SecurityFromEndpoint(ep, ua.UserTokenTypeUserName),
 	}
 	if d.device.Username != "" {
 		opts = append(opts, opcua.AuthUsername(d.device.Username, d.device.Password))
