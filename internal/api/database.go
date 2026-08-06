@@ -114,6 +114,8 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	out["free_bytes"] = cap.FreeBytes
 	out["free_bytes_source"] = cap.FreeBytesSource
 	out["capacity_bytes"] = cap.CapacityBytes
+	out["disk_path"] = cap.DiskPath
+	out["disk_avail_bytes"] = cap.DiskAvailBytes
 	out["disk_total_bytes"] = cap.DiskTotalBytes
 	out["limit_bytes"] = cap.LimitBytes
 	out["capacity_percent"] = cap.CapacityPercent
@@ -147,11 +149,14 @@ func (s *Server) handleGetCapacityPolicy(w http.ResponseWriter, r *http.Request)
 	}
 	if s.DB != nil {
 		if cap, err := s.DB.Capacity(r.Context()); err == nil {
+			out["disk_path"] = cap.DiskPath
+			out["disk_avail_bytes"] = cap.DiskAvailBytes
 			out["disk_total_bytes"] = cap.DiskTotalBytes
 			out["limit_bytes"] = cap.LimitBytes
 			out["database_size_bytes"] = cap.DatabaseSizeBytes
 			out["used_over_limit"] = cap.UsedOverLimit
 			out["free_bytes"] = cap.FreeBytes
+			out["free_bytes_source"] = cap.FreeBytesSource
 		}
 	}
 	writeJSON(w, http.StatusOK, out)

@@ -17,7 +17,9 @@ Optional absolute override (unchanged): `LEVEL2_DB_CAPACITY_BYTES` — when set,
 limit_bytes = disk_total × capacity_percent / 100
 ```
 
-`disk_total` comes from Statfs on the mounted DB volume (`LEVEL2_DB_DATA_PATH`, default `/var/lib/level2/dbdisk`).
+`disk_total` and `disk_avail` come from the same Statfs on the mounted DB volume (`LEVEL2_DB_DATA_PATH`, default `/var/lib/level2/dbdisk` — compose binds `smoke_timeseries`, i.e. Timescale `/var/lib/postgresql/data`).
+
+`free_bytes` = room under `limit_bytes` (also capped by `disk_avail`). Source: `under_limit` | `disk_avail` | `env_limit`. Postgres `database_size_bytes` is logical size on that volume.
 
 ### Policies
 

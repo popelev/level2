@@ -18,12 +18,14 @@ services:
       LEVEL2_SIM_BROWSER: ${LEVEL2_SIM_BROWSER:-1}
       SPOOL_DIR: /var/lib/level2/spool
       UI_DIR: /usr/share/level2/ui
-      # Same Timescale volume as smoke (read-only) so Statfs reports DB disk free space
+      # Same Docker volume as smoke Timescale (/var/lib/postgresql/data) so Statfs
+      # disk_total + disk_avail match the real PG data filesystem (not an empty mount).
       LEVEL2_DB_DATA_PATH: ${LEVEL2_DB_DATA_PATH:-/var/lib/level2/dbdisk}
     volumes:
       # whole dir so Excel import can rewrite config.yaml (+ .tmp)
       - ./:/etc/level2/cfg
       - collector_spool:/var/lib/level2/spool
+      # MUST be smoke_timeseries (same as timescaledb service) — not a separate empty volume
       - smoke_timeseries:/var/lib/level2/dbdisk:ro
     ports:
       - "8080:8080"

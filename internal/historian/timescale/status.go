@@ -40,10 +40,12 @@ type CapacityStats struct {
 	SamplesPerSec     float64  `json:"samples_per_sec"`
 	AvgSampleBytes    float64  `json:"avg_sample_bytes"`
 	GrowthBytesPerSec float64  `json:"growth_bytes_per_sec"`
-	FreeBytes         *int64   `json:"free_bytes"`
+	FreeBytes         *int64   `json:"free_bytes"` // room under capacity limit (capped by disk avail)
 	FreeBytesSource   string   `json:"free_bytes_source"`
 	CapacityBytes     *int64   `json:"capacity_bytes,omitempty"`
-	DiskTotalBytes    *int64   `json:"disk_total_bytes,omitempty"`
+	DiskPath          string   `json:"disk_path,omitempty"`          // Statfs path (Timescale data volume)
+	DiskAvailBytes    *int64   `json:"disk_avail_bytes,omitempty"`   // raw Statfs free on DiskPath
+	DiskTotalBytes    *int64   `json:"disk_total_bytes,omitempty"`   // raw Statfs total on DiskPath
 	CapacityPercent   int      `json:"capacity_percent"`
 	FullPolicy        string   `json:"full_policy"`
 	LimitBytes        *int64   `json:"limit_bytes,omitempty"` // disk_total * percent/100 (or env)
@@ -138,13 +140,17 @@ SELECT COUNT(*) FROM collector.samples WHERE time > now() - interval '5 minutes'
 	out.CapacityPercent = settings.Percent
 	out.FullPolicy = settings.Policy
 
-	free, source, capacity, diskTotal, limit := resolveFreeBytes(out.DatabaseSizeBytes, settings.Percent)
+	free, source, capacity, diskTotal, diskAvail, diskPath, limit := resolveFreeBytes(out.DatabaseSizeBytes, settings.Percent)
 	out.FreeBytesSource = source
+	out.DiskPath = diskPath
 	if capacity != nil {
 		out.CapacityBytes = capacity
 	}
 	if diskTotal != nil {
 		out.DiskTotalBytes = diskTotal
+	}
+	if diskAvail != nil {
+		out.DiskAvailBytes = diskAvail
 	}
 	if limit != nil {
 		out.LimitBytes = limit
@@ -160,7 +166,10 @@ SELECT COUNT(*) FROM collector.samples WHERE time > now() - interval '5 minutes'
 	return out, nil
 }
 
-func resolveFreeBytes(usedBytes int64, percent int) (free *int64, source string, capacity *int64, diskTotal *int64, limit *int64) {
+// resolveFreeBytes returns room under the capacity limit (free), using one Statfs path
+// for both disk total and filesystem avail so UI/API never mix host root vs DB volume.
+// free_bytes_source is "under_limit" | "disk_avail" | "env_limit" | "unavailable".
+func resolveFreeBytes(usedBytes int64, percent int) (free *int64, source string, capacity *int64, diskTotal *int64, diskAvail *int64, diskPath string, limit *int64) {
 	if percent < 1 {
 		percent = 90
 	}
@@ -173,11 +182,12 @@ func resolveFreeBytes(usedBytes int64, percent int) (free *int64, source string,
 		if err == nil && capN > 0 {
 			capacity = &capN
 			limit = &capN
+			diskTotal = &capN
 			f := capN - usedBytes
 			if f < 0 {
 				f = 0
 			}
-			return &f, "env_limit", capacity, capacity, limit
+			return &f, "env_limit", capacity, diskTotal, nil, "", limit
 		}
 	}
 
@@ -190,21 +200,25 @@ func resolveFreeBytes(usedBytes int64, percent int) (free *int64, source string,
 		if lim < 1 {
 			lim = 1
 		}
+		diskPath = path
 		diskTotal = &total
+		diskAvail = &avail
 		limit = &lim
 		capacity = &lim
-		// Remaining under policy limit (also never exceed real free space).
+		// Remaining under policy limit (also never exceed real free space on same FS).
 		underLimit := lim - usedBytes
 		if underLimit < 0 {
 			underLimit = 0
 		}
 		f := underLimit
+		source = "under_limit"
 		if avail < f {
 			f = avail
+			source = "disk_avail"
 		}
-		return &f, "statfs:" + path, capacity, diskTotal, limit
+		return &f, source, capacity, diskTotal, diskAvail, diskPath, limit
 	}
-	return nil, "unavailable", nil, nil, nil
+	return nil, "unavailable", nil, nil, nil, "", nil
 }
 
 // dbDiskPaths returns candidate filesystem paths for Statfs (Timescale data volume).

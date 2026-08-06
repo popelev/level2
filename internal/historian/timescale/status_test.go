@@ -33,12 +33,18 @@ func TestResolveFreeBytesStatfs(t *testing.T) {
 	t.Setenv("LEVEL2_DB_CAPACITY_BYTES", "")
 	dir := t.TempDir()
 	t.Setenv("LEVEL2_DB_DATA_PATH", dir)
-	free, source, cap, diskTotal, limit := resolveFreeBytes(1000, 50)
+	free, source, cap, diskTotal, diskAvail, diskPath, limit := resolveFreeBytes(1000, 50)
 	if free == nil || *free < 0 {
 		t.Fatalf("free=%v source=%s", free, source)
 	}
 	if diskTotal == nil || *diskTotal <= 0 {
 		t.Fatalf("diskTotal=%v", diskTotal)
+	}
+	if diskAvail == nil || *diskAvail <= 0 {
+		t.Fatalf("diskAvail=%v", diskAvail)
+	}
+	if diskPath != dir {
+		t.Fatalf("diskPath=%q want %q", diskPath, dir)
 	}
 	if limit == nil || *limit != *diskTotal/2 {
 		t.Fatalf("limit=%v diskTotal=%v", limit, diskTotal)
@@ -46,20 +52,27 @@ func TestResolveFreeBytesStatfs(t *testing.T) {
 	if cap == nil || *cap != *limit {
 		t.Fatalf("cap=%v limit=%v", cap, limit)
 	}
-	if source != "statfs:"+dir {
+	if source != "under_limit" && source != "disk_avail" {
 		t.Fatalf("source=%q", source)
+	}
+	// Same Statfs call feeds total + avail; free never exceeds avail.
+	if *free > *diskAvail {
+		t.Fatalf("free %d > diskAvail %d", *free, *diskAvail)
 	}
 }
 
 func TestResolveFreeBytesEnvOverride(t *testing.T) {
 	t.Setenv("LEVEL2_DB_CAPACITY_BYTES", "10000")
 	t.Setenv("LEVEL2_DB_DATA_PATH", t.TempDir())
-	free, source, cap, diskTotal, limit := resolveFreeBytes(3000, 90)
+	free, source, cap, diskTotal, diskAvail, diskPath, limit := resolveFreeBytes(3000, 90)
 	if source != "env_limit" || free == nil || *free != 7000 || cap == nil || *cap != 10000 {
 		t.Fatalf("free=%v source=%s cap=%v", free, source, cap)
 	}
 	if limit == nil || *limit != 10000 || diskTotal == nil || *diskTotal != 10000 {
 		t.Fatalf("limit=%v diskTotal=%v", limit, diskTotal)
+	}
+	if diskAvail != nil || diskPath != "" {
+		t.Fatalf("env override should not set diskAvail/path, got avail=%v path=%q", diskAvail, diskPath)
 	}
 }
 

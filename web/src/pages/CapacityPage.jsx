@@ -74,12 +74,27 @@ export default function CapacityPage({ onError }) {
   }, [load, onError])
 
   const diskTotal = data?.disk_total_bytes
+  const diskAvail = data?.disk_avail_bytes
+  const diskPath = data?.disk_path
   const computedLimit =
     data?.limit_bytes != null
       ? data.limit_bytes
       : diskTotal != null
         ? Math.floor((Number(diskTotal) * Number(percent)) / 100)
         : null
+
+  const freeSourceLabel = (() => {
+    switch (data?.free_bytes_source) {
+      case 'under_limit':
+        return 'room under capacity limit'
+      case 'disk_avail':
+        return 'capped by volume free space'
+      case 'env_limit':
+        return 'LEVEL2_DB_CAPACITY_BYTES'
+      default:
+        return data?.free_bytes_source || ''
+    }
+  })()
 
   const savePolicy = async () => {
     onError('')
@@ -108,7 +123,7 @@ export default function CapacityPage({ onError }) {
         <div>
           <h2>Capacity / Storage</h2>
           <p className="muted">
-            Disk use of TimescaleDB, capacity limit, and policy when the database is (nearly) full
+            Disk use of TimescaleDB on one volume (Statfs total + free, Postgres logical size). Policy when the database is (nearly) full.
           </p>
         </div>
         <button type="button" className="secondary small-btn" onClick={() => load().catch((e) => onError(String(e.message || e)))}>
@@ -129,10 +144,20 @@ export default function CapacityPage({ onError }) {
             </p>
           )}
 
+          {(diskPath || diskTotal != null) && (
+            <p className="hint">
+              Timescale data volume
+              {diskTotal != null ? ` · ${formatBytes(diskTotal)} total` : ''}
+              {diskAvail != null ? ` · ${formatBytes(diskAvail)} free` : ''}
+              {diskPath ? ` · ${diskPath}` : ''}
+            </p>
+          )}
+
           <div className="cap-hero">
             <div className="cap-stat">
               <div className="cap-label">DB used</div>
               <div className="cap-value">{formatBytes(data.database_size_bytes)}</div>
+              <div className="cap-sub muted small">Postgres logical size on that volume</div>
             </div>
             <div className="cap-stat">
               <div className="cap-label">Samples table</div>
@@ -141,7 +166,7 @@ export default function CapacityPage({ onError }) {
             <div className="cap-stat">
               <div className="cap-label">Free (to limit)</div>
               <div className="cap-value">{freeKnown ? formatBytes(data.free_bytes) : 'unknown'}</div>
-              <div className="cap-sub muted small">{data.free_bytes_source || ''}</div>
+              <div className="cap-sub muted small">{freeSourceLabel}</div>
             </div>
             <div className="cap-stat accent">
               <div className="cap-label">ETA to full</div>
@@ -159,8 +184,8 @@ export default function CapacityPage({ onError }) {
           <section className="panel">
             <h3>When nearly full</h3>
             <p className="hint">
-              Max disk fraction the database may use. Byte limit = disk total × percent / 100
-              {diskTotal != null ? ` (disk ${formatBytes(diskTotal)})` : ''}.
+              Max fraction of the Timescale data volume the database may use. Byte limit = volume total × percent / 100
+              {diskTotal != null ? ` (volume ${formatBytes(diskTotal)})` : ''}.
             </p>
             <div className="cap-policy">
               <label className="cap-slider-label" htmlFor="cap-percent">
