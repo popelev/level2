@@ -9,11 +9,13 @@ Jenkins next to the lab stack (same VM / Docker host), configured with **JCasC**
 From the repo root on the lab VM (`~/level2`):
 
 ```bash
-sudo mkdir -p /var/jenkins_home
+mkdir -p ~/jenkins_home
 docker compose -f deploy/ci/docker-compose.yml --env-file deploy/ci/.env.example up -d --build
 ```
 
 Lab defaults in `.env.example`: user `admin` / password `admin`. To customize, `cp deploy/ci/.env.example deploy/ci/.env`, edit, then use `--env-file deploy/ci/.env`.
+
+`JENKINS_HOME` defaults to `/home/level2/jenkins_home` (override with `JENKINS_HOME_HOST` in `.env`).
 
 UI: **http://\<vm-ip\>:8081/** (collector uses 8080).
 
@@ -75,16 +77,15 @@ Mount the host Docker socket (`/var/run/docker.sock`). The controller runs **sib
 - `node:22-bookworm` → `npm ci` / `npm run build` under `web/`
 - `docker build -f deploy/platform/Dockerfile` → collector + embedded UI
 
-`jenkins_home` is bind-mounted to **`/var/jenkins_home` on the host** (same path inside the container). That way `docker run -v "$PWD":/src` from the Jenkinsfile resolves the workspace on the Docker host. A named volume alone breaks sibling mounts (empty `/src`, `go test` fails with “no main module”).
-
-First bring-up creates the directory if missing:
+`JENKINS_HOME` is bind-mounted to the **same path on the host and inside the container** (default `/home/level2/jenkins_home`). That way `docker run -v "$PWD":/src` from the Jenkinsfile resolves the workspace on the Docker host. A named volume alone breaks sibling mounts (empty `/src`, `go test` fails with “no main module”).
 
 ```bash
-sudo mkdir -p /var/jenkins_home
-sudo chown root:root /var/jenkins_home
+mkdir -p ~/jenkins_home
+# optional override:
+# echo 'JENKINS_HOME_HOST=/home/level2/jenkins_home' >> deploy/ci/.env
 ```
 
-(Compose runs the Jenkins container as `root`, matching the socket.)
+Compose runs the Jenkins container as `root` so it can use the host Docker socket.
 
 Do **not** put Jenkins on the public internet; bind to LAN / VPN only.
 
