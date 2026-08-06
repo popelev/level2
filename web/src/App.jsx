@@ -41,6 +41,30 @@ function NavGroup({ label, children }) {
   )
 }
 
+/** Lab Jenkins: same host as UI on :8081, or VITE_JENKINS_URL at build time. */
+function jenkinsUrl() {
+  const fromEnv = import.meta.env?.VITE_JENKINS_URL
+  if (fromEnv && String(fromEnv).trim()) {
+    return String(fromEnv).trim().replace(/\/?$/, '/')
+  }
+  const host =
+    typeof window !== 'undefined' && window.location?.hostname
+      ? window.location.hostname
+      : '192.168.157.128'
+  return `http://${host}:8081/`
+}
+
+function ExtLinkIcon() {
+  return (
+    <svg className="nav-ext-icon" width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M3.5 2.5h2v1H3.5A1.5 1.5 0 0 0 2 5v3.5A1.5 1.5 0 0 0 3.5 10H7a1.5 1.5 0 0 0 1.5-1.5v-2h1V8.5A2.5 2.5 0 0 1 7 11H3.5A2.5 2.5 0 0 1 1 8.5V5a2.5 2.5 0 0 1 2.5-2.5Zm3.75-.75H11v3.75h-1V3.207L5.854 7.354l-.708-.708L9.293 2.5H7.25v-1Z"
+      />
+    </svg>
+  )
+}
+
 function formatPollMs(ms) {
   if (ms == null || Number.isNaN(Number(ms))) return null
   const n = Number(ms)
@@ -287,6 +311,16 @@ export default function App() {
           >
             Capacity
           </button>
+          <a
+            className="nav-btn nav-btn-ext"
+            href={jenkinsUrl()}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open Jenkins CI in a new tab"
+          >
+            Jenkins
+            <ExtLinkIcon />
+          </a>
         </NavGroup>
       </nav>
 
