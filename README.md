@@ -187,7 +187,7 @@ Full table: [deploy/platform/README.md](deploy/platform/README.md#api).
 | GET | `/api/v1/browse`, POST `/api/v1/expand` | Address Space |
 | GET/POST | `/api/v1/devices/…/tags…` | CRUD / import / export / sync |
 | GET | `/api/v1/ws/stream` | live WebSocket |
-| GET | `/api/v1/diagnostics/logs` | ring log |
+| GET | `/api/v1/diagnostics/logs` | ring log (`opc_read` / `db_write`; ~30s `opc poll ok` summaries) |
 | POST | `/api/v1/diagnostics/reset` | clear ring log + Overview drop counters |
 | GET | `/api/v1/database/status` | DB status / capacity |
 | POST | `/api/v1/database/wipe-samples?confirm=wipe` | wipe historian samples (lab); optional `{"clear_tags":true}` |

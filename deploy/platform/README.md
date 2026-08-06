@@ -40,7 +40,7 @@ curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns%3D4%3Bi%3D4207'
 | DELETE | `/api/v1/devices/{id}/tags` | remove all tags on device |
 | PUT | `/api/v1/tags/{id}/value` | 501 until write phase — [docs/opc-write-mode.md](../../docs/opc-write-mode.md) |
 | GET | `/api/v1/ws/stream` | live samples WebSocket |
-| GET | `/api/v1/diagnostics/logs?category=&errors_only=&limit=` | OPC/DB ring log |
+| GET | `/api/v1/diagnostics/logs?category=&errors_only=&limit=` | OPC/DB ring log (`category`: `all` \| `opc_read` \| `db_write`; aliases `opc`/`db`) |
 | DELETE | `/api/v1/diagnostics/logs` | clear ring log |
 | POST | `/api/v1/diagnostics/reset` | clear ring log **and** last-hour incident counters (Overview alarms) |
 | GET | `/api/v1/diagnostics/capacity` | DB size, ETA, capacity policy fields |

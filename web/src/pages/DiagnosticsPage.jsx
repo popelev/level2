@@ -113,7 +113,10 @@ export default function DiagnosticsPage({ onError }) {
 
         <div className="diag-log-wrap">
           {entries.length === 0 ? (
-            <p className="muted">No log entries for this filter yet.</p>
+            <p className="muted">
+              No log entries for this filter yet. OPC read includes failures and ~30s poll
+              summaries; Overview <em>Reset alarms</em> / Clear empties the ring buffer.
+            </p>
           ) : (
             <table className="diag-log">
               <thead>
@@ -130,7 +133,13 @@ export default function DiagnosticsPage({ onError }) {
                   <tr key={`${e.time}-${i}`} className={`lvl-${e.level}`}>
                     <td className="mono small">{formatTime(e.time)}</td>
                     <td>{e.level}</td>
-                    <td>{e.category === 'opc_read' ? 'OPC' : 'DB'}</td>
+                    <td>
+                      {e.category === 'opc_read'
+                        ? 'OPC'
+                        : e.category === 'db_write'
+                          ? 'DB'
+                          : e.category || '—'}
+                    </td>
                     <td>
                       {e.message}
                       {e.count > 0 && <span className="muted"> · n={e.count}</span>}

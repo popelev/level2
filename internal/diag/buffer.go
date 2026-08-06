@@ -70,17 +70,33 @@ func (b *Buffer) Clear() {
 	b.mu.Unlock()
 }
 
+// NormalizeCategory maps UI/API aliases onto stored category ids.
+// Canonical: "all", "opc_read", "db_write".
+func NormalizeCategory(category string) string {
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case "", "all":
+		return "all"
+	case CategoryOPCRead, "opc", "opc-read", "opcread":
+		return CategoryOPCRead
+	case CategoryDBWrite, "db", "db-write", "dbwrite":
+		return CategoryDBWrite
+	default:
+		return category
+	}
+}
+
 // Query returns newest entries first, filtered.
 func (b *Buffer) Query(category string, errorsOnly bool, limit int) []Entry {
 	if limit <= 0 || limit > b.max {
 		limit = 500
 	}
+	category = NormalizeCategory(category)
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	out := make([]Entry, 0, limit)
 	for i := len(b.entries) - 1; i >= 0 && len(out) < limit; i-- {
 		e := b.entries[i]
-		if category != "" && category != "all" && e.Category != category {
+		if category != "all" && e.Category != category {
 			continue
 		}
 		if errorsOnly && !isErrorLevel(e.Level) {

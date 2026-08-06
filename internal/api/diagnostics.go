@@ -22,10 +22,7 @@ func (s *Server) handleDiagLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	category := q.Get("category")
-	if category == "" {
-		category = "all"
-	}
+	category := diag.NormalizeCategory(q.Get("category"))
 	errorsOnly := q.Get("errors_only") == "1" || q.Get("errors_only") == "true"
 	limit := parseIntDefault(q.Get("limit"), 300)
 	writeJSON(w, http.StatusOK, map[string]any{

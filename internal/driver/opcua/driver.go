@@ -81,6 +81,7 @@ func (d *Driver) Connect(ctx context.Context) error {
 	d.alive.Store(true)
 	d.nsCache = nil
 	d.log.Info("opcua connected", "endpoint", d.device.Endpoint, "device", d.device.ID, "user", d.device.Username)
+	diag.OPCRead(diag.LevelInfo, d.device.ID, "", "opc connected", d.device.Endpoint)
 	return nil
 }
 
@@ -127,6 +128,13 @@ func (d *Driver) Subscribe(ctx context.Context, tags []core.Tag, out chan<- core
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
+	// Periodic info so Diagnostics → OPC read is not empty when healthy.
+	const pollSummaryEvery = 30 * time.Second
+	var (
+		okPolls     int
+		lastSummary time.Time
+	)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -141,6 +149,19 @@ func (d *Driver) Subscribe(ctx context.Context, tags []core.Tag, out chan<- core
 					d.log.Error("opcua reconnect failed", "err", cerr)
 					diag.OPCRead(diag.LevelError, d.device.ID, "", "opc reconnect failed", cerr.Error())
 				}
+				continue
+			}
+			okPolls++
+			if lastSummary.IsZero() || time.Since(lastSummary) >= pollSummaryEvery {
+				diag.OPCRead(
+					diag.LevelInfo,
+					d.device.ID,
+					"",
+					"opc poll ok",
+					fmt.Sprintf("tags=%d interval=%s polls=%d", len(enabled), interval, okPolls),
+				)
+				okPolls = 0
+				lastSummary = time.Now()
 			}
 		}
 	}
