@@ -228,6 +228,7 @@ func (s *Store) UpsertDevice(dev core.Device) error {
 	if dev.Security == "" {
 		dev.Security = "None"
 	}
+	dev.PollConcurrency = core.NormalizePollConcurrency(dev.PollConcurrency)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.file.Devices {
@@ -304,6 +305,7 @@ func (s *Store) ApplyProject(devices []core.Device, replace bool) error {
 		if d.Security == "" {
 			d.Security = "None"
 		}
+		d.PollConcurrency = core.NormalizePollConcurrency(d.PollConcurrency)
 		d.Password = prevPass[d.ID]
 		if d.Tags == nil {
 			d.Tags = []core.Tag{}

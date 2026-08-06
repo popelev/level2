@@ -14,7 +14,7 @@ Source of truth: `internal/driver/opcua/driver.go` — the `Subscribe` method is
 
 1. The collector gathers the device's enabled leaf tags.
 2. It takes the **minimum** `interval_ms` among tags (one ticker per device).
-3. On each tick `pollOnce` → `pollBatch`: OPC UA **Read** in batches of **`maxNodesPerRead = 100`** (guard against `BadTooManyOperations` on Siemens and others). Up to **`maxConcurrentReads = 4`** batches run in parallel (errgroup) so ~3k tags (~32–33 batches) are not fully sequential wall-clock.
+3. On each tick `pollOnce` → `pollBatch`: OPC UA **Read** in batches of **`maxNodesPerRead = 100`** (guard against `BadTooManyOperations` on Siemens and others). Up to **`poll_concurrency`** parallel Read batches (device setting, default **4**, clamp **1–16**; errgroup) so ~3k tags (~32–33 batches) are not fully sequential wall-clock.
 4. Every successful (and bad) sample goes to the `out` channel.
 5. `api.FanIn` for **every** sample:
    - updates the Live store (`live.Update`);
@@ -33,7 +33,7 @@ sequenceDiagram
   participant Hist as Historian / Timescale
 
   loop every min(interval_ms)
-    Drv->>PLC: Read (batches ≤100 NodeId, ≤4 concurrent)
+    Drv->>PLC: Read (batches ≤100 NodeId, poll_concurrency parallel)
     PLC-->>Drv: DataValues
     loop each tag
       Drv->>Fan: Sample
@@ -302,19 +302,20 @@ File: `web/src/components/TagTreeTable.jsx` (+ `DbWriteListPage`, `tagTree.js`).
 
 | Component | Path |
 |-----------|------|
-| Poll-as-Subscribe | `internal/driver/opcua/driver.go` (`Subscribe`, `pollOnce`, `maxNodesPerRead`, `maxConcurrentReads`) + `poll_batch.go` |
+| Poll-as-Subscribe | `internal/driver/opcua/driver.go` (`Subscribe`, `pollOnce`, `maxNodesPerRead`) + `poll_batch.go`; device `poll_concurrency` in `core.Device` / Servers UI |
 | FanIn | `internal/api/api.go` |
 | Live store | `internal/store/live.go` |
 | Tag / Driver API | `internal/core/types.go` |
 | Metrics | `internal/metrics/metrics.go` |
 | DB write list UI | `web/src/pages/DbWriteListPage.jsx`, `web/src/components/TagTreeTable.jsx` |
 | Architecture (as-is) | [README.md](../README.md) |
+
 ---
 
 ## 12. Poll performance note (large tag sets)
 
 With ~3200 leaf tags and `maxNodesPerRead = 100`, a **fully sequential** poll is ~32 Read round-trips. On a lab S7-1500 that often yields **wall-clock cycle ≈ 6 s**, so Overview `poll_avg_ms` stays ~6000 even when `interval_ms = 1000` (ticker cannot go faster than one full `pollOnce`).
 
-**Mitigation (current):** parallelize Read batches with a small concurrency cap (`maxConcurrentReads = 4`) — same batch size (Siemens-safe), fewer sequential RTT waves (~8 instead of ~32). Helpers: `chunkRanges`, `pollReadConcurrency` in `poll_batch.go`.
+**Mitigation (current):** parallelize Read batches with per-device **`poll_concurrency`** (default **4**, clamp **1–16**; Servers → Edit → **Parallel reads**, or YAML `devices[].poll_concurrency`). Same batch size 100 (Siemens-safe); with concurrency 4, ~8 RTT waves instead of ~32. Helpers: `core.NormalizePollConcurrency`, `chunkRanges` / `pollReadConcurrency`. Changing the setting recreates the device driver.
 
 **Not done here:** raising NodesToRead above 100 (risky `BadTooManyOperations`); interval-bucket workers (helps only when tags have mixed intervals); Phase 2 OPC Subscription (still the long-term path for true on-change acquisition and lower client Read load).

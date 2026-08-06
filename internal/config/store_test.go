@@ -225,3 +225,25 @@ func TestDeleteTagAndDevice(t *testing.T) {
 		t.Fatal("expected empty")
 	}
 }
+
+func TestUpsertDevice_NormalizesPollConcurrency(t *testing.T) {
+	s := testStore(t, core.Device{ID: "plc", Endpoint: "opc.tcp://x:4840", Security: "None"})
+	if err := s.UpsertDevice(core.Device{ID: "plc", Endpoint: "opc.tcp://x:4840", Security: "None", PollConcurrency: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Devices()[0].PollConcurrency; got != core.DefaultPollConcurrency {
+		t.Fatalf("default: got %d want %d", got, core.DefaultPollConcurrency)
+	}
+	if err := s.UpsertDevice(core.Device{ID: "plc", Endpoint: "opc.tcp://x:4840", Security: "None", PollConcurrency: 99}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Devices()[0].PollConcurrency; got != core.MaxPollConcurrency {
+		t.Fatalf("clamp: got %d want %d", got, core.MaxPollConcurrency)
+	}
+	if err := s.UpsertDevice(core.Device{ID: "plc", Endpoint: "opc.tcp://x:4840", Security: "None", PollConcurrency: 2}); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.Devices()[0].PollConcurrency; got != 2 {
+		t.Fatalf("keep: got %d", got)
+	}
+}

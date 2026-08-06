@@ -92,6 +92,27 @@ type Tag struct {
 	Mode PollMode `yaml:"mode,omitempty" json:"mode,omitempty"`
 }
 
+// Parallel OPC Read workers per device poll (batches of ≤100 nodes).
+const (
+	DefaultPollConcurrency = 4
+	MinPollConcurrency     = 1
+	MaxPollConcurrency     = 16
+)
+
+// NormalizePollConcurrency applies default (4) when n≤0 and clamps to 1–16.
+func NormalizePollConcurrency(n int) int {
+	if n <= 0 {
+		return DefaultPollConcurrency
+	}
+	if n < MinPollConcurrency {
+		return MinPollConcurrency
+	}
+	if n > MaxPollConcurrency {
+		return MaxPollConcurrency
+	}
+	return n
+}
+
 // Device is an OPC UA endpoint.
 type Device struct {
 	ID       string `yaml:"id" json:"id"`
@@ -99,7 +120,9 @@ type Device struct {
 	Username string `yaml:"username" json:"username"`
 	Password string `yaml:"password" json:"password"` // may come from env
 	Security string `yaml:"security" json:"security"` // "None" for lab
-	Tags     []Tag  `yaml:"tags" json:"tags"`
+	// PollConcurrency is how many OPC Read batches may run in parallel for this device (1–16; default 4).
+	PollConcurrency int    `yaml:"poll_concurrency,omitempty" json:"poll_concurrency,omitempty"`
+	Tags            []Tag  `yaml:"tags" json:"tags"`
 }
 
 // Driver reads live values from a field protocol.

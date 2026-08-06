@@ -154,7 +154,7 @@ RFC3339 `from` / `to`; `limit` caps rows. **503** if historian unavailable.
 | `GET /api/v1/status/summary` | Quality counts, recent errors, write rates |
 | `GET /api/v1/diagnostics/logs?category=&errors_only=&limit=` | Ring log; `category` = `all` \| `opc_read` \| `db_write` (aliases `opc` / `db`). OPC includes failures + ~30s `opc poll ok` |
 | `POST /api/v1/diagnostics/reset` | Clear diagnostics ring + last-hour incident counters (Overview alarms) |
-| `GET /api/v1/devices` | `connected` per device |
+| `GET /api/v1/devices` | `connected`, `poll_concurrency` (parallel Read batches, 1–16, default 4) |
 
 ---
 

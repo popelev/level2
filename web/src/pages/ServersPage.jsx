@@ -6,6 +6,7 @@ const emptyForm = {
   username: '',
   password: '',
   security: 'None',
+  poll_concurrency: 4,
 }
 
 export default function ServersPage({ devices, onChanged, onError }) {
@@ -29,6 +30,7 @@ export default function ServersPage({ devices, onChanged, onError }) {
       username: d.username || '',
       password: '',
       security: d.security || 'None',
+      poll_concurrency: d.poll_concurrency > 0 ? d.poll_concurrency : 4,
     })
     setSelectedId(d.id)
     setShowForm(true)
@@ -120,6 +122,10 @@ export default function ServersPage({ devices, onChanged, onError }) {
                 <div><span className="muted">username</span><div>{selected.username || '—'}</div></div>
                 <div><span className="muted">connected</span><div className={selected.connected ? 'good' : 'badq'}>{String(selected.connected)}</div></div>
                 <div><span className="muted">monitored tags</span><div>{selected.tag_count}</div></div>
+                <div>
+                  <span className="muted">parallel reads</span>
+                  <div>{selected.poll_concurrency > 0 ? selected.poll_concurrency : 4}</div>
+                </div>
               </div>
               <div className="row">
                 <button type="button" onClick={() => openEdit(selected)}>Edit</button>
@@ -186,6 +192,23 @@ export default function ServersPage({ devices, onChanged, onError }) {
                   <option>SignAndEncrypt</option>
                 </select>
               </label>
+              <label>
+                Parallel reads
+                <input
+                  type="number"
+                  min={1}
+                  max={16}
+                  required
+                  value={editForm.poll_concurrency}
+                  onChange={(e) => setEditForm({
+                    ...editForm,
+                    poll_concurrency: Math.min(16, Math.max(1, Number(e.target.value) || 1)),
+                  })}
+                />
+              </label>
+              <p className="hint">
+                Concurrent OPC Read batches (each <=100 nodes) for this server. Raise to shorten poll cycles on large tag sets; lower if the PLC drops the session.
+              </p>
               <div className="row">
                 <button type="submit">Save</button>
                 <button type="button" className="secondary" onClick={() => setShowForm(false)}>Cancel</button>

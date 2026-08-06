@@ -202,17 +202,13 @@ func PrepareTags(tags []core.Tag) ([]TagView, error) {
 // Siemens and other servers reject very large Read requests (BadTooManyOperations).
 const maxNodesPerRead = 100
 
-// maxConcurrentReads limits in-flight Read requests per device poll.
-// Sequential batches of 100 with ~3k tags wall-clock ~6s; limited parallelism
-// cuts cycle time without raising NodesToRead (Siemens-safe).
-const maxConcurrentReads = 4
-
 func (d *Driver) pollOnce(ctx context.Context, tags []TagView, out chan<- core.Sample) error {
 	ranges := chunkRanges(len(tags), maxNodesPerRead)
 	if len(ranges) == 0 {
 		return nil
 	}
-	workers := pollReadConcurrency(len(ranges), maxConcurrentReads)
+	limit := core.NormalizePollConcurrency(d.device.PollConcurrency)
+	workers := pollReadConcurrency(len(ranges), limit)
 	if workers <= 1 {
 		for _, r := range ranges {
 			if err := d.pollBatch(ctx, tags[r[0]:r[1]], out); err != nil {

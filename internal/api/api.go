@@ -162,19 +162,21 @@ func (s *Server) handleDevices(w http.ResponseWriter, r *http.Request) {
 		status = s.DevHub.Status()
 	}
 	type dto struct {
-		ID        string `json:"id"`
-		Endpoint  string `json:"endpoint"`
-		Security  string `json:"security"`
-		Username  string `json:"username,omitempty"`
-		TagCount  int    `json:"tag_count"`
-		Connected bool   `json:"connected"`
+		ID              string `json:"id"`
+		Endpoint        string `json:"endpoint"`
+		Security        string `json:"security"`
+		Username        string `json:"username,omitempty"`
+		PollConcurrency int    `json:"poll_concurrency"`
+		TagCount        int    `json:"tag_count"`
+		Connected       bool   `json:"connected"`
 	}
 	out := make([]dto, 0, len(devs))
 	for _, d := range devs {
 		out = append(out, dto{
 			ID: d.ID, Endpoint: d.Endpoint, Security: d.Security,
 			Username: d.Username, TagCount: len(d.Tags),
-			Connected: status[d.ID],
+			PollConcurrency: core.NormalizePollConcurrency(d.PollConcurrency),
+			Connected:       status[d.ID],
 		})
 	}
 	writeJSON(w, http.StatusOK, out)

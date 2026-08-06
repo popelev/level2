@@ -21,6 +21,8 @@ devices:
     username: ""
     password: ""
     security: "None"
+    # Parallel OPC Read batches (1-16; default 4). Helps large tag sets approach interval_ms.
+    poll_concurrency: 4
     tags:
       - id: opc_measure_rvalue
         node_id: "ns=4;i=4208"

@@ -89,6 +89,7 @@ func Load(path string) (*File, error) {
 		if d.Security == "" {
 			d.Security = "None"
 		}
+		d.PollConcurrency = core.NormalizePollConcurrency(d.PollConcurrency)
 		if d.Endpoint == "" {
 			return nil, fmt.Errorf("device %q: endpoint required", d.ID)
 		}
