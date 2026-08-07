@@ -128,6 +128,7 @@ func main() {
 		ReadyCheck: func() bool {
 			return useSim || devHub.AnyConnected()
 		},
+		OPCWriteEnabled: cfgStore.OPCWriteEnabled,
 		OnDeviceChanged: func(deviceID string, removed bool) {
 			if removed {
 				devHub.Remove(ctx, deviceID)

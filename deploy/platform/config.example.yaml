@@ -2,10 +2,12 @@
 #
 # Secrets via env: DATABASE_URL, PLC_OPC_ENDPOINT, OPC_UA_USERNAME, OPC_UA_PASSWORD
 # PLC-off browse/expand: LEVEL2_SIM_BROWSER=1
+# PLC write API: opc_write_enabled / LEVEL2_OPC_WRITE_ENABLED (default false)
 
 listen: ":8080"
 spool_dir: "/var/lib/level2/spool"
 ui_dir: "/usr/share/level2/ui"
+opc_write_enabled: false
 
 database:
   url: "postgres://level2:level2_change_me@timescaledb:5432/level2?sslmode=disable"

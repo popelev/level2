@@ -42,6 +42,19 @@ func (s *Store) Devices() []core.Device {
 	return snap.Devices
 }
 
+// OPCWriteEnabled reports whether PLC write API is allowed (opc_write_enabled / LEVEL2_OPC_WRITE_ENABLED).
+func (s *Store) OPCWriteEnabled() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.file == nil {
+		return false
+	}
+	return s.file.OPCWriteEnabled
+}
+
 func (s *Store) AllTags() []core.Tag {
 	var tags []core.Tag
 	for _, d := range s.Devices() {

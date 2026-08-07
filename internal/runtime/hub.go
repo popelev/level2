@@ -110,6 +110,21 @@ func (h *Hub) Entry(id string) (*Entry, bool) {
 	return e, ok
 }
 
+// ValueWriter returns a core.ValueWriter for the device if the driver supports writes.
+func (h *Hub) ValueWriter(deviceID string) (core.ValueWriter, error) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	ent, ok := h.entries[deviceID]
+	if !ok || ent.Driver == nil {
+		return nil, fmt.Errorf("no driver for device %q", deviceID)
+	}
+	w, ok := ent.Driver.(core.ValueWriter)
+	if !ok {
+		return nil, fmt.Errorf("device %q does not support OPC write", deviceID)
+	}
+	return w, nil
+}
+
 func (h *Hub) newEntry(ctx context.Context, dev core.Device) (*Entry, error) {
 	if h.useSim {
 		demo := simbrowser.NewDemo()
@@ -127,6 +142,17 @@ func (h *Hub) newEntry(ctx context.Context, dev core.Device) (*Entry, error) {
 		h.log.Warn("opc connect", "device", dev.ID, "err", err)
 	}
 	return ent, nil
+}
+
+// InjectDriver registers an existing driver (used by unit tests for write mocks).
+func (h *Hub) InjectDriver(dev core.Device, drv core.Driver, br core.Browser) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if old, ok := h.entries[dev.ID]; ok && old.Driver != nil {
+		_ = old.Driver.Disconnect(context.Background())
+	}
+	connected := drv != nil && drv.Connected()
+	h.entries[dev.ID] = &Entry{Device: dev, Driver: drv, Browser: br, Connected: connected}
 }
 
 type alwaysOn struct{}

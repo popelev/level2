@@ -39,6 +39,8 @@ type Server struct {
 	Incidents *diag.IncidentTracker
 	// ReadyCheck mirrors /readyz (optional; falls back to DevHub.AnyConnected).
 	ReadyCheck func() bool
+	// OPCWriteEnabled gates PUT …/value (optional; falls back to Cfg.OPCWriteEnabled, else false).
+	OPCWriteEnabled func() bool
 	// OnDeviceChanged is called after device create/update/delete (optional).
 	OnDeviceChanged func(deviceID string, removed bool)
 }
@@ -98,13 +100,14 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/devices/{id}/tags", s.handleUpsertTag)
 	mux.HandleFunc("PUT /api/v1/devices/{id}/tags/{tagId}", s.handleUpsertTag)
 	mux.HandleFunc("DELETE /api/v1/devices/{id}/tags/{tagId}", s.handleDeleteTag)
-	mux.HandleFunc("PUT /api/v1/tags/{id}/value", s.handleWriteNotImplemented)
+	mux.HandleFunc("PUT /api/v1/tags/{id}/value", s.handleWriteTagValue)
 	mux.HandleFunc("GET /api/v1/ws/stream", s.handleWS)
 	s.mountProject(mux)
 	s.mountDiagnostics(mux)
 	s.mountDatabase(mux)
 	s.mountTagBulk(mux)
 	s.mountStatus(mux)
+	s.mountOpenAPI(mux)
 }
 
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
@@ -351,10 +354,6 @@ func (s *Server) handleExpandStream(w http.ResponseWriter, r *http.Request, br c
 		return
 	}
 	writeEv(map[string]any{"type": "result", "tags": tags})
-}
-
-func (s *Server) handleWriteNotImplemented(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "write to PLC not implemented yet", http.StatusNotImplemented)
 }
 
 func (s *Server) handleExportTagsExcel(w http.ResponseWriter, r *http.Request) {

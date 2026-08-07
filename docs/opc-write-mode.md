@@ -4,7 +4,7 @@ Design for **writing process values** from Level2 into OPC UA nodes (Siemens S7-
 
 External programs (any language) should call the same REST write once it exists — gateway role, read paths, and client contract: [external-client-api.md](external-client-api.md).
 
-**Status:** not implemented. REST stub returns **501**. This document is the plan only.
+**Status:** Phase 1 MVP implemented. REST `PUT /api/v1/tags/{id}/value` writes when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` is true (default **off** → **403**). OpenAPI: [`api/openapi.yaml`](../api/openapi.yaml), Swagger `/docs`.
 
 ---
 
@@ -12,13 +12,13 @@ External programs (any language) should call the same REST write once it exists 
 
 | Area | Today |
 |------|--------|
-| OPC driver | `internal/driver/opcua/driver.go` — Connect + periodic **Read** (`Subscribe` = poll). No `Write`. |
+| OPC driver | `internal/driver/opcua/driver.go` — Connect + periodic **Read** (`Subscribe` = poll) + **`WriteValue`**. |
 | Library | [`github.com/gopcua/opcua` v0.7.1](https://github.com/gopcua/opcua) — `Client.Write(ctx, *ua.WriteRequest)` exists; unused. |
-| REST | `PUT /api/v1/tags/{id}/value` → `handleWriteNotImplemented` → **501** (“write to PLC not implemented yet”). Covered by `api_test.go`. |
-| Tag model | `id`, `node_id`, `path`, `datatype`, `enabled`, `interval_ms`, optional `mode` (`poll` \| `subscribe`). **No** `writable` / write ACL flag. |
+| REST | `PUT /api/v1/tags/{id}/value` — implemented; gated by `opc_write_enabled` (default off → **403**). |
+| Tag model | `id`, `node_id`, `path`, `datatype`, `enabled`, `interval_ms`, optional `mode` (`poll` \| `subscribe`). **No** `writable` / write ACL flag yet (Phase 2). |
 | Live / FanIn | Poll → Live + WS always; Timescale only on value/quality change ([Phase 1 suppress](opc-subscription-mode.md)). |
 | Auth | Open lab API — no HTTP auth / roles. |
-| Diagnostics | Categories `opc_read`, `db_write` only — no `opc_write` yet. |
+| Diagnostics | Categories `opc_read`, `opc_write`, `db_write`. |
 | UI | **DB write list** shows live value as read-only text. **Monitor / Address Space** adds tags to the list (“Write to DB” / “Write selected to DB” = *register for monitoring*, not PLC write). Confirm dialogs exist for destructive config ops only. |
 
 ```mermaid
@@ -393,7 +393,8 @@ Disable Set controls when:
 
 | Component | Path |
 |-----------|------|
-| Write stub (501) | `internal/api/api.go` (`handleWriteNotImplemented`) |
+| Write handler | `internal/api/write.go` (`handleWriteTagValue`) |
+| Write coerce / driver | `internal/driver/opcua/write_value.go` |
 | Poll / client lock | `internal/driver/opcua/driver.go` |
 | Read value mapping | `internal/driver/opcua/value.go` |
 | OPC DataType resolve | `internal/driver/opcua/datatype.go` |

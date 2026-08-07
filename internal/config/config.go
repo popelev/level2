@@ -16,7 +16,9 @@ type File struct {
 	Database Database      `yaml:"database"`
 	SpoolDir string        `yaml:"spool_dir"`
 	UIDir    string        `yaml:"ui_dir"`
-	Devices  []core.Device `yaml:"devices"`
+	// OPCWriteEnabled gates PUT /api/v1/tags/{id}/value. Default false; override with LEVEL2_OPC_WRITE_ENABLED.
+	OPCWriteEnabled bool          `yaml:"opc_write_enabled"`
+	Devices         []core.Device `yaml:"devices"`
 }
 
 // Full-disk policies when used bytes reach the capacity percent limit.
@@ -83,6 +85,13 @@ func Load(path string) (*File, error) {
 	if v := os.Getenv("UI_DIR"); v != "" {
 		f.UIDir = v
 	}
+	if v := strings.TrimSpace(os.Getenv("LEVEL2_OPC_WRITE_ENABLED")); v != "" {
+		enabled, err := parseEnvBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("LEVEL2_OPC_WRITE_ENABLED: %w", err)
+		}
+		f.OPCWriteEnabled = enabled
+	}
 	for i := range f.Devices {
 		d := &f.Devices[i]
 		ApplyDeviceEnvOverlay(d)
@@ -134,6 +143,17 @@ func normalizeDatabaseCapacity(db *Database) error {
 		return fmt.Errorf("database.full_policy must be one of stop|drop_oldest|rotate|expand_limit, got %q", db.FullPolicy)
 	}
 	return nil
+}
+
+func parseEnvBool(v string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("want true/false/1/0, got %q", v)
+	}
 }
 
 // ValidFullPolicy reports whether p is a known full-disk policy.

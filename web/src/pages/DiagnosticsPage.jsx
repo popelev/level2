@@ -4,6 +4,7 @@ import { getJSON } from '../api.js'
 const CATEGORIES = [
   { id: 'all', label: 'All' },
   { id: 'opc_read', label: 'OPC read' },
+  { id: 'opc_write', label: 'OPC write' },
   { id: 'db_write', label: 'DB write' },
 ]
 
@@ -135,9 +136,11 @@ export default function DiagnosticsPage({ onError }) {
                     <td>{e.level}</td>
                     <td>
                       {e.category === 'opc_read'
-                        ? 'OPC'
+                        ? 'OPC read'
+                        : e.category === 'opc_write'
+                          ? 'OPC write'
                         : e.category === 'db_write'
-                          ? 'DB'
+                          ? 'DB write'
                           : e.category || '—'}
                     </td>
                     <td>

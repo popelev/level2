@@ -209,7 +209,7 @@ export default function OverviewPage({ health, ready, onError, onNavigate, onSta
                       <tr key={`${e.time}-${i}`} className={`lvl-${e.level}`}>
                         <td className="mono small">{formatTime(e.time)}</td>
                         <td>{e.level}</td>
-                        <td>{e.category === 'opc_read' ? 'OPC' : e.category === 'db_write' ? 'DB' : e.category}</td>
+                        <td>{e.category === 'opc_read' ? 'OPC' : e.category === 'opc_write' ? 'Write' : e.category === 'db_write' ? 'DB' : e.category}</td>
                         <td>
                           {e.message}
                           {e.device_id && <span className="muted small"> · {e.device_id}</span>}

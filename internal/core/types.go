@@ -134,6 +134,12 @@ type Driver interface {
 	Connected() bool
 }
 
+// ValueWriter writes a scalar value to a configured tag's OPC node (optional driver capability).
+// value is a Go scalar already coerced to the tag datatype (bool, int64, uint32/uint64, float64, string, time.Time).
+type ValueWriter interface {
+	WriteValue(ctx context.Context, tag Tag, value any) error
+}
+
 // Historian stores time series.
 type Historian interface {
 	EnsureSchema(ctx context.Context) error

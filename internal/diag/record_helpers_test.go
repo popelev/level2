@@ -9,15 +9,19 @@ func TestRecordHelpers_DefaultBuffer(t *testing.T) {
 
 	OPCRead(LevelWarn, "dev", "tag", "poll failed", "detail")
 	DBWrite(LevelInfo, "wrote", "batch", 3)
+	OPCWrite(LevelInfo, "dev", "tag", "opc write ok", "node=ns=4;i=1")
 	got := b.Query("all", false, 10)
-	if len(got) != 2 {
+	if len(got) != 3 {
 		t.Fatalf("%#v", got)
 	}
-	if got[0].Category != CategoryDBWrite || got[0].Count != 3 {
+	if got[0].Category != CategoryOPCWrite || got[0].TagID != "tag" {
 		t.Fatalf("newest %#v", got[0])
 	}
-	if got[1].Category != CategoryOPCRead || got[1].TagID != "tag" {
-		t.Fatalf("older %#v", got[1])
+	if got[1].Category != CategoryDBWrite || got[1].Count != 3 {
+		t.Fatalf("mid %#v", got[1])
+	}
+	if got[2].Category != CategoryOPCRead || got[2].TagID != "tag" {
+		t.Fatalf("older %#v", got[2])
 	}
 }
 

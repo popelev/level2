@@ -1,0 +1,399 @@
+openapi: 3.0.3
+info:
+  title: Level2 Collector API
+  description: |
+    REST and WebSocket API for the Level2 OPC UA collector.
+    Math models and external clients talk only to this API (`LEVEL2_API_URL`);
+    they never embed an OPC stack.
+
+    **Canonical contract** for integrations. See also:
+    - docs/external-client-api.md
+    - docs/l2-model-integration.md
+    - docs/opc-write-mode.md
+
+    PLC write (`PUT /api/v1/tags/{id}/value`) requires `opc_write_enabled` /
+    `LEVEL2_OPC_WRITE_ENABLED=true` (default off → HTTP 403).
+  version: 1.0.0
+  contact:
+    name: popelev / Level2
+
+servers:
+  - url: http://127.0.0.1:8080
+    description: Lab collector (same origin as Admin UI)
+
+tags:
+  - name: health
+  - name: tags
+  - name: devices
+  - name: browse
+  - name: diagnostics
+  - name: database
+  - name: docs
+
+paths:
+  /healthz:
+    get:
+      tags: [health]
+      summary: Liveness
+      responses:
+        "200":
+          description: Process up
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /readyz:
+    get:
+      tags: [health]
+      summary: Readiness (OPC connected when not sim)
+      responses:
+        "200":
+          description: Ready
+        "503":
+          description: Not connected
+
+  /api/v1/openapi.yaml:
+    get:
+      tags: [docs]
+      summary: OpenAPI 3 specification (YAML)
+      responses:
+        "200":
+          description: Spec
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /docs:
+    get:
+      tags: [docs]
+      summary: Swagger UI
+      responses:
+        "200":
+          description: HTML Swagger UI for this API
+
+  /api/v1/tags:
+    get:
+      tags: [tags]
+      summary: List tags with live samples
+      parameters:
+        - name: device_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tag rows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TagValue"
+
+  /api/v1/tags/{id}/value:
+    get:
+      tags: [tags]
+      summary: Last live sample for a tag
+      parameters:
+        - $ref: "#/components/parameters/TagID"
+      responses:
+        "200":
+          description: Sample
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Sample"
+        "404":
+          description: Unknown tag or no sample yet
+    put:
+      tags: [tags]
+      summary: Write scalar value to PLC (OPC UA)
+      description: |
+        Requires `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED`.
+        Coerces JSON to the tag's configured datatype, then OPC Write.
+      parameters:
+        - $ref: "#/components/parameters/TagID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WriteValueRequest"
+            examples:
+              float:
+                value:
+                  value: 42.5
+                  device_id: s7_1500
+              bool:
+                value:
+                  value: true
+                  device_id: s7_1500
+      responses:
+        "200":
+          description: Write accepted by OPC (Status Good)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WriteValueResponse"
+        "400":
+          description: Bad JSON / coercion / ambiguous tag
+        "403":
+          description: Write disabled (opc_write_enabled=false)
+        "404":
+          description: Unknown tag
+        "409":
+          description: Device not connected / no writer
+        "502":
+          description: OPC transport or StatusCode not Good
+
+  /api/v1/tags/{id}/history:
+    get:
+      tags: [tags]
+      summary: Historian query
+      parameters:
+        - $ref: "#/components/parameters/TagID"
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Samples
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Sample"
+        "503":
+          description: Historian unavailable
+
+  /api/v1/devices:
+    get:
+      tags: [devices]
+      summary: List devices and connection status
+      responses:
+        "200":
+          description: Devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Device"
+
+  /api/v1/browse:
+    get:
+      tags: [browse]
+      summary: Browse OPC address space children
+      parameters:
+        - name: node_id
+          in: query
+          schema:
+            type: string
+        - name: device_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Browse nodes
+
+  /api/v1/expand:
+    post:
+      tags: [browse]
+      summary: Expand structure to leaf tags (SSE or JSON)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                node_id:
+                  type: string
+                parent_tag_id:
+                  type: string
+                max_depth:
+                  type: integer
+                device_id:
+                  type: string
+      responses:
+        "200":
+          description: Expanded tags / event stream
+
+  /api/v1/ws/stream:
+    get:
+      tags: [tags]
+      summary: WebSocket live sample stream
+      description: |
+        Upgrade to WebSocket. Server pushes one JSON Sample per message.
+        Client filters by tag_id locally (server-side filter is phase 2–3).
+      responses:
+        "101":
+          description: Switching Protocols
+
+  /api/v1/diagnostics/logs:
+    get:
+      tags: [diagnostics]
+      summary: Diagnostics ring buffer
+      parameters:
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [all, opc_read, db_write, opc_write]
+        - name: errors_only
+          in: query
+          schema:
+            type: boolean
+        - name: limit
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Log entries
+
+  /api/v1/status/summary:
+    get:
+      tags: [diagnostics]
+      summary: Overview status counters
+      responses:
+        "200":
+          description: Summary JSON
+
+components:
+  parameters:
+    TagID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+
+  schemas:
+    Sample:
+      type: object
+      required: [time, tag_id, quality]
+      properties:
+        time:
+          type: string
+          format: date-time
+        tag_id:
+          type: string
+        value_num:
+          type: number
+          nullable: true
+        value_text:
+          type: string
+          nullable: true
+        value_bool:
+          type: boolean
+          nullable: true
+        quality:
+          type: integer
+          description: "0=Good, 1=Bad"
+
+    Tag:
+      type: object
+      properties:
+        id:
+          type: string
+        node_id:
+          type: string
+        path:
+          type: string
+        datatype:
+          type: string
+          enum: [bool, int64, uint, float64, string, datetime]
+        enabled:
+          type: boolean
+        interval_ms:
+          type: integer
+        mode:
+          type: string
+          enum: [poll, subscribe]
+
+    TagValue:
+      type: object
+      properties:
+        device_id:
+          type: string
+        tag:
+          $ref: "#/components/schemas/Tag"
+        sample:
+          $ref: "#/components/schemas/Sample"
+        updated_at:
+          type: string
+          format: date-time
+        poll_avg_ms:
+          type: number
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+        endpoint:
+          type: string
+        security:
+          type: string
+        username:
+          type: string
+        poll_concurrency:
+          type: integer
+        tag_count:
+          type: integer
+        connected:
+          type: boolean
+
+    WriteValueRequest:
+      type: object
+      properties:
+        value:
+          description: Preferred scalar (number, bool, or string)
+          oneOf:
+            - type: number
+            - type: boolean
+            - type: string
+        value_num:
+          type: number
+        value_text:
+          type: string
+        value_bool:
+          type: boolean
+        device_id:
+          type: string
+          description: Required when tag_id exists on multiple devices
+      description: Provide exactly one of value | value_num | value_text | value_bool
+
+    WriteValueResponse:
+      type: object
+      properties:
+        tag_id:
+          type: string
+        device_id:
+          type: string
+        node_id:
+          type: string
+        status:
+          type: string
+          example: Good
+        written:
+          $ref: "#/components/schemas/Sample"
+        verified:
+          type: boolean
+          description: Always false in MVP (write-then-verify is phase 3)

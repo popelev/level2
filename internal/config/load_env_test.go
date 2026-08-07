@@ -65,6 +65,7 @@ devices:
 	t.Setenv("UI_DIR", "/env/ui")
 	t.Setenv("LEVEL2_DB_CAPACITY_PERCENT", "70")
 	t.Setenv("LEVEL2_DB_FULL_POLICY", "stop")
+	t.Setenv("LEVEL2_OPC_WRITE_ENABLED", "true")
 	f2, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -77,6 +78,9 @@ devices:
 	}
 	if f2.Database.CapacityPercent != 70 || f2.Database.FullPolicy != FullPolicyStop {
 		t.Fatalf("capacity %+v", f2.Database)
+	}
+	if !f2.OPCWriteEnabled {
+		t.Fatal("expected opc write enabled from env")
 	}
 }
 

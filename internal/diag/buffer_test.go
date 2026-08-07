@@ -26,6 +26,8 @@ func TestNormalizeCategory(t *testing.T) {
 		"db_write":  CategoryDBWrite,
 		"db":        CategoryDBWrite,
 		"DB-WRITE":  CategoryDBWrite,
+		"opc_write": CategoryOPCWrite,
+		"write":     CategoryOPCWrite,
 		"other":     "other",
 	}
 	for in, want := range cases {

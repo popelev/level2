@@ -7,8 +7,9 @@ import (
 )
 
 const (
-	CategoryOPCRead = "opc_read"
-	CategoryDBWrite = "db_write"
+	CategoryOPCRead  = "opc_read"
+	CategoryDBWrite  = "db_write"
+	CategoryOPCWrite = "opc_write"
 )
 
 const (
@@ -71,7 +72,7 @@ func (b *Buffer) Clear() {
 }
 
 // NormalizeCategory maps UI/API aliases onto stored category ids.
-// Canonical: "all", "opc_read", "db_write".
+// Canonical: "all", "opc_read", "db_write", "opc_write".
 func NormalizeCategory(category string) string {
 	switch strings.ToLower(strings.TrimSpace(category)) {
 	case "", "all":
@@ -80,6 +81,8 @@ func NormalizeCategory(category string) string {
 		return CategoryOPCRead
 	case CategoryDBWrite, "db", "db-write", "dbwrite":
 		return CategoryDBWrite
+	case CategoryOPCWrite, "opc-write", "opcwrite", "write":
+		return CategoryOPCWrite
 	default:
 		return category
 	}
@@ -137,5 +140,14 @@ func DBWrite(level, message, detail string, count int) {
 	record(Entry{
 		Level: level, Category: CategoryDBWrite,
 		Message: message, Detail: detail, Count: count,
+	})
+}
+
+// OPCWrite logs OPC UA write attempts (REST PUT → PLC).
+func OPCWrite(level, deviceID, tagID, message, detail string) {
+	record(Entry{
+		Level: level, Category: CategoryOPCWrite,
+		DeviceID: deviceID, TagID: tagID,
+		Message: message, Detail: detail,
 	})
 }

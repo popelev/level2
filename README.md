@@ -187,13 +187,13 @@ Full table: [deploy/platform/README.md](deploy/platform/README.md#api).
 | GET | `/api/v1/browse`, POST `/api/v1/expand` | Address Space |
 | GET/POST | `/api/v1/devices/…/tags…` | CRUD / import / export / sync |
 | GET | `/api/v1/ws/stream` | live WebSocket |
-| GET | `/api/v1/diagnostics/logs` | ring log (`opc_read` / `db_write`; ~30s `opc poll ok` summaries) |
+| GET | `/api/v1/diagnostics/logs` | ring log (`opc_read` / `opc_write` / `db_write`; ~30s `opc poll ok` summaries) |
 | POST | `/api/v1/diagnostics/reset` | clear ring log + Overview drop counters |
 | GET | `/api/v1/database/status` | DB status / capacity |
 | POST | `/api/v1/database/wipe-samples?confirm=wipe` | wipe historian samples (lab); clears Live + re-seeds from Live snapshot; optional `{"clear_tags":true}` |
 | GET | `/metrics` | Prometheus |
 
-Writing values to the PLC (`PUT /api/v1/tags/{id}/value`) is still **501** — design: [docs/opc-write-mode.md](docs/opc-write-mode.md). On-change historian / subscription: [docs/opc-subscription-mode.md](docs/opc-subscription-mode.md). Datatype expand + Sync: [docs/opc-datatype-sync.md](docs/opc-datatype-sync.md). External programs (Python/C#/JS/…) as HTTP/WS clients: [docs/external-client-api.md](docs/external-client-api.md). Capacity / wipe: [docs/db-capacity-policy.md](docs/db-capacity-policy.md).
+Writing values to the PLC: `PUT /api/v1/tags/{id}/value` (requires `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED`; default off). Design: [docs/opc-write-mode.md](docs/opc-write-mode.md). OpenAPI + Swagger: [`api/openapi.yaml`](api/openapi.yaml), `/docs`. Math models as separate containers: [docs/l2-model-integration.md](docs/l2-model-integration.md). On-change historian / subscription: [docs/opc-subscription-mode.md](docs/opc-subscription-mode.md). Datatype expand + Sync: [docs/opc-datatype-sync.md](docs/opc-datatype-sync.md). External programs (Python/C#/JS/…) as HTTP/WS clients: [docs/external-client-api.md](docs/external-client-api.md). Capacity / wipe: [docs/db-capacity-policy.md](docs/db-capacity-policy.md).
 
 ---
 

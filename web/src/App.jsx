@@ -313,6 +313,16 @@ export default function App() {
           </button>
           <a
             className="nav-btn nav-btn-ext"
+            href="/docs"
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open Level2 OpenAPI / Swagger docs"
+          >
+            API docs
+            <ExtLinkIcon />
+          </a>
+          <a
+            className="nav-btn nav-btn-ext"
             href={jenkinsUrl()}
             target="_blank"
             rel="noopener noreferrer"

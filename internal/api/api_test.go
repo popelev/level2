@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,7 +27,8 @@ func TestHandleTagsAndValue(t *testing.T) {
 				Tags: []core.Tag{{ID: "opc_measure_rvalue", NodeID: "ns=4;i=4208", DataType: core.ValueFloat64, Enabled: true}},
 			}}
 		},
-		Hub: NewHub(),
+		Hub:             NewHub(),
+		OPCWriteEnabled: func() bool { return false },
 	}
 	mux := http.NewServeMux()
 	s.Mount(mux)
@@ -58,9 +60,10 @@ func TestHandleTagsAndValue(t *testing.T) {
 	}
 
 	rr = httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPut, "/api/v1/tags/opc_measure_rvalue/value", nil)
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tags/opc_measure_rvalue/value",
+		strings.NewReader(`{"value":1}`))
 	mux.ServeHTTP(rr, req)
-	if rr.Code != http.StatusNotImplemented {
-		t.Fatalf("write want 501 got %d", rr.Code)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("write want 403 got %d body %s", rr.Code, rr.Body.String())
 	}
 }

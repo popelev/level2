@@ -2,9 +2,11 @@
 
 Design for **third-party programs** (any language) that read or write process variables through Level2’s REST/WebSocket API. Level2 stays the **OPC UA gateway**: clients never embed an OPC stack; they call `:8080`, and the collector talks to the PLC.
 
-**Status:** reads and discovery work today (lab-open API). PLC writes are planned — see [opc-write-mode.md](opc-write-mode.md) (`PUT` currently **501**). This document is the client-facing contract plan; it does not ship OpenAPI generators or SDKs yet.
+**Status:** reads, discovery, and PLC write MVP work today (lab-open API). Write is gated by `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default **off** → **403**). Design detail: [opc-write-mode.md](opc-write-mode.md).
 
-Related: [opc-subscription-mode.md](opc-subscription-mode.md) (historian on-change / subscribe), [opc-datatype-sync.md](opc-datatype-sync.md) (Sync / expand types), [db-capacity-policy.md](db-capacity-policy.md).
+**Canonical machine-readable contract:** [`api/openapi.yaml`](../api/openapi.yaml) — also `GET /api/v1/openapi.yaml` and Swagger UI at **`/docs`**. This markdown remains a narrative guide; when they disagree, **OpenAPI wins**.
+
+Related: [opc-subscription-mode.md](opc-subscription-mode.md) (historian on-change / subscribe), [opc-datatype-sync.md](opc-datatype-sync.md) (Sync / expand types), [db-capacity-policy.md](db-capacity-policy.md), [l2-model-integration.md](l2-model-integration.md) (math models as separate containers).
 
 ---
 
@@ -23,7 +25,7 @@ flowchart LR
   C2 -->|HTTP JSON / WS| API
   API --> LIVE
   API -->|read path| LIVE
-  API -->|write path planned| OPC
+  API -->|write path| OPC
   LIVE -.->|fed by poll/subscribe| OPC
   OPC <-->|OPC UA| PLC
 ```
@@ -32,7 +34,7 @@ flowchart LR
 |-------|----------------|
 | External client | Bind to `tag_id` (or discover devices/tags), GET live / history / WS, later PUT write |
 | Level2 API | Stable JSON over HTTP; resolve tags; gate writes; diagnostics |
-| OPC driver | Batch Read (today); Write (planned) to Siemens / OPC UA |
+| OPC driver | Batch Read; Write (MVP) to Siemens / OPC UA |
 | PLC | Authoritative process values and AccessLevel |
 
 **Why not OPC in every client?** One place for credentials, NodeIds, coercion, reconnect, and audit. Clients stay thin HTTP callers on the lab LAN (or later behind a token).
@@ -49,11 +51,11 @@ Base URL (lab VM): `http://<host>:8080`. Same origin serves the React Admin UI.
 | Live read | `GET /api/v1/tags`, `GET /api/v1/tags/{id}/value` — in-memory Live store. |
 | History | `GET /api/v1/tags/{id}/history?from=&to=&limit=` — Timescale. |
 | Discovery | `GET /api/v1/devices`, tags list, `GET /api/v1/browse`, `POST /api/v1/expand`, project/xlsx import-export. |
-| Write | `PUT /api/v1/tags/{id}/value` → **501** stub. |
+| Write | `PUT /api/v1/tags/{id}/value` — OPC Write when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default off → **403**). |
 | WebSocket | `GET /api/v1/ws/stream` — fan-out of every Live sample (JSON text frames). |
 | Auth | **None** — open lab API. Anyone who can reach `:8080` can read (and mutate config endpoints). |
 | CORS | **No** dedicated CORS middleware. Browser cross-origin calls from another origin will fail unless same-origin or a reverse proxy adds headers. Non-browser clients (curl, Python `requests`, C# `HttpClient`) are unaffected. |
-| OpenAPI / Swagger | **None** yet. Endpoint table: [deploy/platform/README.md](../deploy/platform/README.md#api). |
+| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
 | WS origin | `CheckOrigin: true` (accept all) — fine for lab; revisit with auth. |
 
 Full operator table: [deploy/platform/README.md](../deploy/platform/README.md#api). Highlights: [README.md](../README.md#api-highlights).
@@ -152,17 +154,17 @@ RFC3339 `from` / `to`; `limit` caps rows. **503** if historian unavailable.
 | `GET /healthz` | Process up |
 | `GET /readyz` | Ready to serve (OPC connected when not sim) |
 | `GET /api/v1/status/summary` | Quality counts, recent errors, write rates |
-| `GET /api/v1/diagnostics/logs?category=&errors_only=&limit=` | Ring log; `category` = `all` \| `opc_read` \| `db_write` (aliases `opc` / `db`). OPC includes failures + ~30s `opc poll ok` |
+| `GET /api/v1/diagnostics/logs?category=&errors_only=&limit=` | Ring log; `category` = `all` \| `opc_read` \| `opc_write` \| `db_write` (aliases `opc` / `db` / `write`). OPC read includes failures + ~30s `opc poll ok` |
 | `POST /api/v1/diagnostics/reset` | Clear diagnostics ring + last-hour incident counters (Overview alarms) |
 | `GET /api/v1/devices` | `connected`, `poll_concurrency` (parallel Read batches, 1–16, default 4) |
 
 ---
 
-## 4. Write paths (planned)
+## 4. Write paths
 
-**Do not implement OPC in the client.** Write through Level2 once [opc-write-mode.md](opc-write-mode.md) ships.
+**Do not implement OPC in the client.** Write through Level2 ([opc-write-mode.md](opc-write-mode.md)).
 
-### 4.1. Single write (MVP target)
+### 4.1. Single write (MVP)
 
 ```http
 PUT /api/v1/tags/{tag_id}/value
@@ -171,16 +173,16 @@ Content-Type: application/json
 { "value": 42.5, "device_id": "s7_1500" }
 ```
 
-Today: **501**. After MVP: coercion + OPC Write; gated by `opc_write_enabled` (**403** when off). Error table and body forms live in the write design doc (§4).
+Gated by `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (**403** when off). Coercion + OPC Write when on. Error table and body forms: write design doc §4 and OpenAPI.
 
-### 4.2. Batch write (Phase 2 of write doc)
+### 4.2. Batch write (Phase 2)
 
 ```http
 POST /api/v1/tags/values
 { "writes": [ { "tag_id": "A", "value": 1 }, { "tag_id": "B", "value": true } ] }
 ```
 
-Partial success per item; chunked OPC writes.
+Not implemented yet. Partial success per item; chunked OPC writes.
 
 ### 4.3. Idempotency notes
 
@@ -231,7 +233,7 @@ Until then, clients should branch on **HTTP status** first, then parse body as t
 | 403 | Feature gated (e.g. write disabled) or future authz |
 | 404 | Unknown tag / no sample |
 | 409 | Conflict (e.g. device disconnected on write) |
-| 501 | Not implemented (write stub) |
+| 501 | Not implemented (legacy; write MVP no longer uses this) |
 | 502 | Upstream OPC failure |
 | 503 | Dependency down (historian, config store) |
 
@@ -272,7 +274,7 @@ curl -s "http://127.0.0.1:8080/api/v1/tags?device_id=s7_1500"
 # History
 curl -s "http://127.0.0.1:8080/api/v1/tags/opc_measure_rvalue/history?from=2026-08-06T00:00:00Z&limit=100"
 
-# Write (after MVP; expects 501 today)
+# Write (requires LEVEL2_OPC_WRITE_ENABLED=true)
 curl -s -X PUT "http://127.0.0.1:8080/api/v1/tags/Motor1.SpeedSP/value" \
   -H "Content-Type: application/json" \
   -d '{"value":42.5,"device_id":"s7_1500"}'
@@ -294,13 +296,13 @@ def get_json(path: str):
 sample = get_json("/api/v1/tags/opc_measure_rvalue/value")
 print(sample["tag_id"], sample.get("value_num"), sample["quality"])
 
-# After write MVP:
-# req = urllib.request.Request(
-#     base + "/api/v1/tags/Motor1.SpeedSP/value",
-#     data=json.dumps({"value": 42.5, "device_id": "s7_1500"}).encode(),
-#     headers={"Content-Type": "application/json"},
-#     method="PUT",
-# )
+# Write (requires LEVEL2_OPC_WRITE_ENABLED=true):
+req = urllib.request.Request(
+    base + "/api/v1/tags/Motor1.SpeedSP/value",
+    data=json.dumps({"value": 42.5, "device_id": "s7_1500"}).encode(),
+    headers={"Content-Type": "application/json"},
+    method="PUT",
+)
 # urllib.request.urlopen(req)
 ```
 
@@ -327,7 +329,7 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 
 - Embedding **gopcua** / OPC UA stacks in Python/C#/JS client apps.
 - Per-language **official SDKs** in MVP (optional thin wrappers later).
-- Generating **OpenAPI** in this phase (document endpoints; export later).
+- Generating **OpenAPI** — shipped as [`api/openapi.yaml`](../api/openapi.yaml) + `/docs` (not codegen SDKs).
 - Full **RBAC**, multi-tenant isolation, or public Internet exposure without a proxy.
 - Client-side recipe engines / multi-tag transactions with rollback.
 - Replacing the Admin UI — external API complements it.
@@ -352,7 +354,7 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 
 1. JSON error envelope on write (and gradually on hot read paths).
 2. Optional WS tag filter.
-3. **OpenAPI 3** export (hand-written or generated from comments) checked into `docs/` or served at `/api/v1/openapi.json` — **not** started in this change.
+3. Keep OpenAPI in sync with every endpoint change (already canonical).
 4. Light rate limit or max body size for write batch if needed.
 
 ### Phase 3 — productization
@@ -370,7 +372,8 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 | Route mount | `internal/api/api.go` (`Server.Mount`) |
 | Sample DTO / WS | `internal/api/api.go` (`sampleDTO`, `handleWS`, `Hub.Broadcast`) |
 | Live snapshot | `internal/store/live.go` (`TagValue`, `SnapshotDevices`) |
-| Write stub | `internal/api/api.go` (`handleWriteNotImplemented`) |
+| Write handler | `internal/api/write.go` (`handleWriteTagValue`) |
+| OpenAPI embed | `api/openapi.yaml`, `GET /api/v1/openapi.yaml`, `GET /docs` |
 | Status | `internal/api/status.go` |
 | Diagnostics | `internal/api/diagnostics.go` |
 | Platform API table | [deploy/platform/README.md](../deploy/platform/README.md#api) |
