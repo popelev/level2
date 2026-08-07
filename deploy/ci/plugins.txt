@@ -13,3 +13,5 @@ ws-cleanup
 pipeline-stage-view
 cloudbees-folder
 junit
+coverage
+htmlpublisher

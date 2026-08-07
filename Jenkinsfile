@@ -37,7 +37,11 @@ pipeline {
             -e GOTOOLCHAIN=auto \
             -v "$PWD":/src -w /src \
             golang:1.24 \
-            bash -lc 'go run gotest.tools/gotestsum@v1.12.3 --junitfile test-results.xml -- ./...'
+            bash -lc '
+              set -euo pipefail
+              go run gotest.tools/gotestsum@v1.12.3 --junitfile test-results.xml -- ./... -coverprofile=cov.out -covermode=atomic
+              go tool cover -html=cov.out -o coverage.html
+            '
         '''
       }
     }
@@ -99,6 +103,21 @@ pipeline {
     always {
       echo "Finished ${env.GIT_COMMIT} on ${env.BRANCH_NAME}"
       junit allowEmptyResults: true, testResults: 'test-results.xml'
+      recordCoverage(
+        tools: [[parser: 'GO_COV', pattern: 'cov.out']],
+        id: 'go-coverage',
+        name: 'Go Coverage',
+        sourceCodeRetention: 'NEVER'
+      )
+      publishHTML(target: [
+        allowMissing: true,
+        alwaysLinkToLastBuild: true,
+        keepAll: true,
+        reportDir: '.',
+        reportFiles: 'coverage.html',
+        reportName: 'Go Coverage HTML',
+        reportTitles: 'Go Coverage'
+      ])
     }
   }
 }
