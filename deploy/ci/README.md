@@ -103,7 +103,7 @@ Root [`Jenkinsfile`](../../Jenkinsfile) (Declarative):
 | Docker Build | `docker build -f deploy/platform/Dockerfile …` → tags `level2-collector:ci-<sha>` + `ci-latest` | platform Dockerfile |
 | Push *(optional)* | gated by `ENABLE_PUSH=true` | Phase 2 |
 | Deploy *(optional)* | gated by `ENABLE_DEPLOY=true` + `main` | Phase 2 |
-| **post** Prune CI images | keep newest **5** `level2-collector:ci-<sha>` (+ always keep `ci-latest`); then `docker image prune -f` | env `CI_IMAGE_KEEP` (default `5`) |
+| **post** Prune CI images | keep newest **5** `level2-collector:ci-<sha>` (+ always keep `ci-latest`); then `docker image prune -f` (POSIX `sh`, no bashisms) | env `CI_IMAGE_KEEP` (default `5`) |
 
 Docker GC touches only `level2-collector:ci-*`. It does **not** remove `platform-collector`, `level2-jenkins`, or other compose images. `docker rmi` skips tags still used by a running container. Jenkins build history is bounded separately via `buildDiscarder` (`numToKeepStr: '20'`).
 

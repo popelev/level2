@@ -125,18 +125,18 @@ pipeline {
       // Host Docker GC: only level2-collector:ci-<sha> tags. Does not touch
       // platform-collector / level2-jenkins / compose runtime images. Images still
       // referenced by a running container are skipped by docker rmi.
+      // POSIX sh only — Jenkins agent uses /bin/sh (dash); no mapfile/process-subst.
       sh '''
-        set -euo pipefail
+        set -eu
         KEEP="${CI_IMAGE_KEEP:-5}"
         REPO="${IMAGE_REPO:-level2-collector}"
         echo "Pruning ${REPO}:ci-* tags — keep newest ${KEEP} (plus ci-latest)"
-        mapfile -t LINES < <(
-          docker images --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}\t{{.ID}}' "${REPO}" 2>/dev/null \
-            | awk -F'\t' -v p="${REPO}:ci-" '$2 ~ "^"p && $2 !~ /:ci-latest$/ {print}' \
-            | sort -r
-        )
+        TMP="$(mktemp)"
+        docker images --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}\t{{.ID}}' "${REPO}" 2>/dev/null \
+          | awk -F'\t' -v p="${REPO}:ci-" '$2 ~ "^"p && $2 !~ /:ci-latest$/ {print}' \
+          | sort -r > "$TMP" || true
         n=0
-        for line in "${LINES[@]:-}"; do
+        while IFS= read -r line || [ -n "$line" ]; do
           [ -n "$line" ] || continue
           n=$((n + 1))
           tag=$(printf '%s' "$line" | cut -f2)
@@ -147,7 +147,8 @@ pipeline {
           fi
           echo "rm    ${tag} (${id})"
           docker rmi "$tag" 2>/dev/null || docker rmi "$id" 2>/dev/null || true
-        done
+        done < "$TMP"
+        rm -f "$TMP"
         docker image prune -f >/dev/null || true
       '''
     }
