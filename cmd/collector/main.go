@@ -2,26 +2,22 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/popelev/level2/internal/api"
-	"github.com/popelev/level2/internal/backoff"
 	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
 	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/driver/mock"
 	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
 	"github.com/popelev/level2/internal/historian/timescale"
-	"github.com/popelev/level2/internal/metrics"
 	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/spool"
 	"github.com/popelev/level2/internal/store"
@@ -162,29 +158,7 @@ func main() {
 
 	go watchReady(ctx, apiSrv.ReadyCheck)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if fullSamplesSim || devHub.AnyConnected() {
-			metrics.OPCConnected.Set(1)
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("ready"))
-			return
-		}
-		metrics.OPCConnected.Set(0)
-		http.Error(w, "not connected", http.StatusServiceUnavailable)
-	})
-	mux.Handle("/metrics", metrics.Handler())
-	apiSrv.Mount(mux)
-	if st, err := os.Stat(cfg.UIDir); err == nil && st.IsDir() {
-		mux.Handle("/", http.FileServer(http.Dir(cfg.UIDir)))
-		log.Info("serving ui", "dir", cfg.UIDir)
-	}
-
-	srv := &http.Server{Addr: cfg.Listen, Handler: apiSrv.APIAuth(mux)}
+	srv := &http.Server{Addr: cfg.Listen, Handler: wireHTTP(log, cfg.UIDir, apiSrv, fullSamplesSim, devHub)}
 	go func() {
 		log.Info("http listen", "addr", cfg.Listen)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -201,253 +175,4 @@ func main() {
 		_ = d.Disconnect(shutdownCtx)
 	}
 	log.Info("collector stopped")
-}
-
-func runDemo(ctx context.Context, log *slog.Logger, demo *mock.Driver, cfgStore *config.Store, samples chan<- core.Sample, allTags bool) {
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		gen := cfgStore.Gen()
-		tags := selectSimTags(cfgStore.AllTags(), allTags || cfgStore.TagSimulation())
-		if len(tags) == 0 {
-			subCtx, cancel := context.WithCancel(ctx)
-			go watchConfig(subCtx, cancel, cfgStore, gen)
-			select {
-			case <-ctx.Done():
-				cancel()
-				return
-			case <-subCtx.Done():
-				cancel()
-			}
-			continue
-		}
-		subCtx, cancel := context.WithCancel(ctx)
-		go watchConfig(subCtx, cancel, cfgStore, gen)
-		err := demo.Subscribe(subCtx, tags, samples)
-		cancel()
-		if ctx.Err() != nil {
-			return
-		}
-		log.Info("demo subscribe reload", "err", err, "tags", len(tags))
-		time.Sleep(200 * time.Millisecond)
-	}
-}
-
-func selectSimTags(all []core.Tag, allEnabled bool) []core.Tag {
-	out := make([]core.Tag, 0, len(all))
-	for _, t := range all {
-		if !t.Enabled {
-			continue
-		}
-		if allEnabled || t.Simulate {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-func selectOPCTags(all []core.Tag) []core.Tag {
-	out := make([]core.Tag, 0, len(all))
-	for _, t := range all {
-		if t.Simulate {
-			continue
-		}
-		out = append(out, t)
-	}
-	return out
-}
-
-func runDevice(ctx context.Context, log *slog.Logger, cfgStore *config.Store, deviceID string, drv *opcuaDriver.Driver, samples chan<- core.Sample) {
-	bo := backoff.New(2*time.Second, 30*time.Second)
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		if !drv.Connected() {
-			if err := drv.Connect(ctx); err != nil {
-				wait := bo.Next()
-				log.Warn("waiting opc", "device", deviceID, "err", err, "backoff", wait.String())
-				diag.OPCRead(diag.LevelWarn, deviceID, "", "waiting for opc connection", err.Error())
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(wait):
-					continue
-				}
-			}
-			bo.Reset()
-		}
-		gen := cfgStore.Gen()
-		tags, err := cfgStore.DeviceTags(deviceID)
-		if err != nil {
-			log.Error("device tags", "err", err)
-			return
-		}
-		tags = selectOPCTags(tags)
-		if len(tags) == 0 {
-			subCtx, cancel := context.WithCancel(ctx)
-			go watchConfig(subCtx, cancel, cfgStore, gen)
-			select {
-			case <-ctx.Done():
-				cancel()
-				return
-			case <-subCtx.Done():
-				cancel()
-			}
-			continue
-		}
-		subCtx, cancel := context.WithCancel(ctx)
-		go watchConfig(subCtx, cancel, cfgStore, gen)
-		err = drv.Subscribe(subCtx, tags, samples)
-		cancel()
-		if ctx.Err() != nil {
-			return
-		}
-		log.Warn("subscribe ended", "device", deviceID, "err", err)
-		if err != nil {
-			diag.OPCRead(diag.LevelWarn, deviceID, "", "opc subscribe ended", err.Error())
-		}
-		// Intentional Disconnect (config reload) — OPC drops are recorded in driver markDown.
-		_ = drv.Disconnect(ctx)
-		wait := bo.Next()
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(wait):
-		}
-	}
-}
-
-func watchConfig(ctx context.Context, cancel context.CancelFunc, cfgStore *config.Store, gen uint64) {
-	t := time.NewTicker(time.Second)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			if cfgStore.Gen() != gen {
-				cancel()
-				return
-			}
-		}
-	}
-}
-
-// watchReady records collector becoming not-ready (mirrors /readyz).
-func watchReady(ctx context.Context, ready func() bool) {
-	if ready == nil {
-		return
-	}
-	was := ready()
-	t := time.NewTicker(time.Second)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			now := ready()
-			if was && !now {
-				diag.RecordCollectorDown()
-			}
-			was = now
-		}
-	}
-}
-
-func flushLoop(ctx context.Context, log *slog.Logger, hist core.Historian, sp *spool.FileSpool, in <-chan core.Sample) {
-	ticker := time.NewTicker(time.Second)
-	defer ticker.Stop()
-	buf := make([]core.Sample, 0, 256)
-	flush := func() {
-		if len(buf) == 0 {
-			return
-		}
-		batch := buf
-		buf = make([]core.Sample, 0, 256)
-		if err := hist.WriteBatch(ctx, batch); err != nil {
-			if errors.Is(err, timescale.ErrCapacityHalt) {
-				log.Warn("write batch halted by capacity policy", "err", err, "n", len(batch))
-				diag.DBWrite(diag.LevelWarn, "historian halted by capacity policy", err.Error(), len(batch))
-				return
-			}
-			metrics.WriteErrors.Inc()
-			diag.RecordDBWriteError()
-			log.Error("write batch", "err", err, "n", len(batch))
-			diag.DBWrite(diag.LevelError, "historian write batch failed", err.Error(), len(batch))
-			if serr := sp.Enqueue(batch); serr != nil {
-				log.Error("spool enqueue", "err", serr)
-				diag.DBWrite(diag.LevelError, "spool enqueue failed", serr.Error(), len(batch))
-			} else {
-				metrics.SamplesSpooled.Add(float64(len(batch)))
-				metrics.SpoolDepth.Set(float64(sp.Len()))
-				diag.DBWrite(diag.LevelWarn, "samples spooled to disk", "", len(batch))
-			}
-			return
-		}
-		metrics.SamplesWritten.Add(float64(len(batch)))
-		diag.DBWrite(diag.LevelInfo, "wrote batch to timescale", "", len(batch))
-	}
-	for {
-		select {
-		case <-ctx.Done():
-			flush()
-			return
-		case s := <-in:
-			buf = append(buf, s)
-			if len(buf) >= 200 {
-				flush()
-			}
-		case <-ticker.C:
-			flush()
-		}
-	}
-}
-
-func replaySpool(ctx context.Context, log *slog.Logger, hist core.Historian, sp *spool.FileSpool) {
-	t := time.NewTicker(5 * time.Second)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-t.C:
-			files, err := sp.List()
-			if err != nil || len(files) == 0 {
-				metrics.SpoolDepth.Set(0)
-				continue
-			}
-			metrics.SpoolDepth.Set(float64(len(files)))
-			path := files[0]
-			for _, f := range files[1:] {
-				if filepath.Base(f) < filepath.Base(path) {
-					path = f
-				}
-			}
-			batch, err := sp.Load(path)
-			if err != nil {
-				log.Warn("spool load", "path", path, "err", err)
-				_ = sp.Remove(path)
-				continue
-			}
-			if err := hist.WriteBatch(ctx, batch); err != nil {
-				if errors.Is(err, timescale.ErrCapacityHalt) {
-					log.Warn("spool replay halted by capacity policy", "err", err)
-					diag.DBWrite(diag.LevelWarn, "spool replay halted by capacity policy", err.Error(), len(batch))
-					continue
-				}
-				log.Warn("spool replay failed", "err", err)
-				diag.RecordDBWriteError()
-				diag.DBWrite(diag.LevelError, "spool replay write failed", err.Error(), len(batch))
-				continue
-			}
-			metrics.SamplesWritten.Add(float64(len(batch)))
-			_ = sp.Remove(path)
-			metrics.SpoolDepth.Set(float64(sp.Len()))
-			log.Info("spool replayed", "n", len(batch), "path", filepath.Base(path))
-			diag.DBWrite(diag.LevelInfo, "spool replayed to timescale", filepath.Base(path), len(batch))
-		}
-	}
 }
