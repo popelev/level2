@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +19,7 @@ import (
 	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/driver/simbrowser"
 	"github.com/popelev/level2/internal/projectxlsx"
+	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/store"
 )
 
@@ -417,3 +421,64 @@ func TestParseIntDefault(t *testing.T) {
 }
 
 func ptrFloat(v float64) *float64 { return &v }
+
+type errBrowser struct {
+	browseErr error
+	expandErr error
+}
+
+func (e errBrowser) BrowseChildren(context.Context, string) ([]core.BrowseNode, error) {
+	return nil, e.browseErr
+}
+func (e errBrowser) ExpandStructure(context.Context, string, string, int) ([]core.ExpandedTag, error) {
+	return nil, e.expandErr
+}
+
+func TestBrowseAndExpand_Errors(t *testing.T) {
+	s := &Server{
+		Browser: errBrowser{browseErr: errors.New("browse down"), expandErr: errors.New("expand down")},
+		Hub:     NewHub(),
+		Live:    store.NewLive(),
+		Devices: func() []core.Device { return nil },
+	}
+	mux := http.NewServeMux()
+	s.Mount(mux)
+
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/browse", nil))
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("browse err: %d", rr.Code)
+	}
+
+	rr = httptest.NewRecorder()
+	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/v1/expand", strings.NewReader(`{"node_id":"ns=1;i=1"}`)))
+	if rr.Code != http.StatusBadGateway {
+		t.Fatalf("expand err: %d", rr.Code)
+	}
+
+	rr = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/expand", strings.NewReader(`{"node_id":"ns=1;i=1","stream":true}`))
+	mux.ServeHTTP(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("stream status %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), `"type":"error"`) {
+		t.Fatalf("want error event: %s", rr.Body.String())
+	}
+}
+
+func TestResolveBrowser_DevHub(t *testing.T) {
+	hub := devruntime.NewHub(slog.New(slog.NewTextHandler(io.Discard, nil)), false)
+	br := errBrowser{}
+	hub.InjectDriver(core.Device{ID: "plc", Endpoint: "opc.tcp://x"}, onlineNonOPC{}, br)
+	s := &Server{DevHub: hub, Hub: NewHub(), Live: store.NewLive()}
+	got, err := s.resolveBrowser("plc")
+	if err != nil || got == nil {
+		t.Fatalf("devhub browser: %v %#v", err, got)
+	}
+	_, err = s.resolveBrowser("missing")
+	if err == nil {
+		t.Fatal("expected missing device error")
+	}
+}
+

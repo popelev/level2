@@ -154,10 +154,44 @@ func TestCoerceFloat64_Edges(t *testing.T) {
 	if v, err := coerceFloat64(int(4)); err != nil || v != 4 {
 		t.Fatalf("int %v %v", v, err)
 	}
+	if v, err := coerceFloat64(" 3.5 "); err != nil || v != 3.5 {
+		t.Fatalf("string %v %v", v, err)
+	}
+	if _, err := coerceFloat64("nope"); err == nil {
+		t.Fatal("bad string")
+	}
 	if _, err := coerceFloat64([]byte{1}); err == nil {
 		t.Fatal("bytes")
 	}
 }
+
+func TestCoerceBool_FloatZero(t *testing.T) {
+	if v, err := coerceBool(float64(0)); err != nil || v {
+		t.Fatalf("0 → %v %v", v, err)
+	}
+}
+
+func TestCoerceDateTime_NanoAndBadType(t *testing.T) {
+	got, err := coerceDateTime("2026-08-06T12:00:00.123456789Z")
+	if err != nil || got.Nanosecond() == 0 {
+		t.Fatalf("nano: %v %v", got, err)
+	}
+}
+
+func TestNormalizeValueType_PassthroughCanonical(t *testing.T) {
+	for _, dt := range []ValueType{ValueBool, ValueInt64, ValueUint, ValueFloat64, ValueString, ValueDateTime} {
+		if got := NormalizeValueType(dt); got != dt {
+			t.Fatalf("%q → %q", dt, got)
+		}
+	}
+	if got := NormalizeValueType("  TIMESTAMP "); got != ValueDateTime {
+		t.Fatalf("timestamp alias: %q", got)
+	}
+	if got := NormalizeValueType("weird"); got != "weird" {
+		t.Fatalf("unknown passthrough: %q", got)
+	}
+}
+
 
 func TestCoerceString_Edges(t *testing.T) {
 	if v, err := coerceString(float64(1.25)); err != nil || v != "1.25" {

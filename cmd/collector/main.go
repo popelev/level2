@@ -16,12 +16,16 @@ import (
 	"github.com/popelev/level2/internal/core"
 	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/driver/mock"
-	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
 	"github.com/popelev/level2/internal/historian/timescale"
 	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/spool"
 	"github.com/popelev/level2/internal/store"
 )
+
+// processReady mirrors /readyz: sim/full-sample mode or any OPC device connected.
+func processReady(fullSamplesSim bool, anyConnected bool) bool {
+	return fullSamplesSim || anyConnected
+}
 
 func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to collector config")
@@ -76,21 +80,7 @@ func main() {
 	var collectOnce sync.Map // deviceID -> true
 
 	startCollect := func(deviceID string) {
-		if fullSamplesSim {
-			return
-		}
-		if _, loaded := collectOnce.LoadOrStore(deviceID, true); loaded {
-			return
-		}
-		ent, ok := devHub.Entry(deviceID)
-		if !ok {
-			return
-		}
-		drv, ok := ent.Driver.(*opcuaDriver.Driver)
-		if !ok {
-			return
-		}
-		go runDevice(ctx, log, cfgStore, deviceID, drv, raw)
+		startDeviceCollect(ctx, log, cfgStore, devHub, &collectOnce, fullSamplesSim, raw, deviceID)
 	}
 
 	for _, dev := range cfgStore.Devices() {
@@ -134,7 +124,7 @@ func main() {
 		Tags:      cfgStore.AllTags,
 		Devices:   cfgStore.Devices,
 		ReadyCheck: func() bool {
-			return fullSamplesSim || devHub.AnyConnected()
+			return processReady(fullSamplesSim, devHub.AnyConnected())
 		},
 		OPCWriteEnabled:     cfgStore.OPCWriteEnabled,
 		TagSimulationActive: func() bool { return fullSamplesSim },

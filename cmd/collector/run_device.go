@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/popelev/level2/internal/backoff"
@@ -11,6 +12,7 @@ import (
 	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/driver/mock"
 	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
+	devruntime "github.com/popelev/level2/internal/runtime"
 )
 
 func runDemo(ctx context.Context, log *slog.Logger, demo *mock.Driver, cfgStore *config.Store, samples chan<- core.Sample, allTags bool) {
@@ -143,4 +145,33 @@ func watchConfig(ctx context.Context, cancel context.CancelFunc, cfgStore *confi
 			}
 		}
 	}
+}
+
+// startDeviceCollect launches runDevice once per device when not in full-sample sim mode.
+// Extracted from main for unit tests (collectOnce / type-assert / missing entry).
+func startDeviceCollect(
+	ctx context.Context,
+	log *slog.Logger,
+	cfgStore *config.Store,
+	devHub *devruntime.Hub,
+	collectOnce *sync.Map,
+	fullSamplesSim bool,
+	samples chan<- core.Sample,
+	deviceID string,
+) {
+	if fullSamplesSim {
+		return
+	}
+	if _, loaded := collectOnce.LoadOrStore(deviceID, true); loaded {
+		return
+	}
+	ent, ok := devHub.Entry(deviceID)
+	if !ok {
+		return
+	}
+	drv, ok := ent.Driver.(*opcuaDriver.Driver)
+	if !ok {
+		return
+	}
+	go runDevice(ctx, log, cfgStore, deviceID, drv, samples)
 }

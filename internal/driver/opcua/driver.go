@@ -47,6 +47,12 @@ func New(device core.Device, log *slog.Logger) *Driver {
 
 func (d *Driver) Connected() bool { return d.alive.Load() }
 
+// SetConnectedForTest toggles the connected flag without a live OPC session.
+// Used by collector unit tests to exercise runDevice branches offline.
+func (d *Driver) SetConnectedForTest(on bool) {
+	d.alive.Store(on)
+}
+
 // markDown records a connected→disconnected edge once (unexpected poll/link loss).
 func (d *Driver) markDown(record bool) {
 	if was := d.alive.Swap(false); was && record {

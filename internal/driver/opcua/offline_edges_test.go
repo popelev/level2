@@ -27,6 +27,28 @@ func TestConnect_FailsWithoutServer(t *testing.T) {
 	}
 }
 
+func TestConnect_AlreadyHasClient(t *testing.T) {
+	d := driverWithSession(&mockSession{})
+	if err := d.Connect(context.Background()); err != nil {
+		t.Fatalf("already connected must no-op: %v", err)
+	}
+	if !d.Connected() {
+		t.Fatal("expected still connected")
+	}
+}
+
+func TestSetConnectedForTest(t *testing.T) {
+	d := New(core.Device{ID: "d"}, nil)
+	d.SetConnectedForTest(true)
+	if !d.Connected() {
+		t.Fatal("expected connected")
+	}
+	d.SetConnectedForTest(false)
+	if d.Connected() {
+		t.Fatal("expected disconnected")
+	}
+}
+
 func TestSubscribe_NoEnabledTags(t *testing.T) {
 	d := New(core.Device{ID: "d"}, nil)
 	err := d.Subscribe(context.Background(), []core.Tag{

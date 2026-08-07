@@ -3,19 +3,33 @@ package main
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
 	"github.com/popelev/level2/internal/diag"
 	"github.com/popelev/level2/internal/historian/timescale"
 	"github.com/popelev/level2/internal/spool"
 )
+
+func TestProcessReady(t *testing.T) {
+	cases := []struct {
+		sim, conn, want bool
+	}{
+		{false, false, false},
+		{true, false, true},
+		{false, true, true},
+		{true, true, true},
+	}
+	for _, tc := range cases {
+		if got := processReady(tc.sim, tc.conn); got != tc.want {
+			t.Fatalf("sim=%v conn=%v got %v want %v", tc.sim, tc.conn, got, tc.want)
+		}
+	}
+}
 
 func TestSelectSimTags(t *testing.T) {
 	all := []core.Tag{
@@ -47,15 +61,7 @@ func TestSelectOPCTags(t *testing.T) {
 }
 
 func TestWatchConfig_CancelsOnGenChange(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	s := config.NewStore(path, &config.File{
-		Listen: ":0",
-		Devices: []core.Device{{
-			ID: "plc", Endpoint: "opc.tcp://x:4840", Security: "None",
-			Tags: []core.Tag{{ID: "t", NodeID: "ns=1;i=1", DataType: core.ValueFloat64, Enabled: true}},
-		}},
-	})
+	s := testConfig(t, testDevice("plc", testTag("t", "ns=1;i=1")))
 	gen := s.Gen()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -77,8 +83,7 @@ func TestWatchConfig_CancelsOnGenChange(t *testing.T) {
 }
 
 func TestWatchConfig_StopsOnParentCancel(t *testing.T) {
-	dir := t.TempDir()
-	s := config.NewStore(filepath.Join(dir, "c.yaml"), &config.File{Listen: ":0"})
+	s := testConfig(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -98,7 +103,7 @@ func TestWatchReady_NilAndTransition(t *testing.T) {
 	diag.SetDefaultIncidents(inc)
 	t.Cleanup(func() { diag.SetDefaultIncidents(diag.NewIncidentTracker(100, 0)) })
 
-	watchReady(context.Background(), nil) // no-op
+	watchReady(context.Background(), nil)
 	if inc.Count(diag.IncidentCollectorDown, time.Hour) != 0 {
 		t.Fatal("nil ready must not record incidents")
 	}
@@ -109,7 +114,6 @@ func TestWatchReady_NilAndTransition(t *testing.T) {
 	defer cancel()
 	go watchReady(ctx, func() bool { return ready.Load() })
 
-	// Allow first sample of was=true
 	time.Sleep(50 * time.Millisecond)
 	ready.Store(false)
 	deadline := time.Now().Add(3 * time.Second)
@@ -122,29 +126,10 @@ func TestWatchReady_NilAndTransition(t *testing.T) {
 	t.Fatal("expected collector_not_ready incident")
 }
 
-type stubHist struct {
-	err   error
-	wrote [][]core.Sample
-}
-
-func (s *stubHist) EnsureSchema(context.Context) error { return nil }
-func (s *stubHist) Close(context.Context) error        { return nil }
-func (s *stubHist) WriteBatch(_ context.Context, samples []core.Sample) error {
-	if s.err != nil {
-		return s.err
-	}
-	cp := append([]core.Sample(nil), samples...)
-	s.wrote = append(s.wrote, cp)
-	return nil
-}
-
 func TestFlushLoop_WriteAndSpoolOnError(t *testing.T) {
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	sp, err := spool.New(t.TempDir(), 50)
-	if err != nil {
-		t.Fatal(err)
-	}
-	hist := &stubHist{}
+	log := testLog()
+	sp := testSpool(t, 50)
+	hist := &memHist{}
 	ctx, cancel := context.WithCancel(context.Background())
 	in := make(chan core.Sample, 8)
 	done := make(chan struct{})
@@ -152,23 +137,20 @@ func TestFlushLoop_WriteAndSpoolOnError(t *testing.T) {
 		flushLoop(ctx, log, hist, sp, in)
 		close(done)
 	}()
-	v1 := 1.0
-	in <- core.Sample{TagID: "a", ValueNum: &v1, Quality: core.QualityGood, Time: time.Now().UTC()}
-	// Wait for ticker flush
+	in <- sampleNum("a", 1, time.Time{})
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if len(hist.wrote) > 0 {
+		if len(hist.wrote()) > 0 {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if len(hist.wrote) == 0 {
+	if len(hist.wrote()) == 0 {
 		t.Fatal("expected successful write")
 	}
 
-	hist.err = errors.New("db down")
-	v2 := 2.0
-	in <- core.Sample{TagID: "b", ValueNum: &v2, Quality: core.QualityGood, Time: time.Now().UTC()}
+	hist.WriteErr = errors.New("db down")
+	in <- sampleNum("b", 2, time.Time{})
 	deadline = time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if sp.Len() > 0 {
@@ -180,19 +162,17 @@ func TestFlushLoop_WriteAndSpoolOnError(t *testing.T) {
 		t.Fatal("expected spool enqueue after write error")
 	}
 
-	hist.err = timescale.ErrCapacityHalt
+	hist.WriteErr = timescale.ErrCapacityHalt
 	before := sp.Len()
-	v3 := 3.0
-	in <- core.Sample{TagID: "c", ValueNum: &v3, Quality: core.QualityGood, Time: time.Now().UTC()}
+	in <- sampleNum("c", 3, time.Time{})
 	time.Sleep(1200 * time.Millisecond)
 	if sp.Len() != before {
 		t.Fatalf("capacity halt must not spool: before=%d after=%d", before, sp.Len())
 	}
 
-	hist.err = timescale.ErrCapacityBusy
+	hist.WriteErr = timescale.ErrCapacityBusy
 	before = sp.Len()
-	v4 := 4.0
-	in <- core.Sample{TagID: "d", ValueNum: &v4, Quality: core.QualityGood, Time: time.Now().UTC()}
+	in <- sampleNum("d", 4, time.Time{})
 	deadline = time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if sp.Len() > before {
@@ -213,7 +193,7 @@ func TestFlushLoop_WriteAndSpoolOnError(t *testing.T) {
 }
 
 func TestReplaySpool_CorruptFileRemoved(t *testing.T) {
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
+	log := testLog()
 	dir := t.TempDir()
 	sp, err := spool.New(dir, 50)
 	if err != nil {
@@ -223,7 +203,7 @@ func TestReplaySpool_CorruptFileRemoved(t *testing.T) {
 	if err := os.WriteFile(bad, []byte("not-json"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	hist := &stubHist{}
+	hist := &memHist{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -248,18 +228,13 @@ func TestReplaySpool_CorruptFileRemoved(t *testing.T) {
 }
 
 func TestReplaySpool_SuccessAndHalt(t *testing.T) {
-	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
-	dir := t.TempDir()
-	sp, err := spool.New(dir, 50)
-	if err != nil {
-		t.Fatal(err)
-	}
-	v := 9.0
-	batch := []core.Sample{{TagID: "x", ValueNum: &v, Quality: core.QualityGood, Time: time.Now().UTC()}}
+	log := testLog()
+	sp := testSpool(t, 50)
+	batch := []core.Sample{sampleNum("x", 9, time.Time{})}
 	if err := sp.Enqueue(batch); err != nil {
 		t.Fatal(err)
 	}
-	hist := &stubHist{}
+	hist := &memHist{}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
@@ -268,19 +243,19 @@ func TestReplaySpool_SuccessAndHalt(t *testing.T) {
 	}()
 	deadline := time.Now().Add(8 * time.Second)
 	for time.Now().Before(deadline) {
-		if sp.Len() == 0 && len(hist.wrote) > 0 {
+		if sp.Len() == 0 && len(hist.wrote()) > 0 {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	if sp.Len() != 0 || len(hist.wrote) == 0 {
-		t.Fatalf("replay failed: spool=%d wrote=%d", sp.Len(), len(hist.wrote))
+	if sp.Len() != 0 || len(hist.wrote()) == 0 {
+		t.Fatalf("replay failed: spool=%d wrote=%d", sp.Len(), len(hist.wrote()))
 	}
 
 	if err := sp.Enqueue(batch); err != nil {
 		t.Fatal(err)
 	}
-	hist.err = timescale.ErrCapacityHalt
+	hist.WriteErr = timescale.ErrCapacityHalt
 	time.Sleep(5500 * time.Millisecond)
 	if sp.Len() == 0 {
 		t.Fatal("capacity halt must leave spool file")

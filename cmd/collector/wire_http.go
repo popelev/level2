@@ -19,7 +19,7 @@ func wireHTTP(log *slog.Logger, uiDir string, apiSrv *api.Server, fullSamplesSim
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if fullSamplesSim || devHub.AnyConnected() {
+		if processReady(fullSamplesSim, devHub.AnyConnected()) {
 			metrics.OPCConnected.Set(1)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ready"))
