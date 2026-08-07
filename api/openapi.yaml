@@ -11,15 +11,23 @@ info:
     - docs/l2-model-integration.md
     - docs/opc-write-mode.md
 
-    PLC write (`PUT /api/v1/tags/{id}/value`) requires `opc_write_enabled` /
-    `LEVEL2_OPC_WRITE_ENABLED=true` (default off → HTTP 403).
-  version: 1.0.0
+    **Write gates (all layers apply):**
+    1. `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default off → HTTP 403) — master kill switch
+    2. Optional `LEVEL2_API_TOKEN` / `api_token` — when set, mutating `/api/v1/*` and WS require
+       `Authorization: Bearer <token>`, `X-API-Token`, or `X-API-Key` (WS also accepts `?token=`)
+    3. Per-tag `writable` (default **false**) — Write API returns 403 when false
+
+    Batch write: `POST /api/v1/tags/values` — HTTP 200 when the request parses; per-item
+    `ok`/`error` in `results` (partial success allowed). Max 100 items.
+  version: 1.1.0
   contact:
     name: popelev / Level2
 
 servers:
   - url: http://127.0.0.1:8080
     description: Lab collector (same origin as Admin UI)
+
+security: []
 
 tags:
   - name: health
@@ -112,8 +120,13 @@ paths:
       tags: [tags]
       summary: Write scalar value to PLC (OPC UA)
       description: |
-        Requires `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED`.
+        Requires `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED`, tag `writable=true`,
+        and API token when `LEVEL2_API_TOKEN` is set.
         Coerces JSON to the tag's configured datatype, then OPC Write.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
       parameters:
         - $ref: "#/components/parameters/TagID"
       requestBody:
@@ -140,14 +153,55 @@ paths:
                 $ref: "#/components/schemas/WriteValueResponse"
         "400":
           description: Bad JSON / coercion / ambiguous tag
+        "401":
+          description: API token configured and missing/wrong
         "403":
-          description: Write disabled (opc_write_enabled=false)
+          description: Write disabled (opc_write_enabled=false) or tag writable=false
         "404":
           description: Unknown tag
         "409":
           description: Device not connected / no writer
         "502":
           description: OPC transport or StatusCode not Good
+
+  /api/v1/tags/values:
+    post:
+      tags: [tags]
+      summary: Batch write tag values to PLC
+      description: |
+        Partial-failure semantics: HTTP **200** when the batch body parses and size ≤ 100.
+        Each item has independent `ok` / `error` / `http_status`. Master write gate and
+        API token apply to the whole request; per-item writable/coercion/OPC errors appear in `results`.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchWriteRequest"
+            example:
+              writes:
+                - tag_id: Motor1.SpeedSP
+                  value: 42.5
+                  device_id: s7_1500
+                - tag_id: Motor1.Enable
+                  value: true
+      responses:
+        "200":
+          description: Batch accepted; inspect results for per-item status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BatchWriteResponse"
+        "400":
+          description: Invalid JSON / empty writes / exceeds max 100
+        "401":
+          description: API token configured and missing/wrong
+        "403":
+          description: opc_write_enabled=false
 
   /api/v1/tags/{id}/history:
     get:
@@ -240,10 +294,38 @@ paths:
       summary: WebSocket live sample stream
       description: |
         Upgrade to WebSocket. Server pushes one JSON Sample per message.
-        Client filters by tag_id locally (server-side filter is phase 2–3).
+        Optional filter: repeated `tag_id` query and/or comma-separated `tag_ids`.
+        Without a filter, all Live samples are broadcast (backward compatible).
+        Client may send `{"subscribe":["a","b"]}` (or `tag_ids`) to replace the filter.
+        When `LEVEL2_API_TOKEN` is set, pass Bearer / X-API-Token / `?token=`.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - name: tag_id
+          in: query
+          description: Repeatable allow-list of tag ids
+          schema:
+            type: string
+          style: form
+          explode: true
+        - name: tag_ids
+          in: query
+          description: Comma-separated tag ids (merged with tag_id)
+          schema:
+            type: string
+            example: a,b,c
+        - name: token
+          in: query
+          description: API token when header auth is awkward for WS clients
+          schema:
+            type: string
       responses:
         "101":
           description: Switching Protocols
+        "401":
+          description: API token configured and missing/wrong
 
   /api/v1/diagnostics/logs:
     get:
@@ -276,6 +358,21 @@ paths:
           description: Summary JSON
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: Shared LEVEL2_API_TOKEN (empty env = auth disabled)
+    ApiTokenHeader:
+      type: apiKey
+      in: header
+      name: X-API-Token
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Alias of X-API-Token
+
   parameters:
     TagID:
       name: id
@@ -323,6 +420,13 @@ components:
           type: boolean
         interval_ms:
           type: integer
+        writable:
+          type: boolean
+          description: |
+            Level2 allow-list for Write API (default false for new/omitted tags).
+            Existing YAML without the field loads as false — set true explicitly to allow writes.
+            Independent of Siemens AccessLevel.
+          default: false
         mode:
           type: string
           enum: [poll, subscribe]
@@ -396,4 +500,65 @@ components:
           $ref: "#/components/schemas/Sample"
         verified:
           type: boolean
-          description: Always false in MVP (write-then-verify is phase 3)
+          description: Always false until write-then-verify lands
+
+    BatchWriteRequest:
+      type: object
+      required: [writes]
+      properties:
+        writes:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            required: [tag_id]
+            properties:
+              tag_id:
+                type: string
+              device_id:
+                type: string
+              value:
+                oneOf:
+                  - type: number
+                  - type: boolean
+                  - type: string
+              value_num:
+                type: number
+              value_text:
+                type: string
+              value_bool:
+                type: boolean
+
+    BatchWriteResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/BatchWriteResult"
+        ok_count:
+          type: integer
+        fail_count:
+          type: integer
+
+    BatchWriteResult:
+      type: object
+      properties:
+        tag_id:
+          type: string
+        device_id:
+          type: string
+        node_id:
+          type: string
+        ok:
+          type: boolean
+        status:
+          type: string
+        written:
+          $ref: "#/components/schemas/Sample"
+        error:
+          type: string
+        http_status:
+          type: integer
+          description: Per-item status code equivalent (200/400/403/404/409/502)

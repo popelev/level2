@@ -55,6 +55,19 @@ func (s *Store) OPCWriteEnabled() bool {
 	return s.file.OPCWriteEnabled
 }
 
+// APIToken returns the shared API token (empty = auth disabled).
+func (s *Store) APIToken() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.file == nil {
+		return ""
+	}
+	return s.file.APIToken
+}
+
 func (s *Store) AllTags() []core.Tag {
 	var tags []core.Tag
 	for _, d := range s.Devices() {
@@ -365,6 +378,8 @@ func (s *Store) saveLocked() error {
 		// Keep secrets in env (.env); do not rewrite passwords into YAML on import.
 		out.Devices[i].Password = ""
 	}
+	// Prefer LEVEL2_API_TOKEN env; do not persist token into rewritten YAML.
+	out.APIToken = ""
 	b, err := yaml.Marshal(&out)
 	if err != nil {
 		return err

@@ -2,7 +2,7 @@
 
 Design for **third-party programs** (any language) that read or write process variables through Level2’s REST/WebSocket API. Level2 stays the **OPC UA gateway**: clients never embed an OPC stack; they call `:8080`, and the collector talks to the PLC.
 
-**Status:** reads, discovery, and PLC write MVP work today (lab-open API). Write is gated by `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default **off** → **403**). Design detail: [opc-write-mode.md](opc-write-mode.md).
+**Status:** reads, discovery, PLC write (single + batch), optional API token, tag `writable`, WS tag filter. Write is gated by `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default **off** → **403**). Design detail: [opc-write-mode.md](opc-write-mode.md).
 
 **Canonical machine-readable contract:** [`api/openapi.yaml`](../api/openapi.yaml) — also `GET /api/v1/openapi.yaml` and Swagger UI at **`/docs`**. This markdown remains a narrative guide; when they disagree, **OpenAPI wins**.
 
@@ -51,9 +51,9 @@ Base URL (lab VM): `http://<host>:8080`. Same origin serves the React Admin UI.
 | Live read | `GET /api/v1/tags`, `GET /api/v1/tags/{id}/value` — in-memory Live store. |
 | History | `GET /api/v1/tags/{id}/history?from=&to=&limit=` — Timescale. |
 | Discovery | `GET /api/v1/devices`, tags list, `GET /api/v1/browse`, `POST /api/v1/expand`, project/xlsx import-export. |
-| Write | `PUT /api/v1/tags/{id}/value` — OPC Write when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default off → **403**). |
-| WebSocket | `GET /api/v1/ws/stream` — fan-out of every Live sample (JSON text frames). |
-| Auth | **None** — open lab API. Anyone who can reach `:8080` can read (and mutate config endpoints). |
+| Write | `PUT /api/v1/tags/{id}/value`, batch `POST /api/v1/tags/values` — requires write gate + tag `writable` |
+| WebSocket | `GET /api/v1/ws/stream` — Live samples; optional `?tag_id=` / `?tag_ids=` filter |
+| Auth | Optional `LEVEL2_API_TOKEN` — when set, mutating `/api/v1/*` + WS require Bearer / `X-API-Token` / `?token=` |
 | CORS | **No** dedicated CORS middleware. Browser cross-origin calls from another origin will fail unless same-origin or a reverse proxy adds headers. Non-browser clients (curl, Python `requests`, C# `HttpClient`) are unaffected. |
 | OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
 | WS origin | `CheckOrigin: true` (accept all) — fine for lab; revisit with auth. |
@@ -100,12 +100,15 @@ Filter: `?device_id=s7_1500`.
 
 ```text
 GET /api/v1/ws/stream
+GET /api/v1/ws/stream?tag_id=a&tag_id=b
+GET /api/v1/ws/stream?tag_ids=a,b
 Upgrade: websocket
 ```
 
 - Server pushes **one JSON sample object per message** (same DTO as above) whenever FanIn updates Live (every poll/subscribe sample, including unchanged values).
-- Client → server: any message keeps the connection alive; disconnect ends the session. **No** subscribe filter / tag list yet (broadcast all).
-- For selective updates today: open WS and ignore unwanted `tag_id`s, or poll `GET .../value`.
+- **Filter:** omit query → all tags. With `tag_id` / `tag_ids` → only matching `tag_id`s. Client may also send `{"subscribe":["a","b"]}` to replace the filter.
+- When `LEVEL2_API_TOKEN` is set: Bearer / `X-API-Token` / `?token=` required before upgrade.
+- Client → server: any non-subscribe message keeps the connection alive; disconnect ends the session.
 
 ---
 
@@ -175,14 +178,14 @@ Content-Type: application/json
 
 Gated by `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (**403** when off). Coercion + OPC Write when on. Error table and body forms: write design doc §4 and OpenAPI.
 
-### 4.2. Batch write (Phase 2)
+### 4.2. Batch write
 
 ```http
 POST /api/v1/tags/values
 { "writes": [ { "tag_id": "A", "value": 1 }, { "tag_id": "B", "value": true } ] }
 ```
 
-Not implemented yet. Partial success per item; chunked OPC writes.
+HTTP **200** when the request parses (max 100 items). Response includes per-item `ok` / `error` / `http_status` (partial success). Same gates as single PUT.
 
 ### 4.3. Idempotency notes
 
@@ -243,18 +246,18 @@ Request bodies: `application/json` (except multipart Excel import). Responses: `
 
 ---
 
-## 7. Auth (phased)
+## 7. Auth
 
 | Phase | Behavior |
 |-------|----------|
-| **Lab now** | Open. Network isolation / firewall is the boundary. |
-| **Phase A** | Optional shared **API token** (`Authorization: Bearer …` or `X-API-Key`) for all `/api/v1/*` mutating routes; reads may stay open or use the same token. |
-| **Phase B** | Split **read** vs **write** (and config) roles; map to write gate in opc-write-mode. |
+| **Lab default** | Token empty → open. Network isolation / firewall is the boundary. |
+| **Phase A (implemented)** | Optional shared **API token** (`LEVEL2_API_TOKEN`): `Authorization: Bearer …`, `X-API-Token`, or `X-API-Key` for all `/api/v1/*` **mutating** routes + WS. Reads stay open. Empty token = disabled. |
+| **Phase B** | Split **read** vs **write** (and config) roles — not yet. |
 | **Later** | TLS termination at reverse proxy; Basic or OIDC if the plant requires it. |
 
-Document clearly: with write enabled and no auth, **anyone on the lab network can change PLC values**.
+Document clearly: with write enabled and no auth, **anyone on the lab network can change PLC values** (subject to `writable` flags).
 
-WebSocket auth: pass token as query `?token=` or first message — decide when Phase A lands (browsers cannot set arbitrary Upgrade headers easily).
+WebSocket auth: same headers, or query `?token=`.
 
 ---
 

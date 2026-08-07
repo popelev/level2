@@ -17,8 +17,11 @@ type File struct {
 	SpoolDir string        `yaml:"spool_dir"`
 	UIDir    string        `yaml:"ui_dir"`
 	// OPCWriteEnabled gates PUT /api/v1/tags/{id}/value. Default false; override with LEVEL2_OPC_WRITE_ENABLED.
-	OPCWriteEnabled bool          `yaml:"opc_write_enabled"`
-	Devices         []core.Device `yaml:"devices"`
+	OPCWriteEnabled bool `yaml:"opc_write_enabled"`
+	// APIToken, when non-empty, requires Bearer / X-API-Token on mutating /api/v1 routes (and WS).
+	// Empty = auth disabled (lab backward compatible). Override with LEVEL2_API_TOKEN.
+	APIToken string        `yaml:"api_token,omitempty"`
+	Devices  []core.Device `yaml:"devices"`
 }
 
 // Full-disk policies when used bytes reach the capacity percent limit.
@@ -91,6 +94,9 @@ func Load(path string) (*File, error) {
 			return nil, fmt.Errorf("LEVEL2_OPC_WRITE_ENABLED: %w", err)
 		}
 		f.OPCWriteEnabled = enabled
+	}
+	if v, ok := os.LookupEnv("LEVEL2_API_TOKEN"); ok {
+		f.APIToken = strings.TrimSpace(v)
 	}
 	for i := range f.Devices {
 		d := &f.Devices[i]

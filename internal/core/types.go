@@ -88,6 +88,9 @@ type Tag struct {
 	DataType   ValueType `yaml:"datatype" json:"datatype"`
 	Enabled    bool      `yaml:"enabled" json:"enabled"`
 	IntervalMs int       `yaml:"interval_ms" json:"interval_ms"`
+	// Writable allows Level2 Write API / UI to set this tag (default false).
+	// Independent of Siemens AccessLevel — server can still deny.
+	Writable bool `yaml:"writable,omitempty" json:"writable"`
 	// Mode is poll (legacy) or subscribe (OPC Subscription). See docs/opc-subscription-mode.md.
 	Mode PollMode `yaml:"mode,omitempty" json:"mode,omitempty"`
 }

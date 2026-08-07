@@ -66,6 +66,7 @@ devices:
 	t.Setenv("LEVEL2_DB_CAPACITY_PERCENT", "70")
 	t.Setenv("LEVEL2_DB_FULL_POLICY", "stop")
 	t.Setenv("LEVEL2_OPC_WRITE_ENABLED", "true")
+	t.Setenv("LEVEL2_API_TOKEN", "lab-secret")
 	f2, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -81,6 +82,9 @@ devices:
 	}
 	if !f2.OPCWriteEnabled {
 		t.Fatal("expected opc write enabled from env")
+	}
+	if f2.APIToken != "lab-secret" {
+		t.Fatalf("token=%q", f2.APIToken)
 	}
 }
 

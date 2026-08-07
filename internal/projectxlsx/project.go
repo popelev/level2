@@ -48,7 +48,7 @@ func Write(devices []core.Device) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	tagHeaders := []string{"device_id", "id", "path", "node_id", "datatype", "enabled", "interval_ms"}
+	tagHeaders := []string{"device_id", "id", "path", "node_id", "datatype", "enabled", "interval_ms", "writable"}
 	for i, h := range tagHeaders {
 		_ = f.SetCellValue(SheetTags, cell(i+1, 1), h)
 	}
@@ -62,6 +62,7 @@ func Write(devices []core.Device) ([]byte, error) {
 			_ = f.SetCellValue(SheetTags, cell(5, tr), string(t.DataType))
 			_ = f.SetCellValue(SheetTags, cell(6, tr), t.Enabled)
 			_ = f.SetCellValue(SheetTags, cell(7, tr), t.IntervalMs)
+			_ = f.SetCellValue(SheetTags, cell(8, tr), t.Writable)
 			tr++
 		}
 	}
@@ -176,6 +177,7 @@ func parseProject(f *excelize.File) (Project, error) {
 				if iv <= 0 {
 					iv = 1000
 				}
+				wr := parseBool(cellAt(row, col["writable"]), false)
 				dev := byID[devID]
 				if dev == nil {
 					dev = &core.Device{ID: devID, Endpoint: "opc.tcp://unknown", Security: "None", Tags: nil}
@@ -189,6 +191,7 @@ func parseProject(f *excelize.File) (Project, error) {
 					DataType:   dt,
 					Enabled:    en,
 					IntervalMs: iv,
+					Writable:   wr,
 				})
 			}
 		}
@@ -230,12 +233,12 @@ func mapHeaders(header []string) map[string]int {
 	idx := map[string]int{
 		"id": -1, "endpoint": -1, "username": -1, "security": -1,
 		"device_id": -1, "path": -1, "node_id": -1, "datatype": -1,
-		"enabled": -1, "interval_ms": -1,
+		"enabled": -1, "interval_ms": -1, "writable": -1,
 	}
 	for i, h := range header {
 		key := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(h), " ", "_"))
 		switch key {
-		case "id", "endpoint", "username", "security", "path", "datatype", "enabled":
+		case "id", "endpoint", "username", "security", "path", "datatype", "enabled", "writable":
 			idx[key] = i
 		case "device_id", "deviceid":
 			idx["device_id"] = i

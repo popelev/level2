@@ -129,6 +129,7 @@ func main() {
 			return useSim || devHub.AnyConnected()
 		},
 		OPCWriteEnabled: cfgStore.OPCWriteEnabled,
+		APIToken:        cfgStore.APIToken,
 		OnDeviceChanged: func(deviceID string, removed bool) {
 			if removed {
 				devHub.Remove(ctx, deviceID)
@@ -169,7 +170,7 @@ func main() {
 		log.Info("serving ui", "dir", cfg.UIDir)
 	}
 
-	srv := &http.Server{Addr: cfg.Listen, Handler: mux}
+	srv := &http.Server{Addr: cfg.Listen, Handler: apiSrv.APIAuth(mux)}
 	go func() {
 		log.Info("http listen", "addr", cfg.Listen)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

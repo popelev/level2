@@ -4,7 +4,7 @@ Design for **writing process values** from Level2 into OPC UA nodes (Siemens S7-
 
 External programs (any language) should call the same REST write once it exists — gateway role, read paths, and client contract: [external-client-api.md](external-client-api.md).
 
-**Status:** Phase 1 MVP implemented. REST `PUT /api/v1/tags/{id}/value` writes when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` is true (default **off** → **403**). OpenAPI: [`api/openapi.yaml`](../api/openapi.yaml), Swagger `/docs`.
+**Status:** Phase 2–3 hardening implemented (batch write, API token, tag `writable`, WS filter). REST write when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` is true (default **off** → **403**). OpenAPI: [`api/openapi.yaml`](../api/openapi.yaml), Swagger `/docs`.
 
 ---
 
@@ -13,13 +13,13 @@ External programs (any language) should call the same REST write once it exists 
 | Area | Today |
 |------|--------|
 | OPC driver | `internal/driver/opcua/driver.go` — Connect + periodic **Read** (`Subscribe` = poll) + **`WriteValue`**. |
-| Library | [`github.com/gopcua/opcua` v0.7.1](https://github.com/gopcua/opcua) — `Client.Write(ctx, *ua.WriteRequest)` exists; unused. |
-| REST | `PUT /api/v1/tags/{id}/value` — implemented; gated by `opc_write_enabled` (default off → **403**). |
-| Tag model | `id`, `node_id`, `path`, `datatype`, `enabled`, `interval_ms`, optional `mode` (`poll` \| `subscribe`). **No** `writable` / write ACL flag yet (Phase 2). |
+| Library | [`github.com/gopcua/opcua` v0.7.1](https://github.com/gopcua/opcua) — `Client.Write(ctx, *ua.WriteRequest)`. |
+| REST | `PUT /api/v1/tags/{id}/value` and batch `POST /api/v1/tags/values` — gated by `opc_write_enabled` (default off → **403**). |
+| Tag model | `id`, `node_id`, `path`, `datatype`, `enabled`, `interval_ms`, **`writable`** (default **false**), optional `mode` (`poll` \| `subscribe`). |
 | Live / FanIn | Poll → Live + WS always; Timescale only on value/quality change ([Phase 1 suppress](opc-subscription-mode.md)). |
-| Auth | Open lab API — no HTTP auth / roles. |
+| Auth | Optional shared **`LEVEL2_API_TOKEN`** on mutating `/api/v1/*` + WS (empty = open lab). |
 | Diagnostics | Categories `opc_read`, `opc_write`, `db_write`. |
-| UI | **DB write list** shows live value as read-only text. **Monitor / Address Space** adds tags to the list (“Write to DB” / “Write selected to DB” = *register for monitoring*, not PLC write). Confirm dialogs exist for destructive config ops only. |
+| UI | **DB write list** shows live value as read-only text. Writable toggle in Admin UI is a follow-up. |
 
 ```mermaid
 sequenceDiagram
@@ -156,13 +156,14 @@ tags:
 
 | Field | Meaning |
 |-------|---------|
-| `writable` | Level2-side allow-list for Write API / UI. Independent of Siemens AccessLevel (server can still deny). |
+| `writable` | Level2-side allow-list for Write API / UI. Default **false** (new tags and YAML omitting the field). Independent of Siemens AccessLevel (server can still deny). Backfill: set via PUT tag / project.xlsx `writable` column / YAML. |
 
 Device-level kill switch (env / YAML):
 
 | Setting | Meaning |
 |---------|---------|
-| `LEVEL2_OPC_WRITE_ENABLED` / `opc_write_enabled` | Global gate. Default **`false`** until MVP is lab-proven; set `true` on lab compose. When false → API returns **403** with clear message (not 501). |
+| `LEVEL2_OPC_WRITE_ENABLED` / `opc_write_enabled` | Global gate. Default **`false`**. When false → API returns **403** (not 501). |
+| `LEVEL2_API_TOKEN` / `api_token` | Optional shared token. Empty = auth disabled. When set → mutating `/api/v1/*` + WS require Bearer / `X-API-Token` / `X-API-Key` / `?token=` → **401**. Prefer env; rewritten config strips `api_token` from YAML. |
 
 ---
 
@@ -214,6 +215,7 @@ Prefer a single `value` field for UI simplicity; typed fields are optional alias
 |------|------|
 | 400 | Coercion / missing value / unknown datatype |
 | 403 | Global write disabled or tag `writable=false` |
+| 401 | API token configured and missing/wrong |
 | 404 | Unknown tag_id (or ambiguous without `device_id`) |
 | 409 | Device not connected |
 | 502 | OPC transport / StatusCode not Good (body includes status string, e.g. `BadUserAccessDenied`) |
@@ -228,7 +230,7 @@ PUT /api/v1/devices/{device_id}/nodes/value
 
 Only if we need Address Space ad-hoc write without adding a tag. Higher risk — gate behind the same global flag + confirm UI.
 
-### 4.3. Batch write (Phase 2)
+### 4.3. Batch write
 
 ```http
 POST /api/v1/tags/values
@@ -240,7 +242,9 @@ POST /api/v1/tags/values
 }
 ```
 
-Map to one or more OPC `WriteRequest`s (chunk ≤ `maxNodesPerWrite`, default **50–100**, same Siemens concern as Read). Per-item status in response; partial success allowed.
+- Max **100** items per request.
+- **Partial success:** HTTP **200** when the batch body parses; each item has `ok`, optional `error` / `http_status`, and `written` on success.
+- Same gates as single PUT: global enable, API token (if configured), per-tag `writable`, coerce, OPC Write, diag.
 
 ### 4.4. Write-then-verify (Phase 3)
 

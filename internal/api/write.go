@@ -15,6 +15,9 @@ import (
 
 const writeTimeout = 5 * time.Second
 
+// Max batch size (per-item OPC writes; same order of magnitude as Siemens maxNodesPerWrite).
+const maxBatchWrites = 100
+
 type writeValueBody struct {
 	Value     any     `json:"value"`
 	ValueNum  *float64 `json:"value_num"`
@@ -24,12 +27,42 @@ type writeValueBody struct {
 }
 
 type writeValueResponse struct {
+	TagID    string        `json:"tag_id"`
+	DeviceID string        `json:"device_id"`
+	NodeID   string        `json:"node_id"`
+	Status   string        `json:"status"`
+	Written  sampleDTOType `json:"written"`
+	Verified bool          `json:"verified"`
+}
+
+type batchWriteBody struct {
+	Writes []batchWriteItem `json:"writes"`
+}
+
+type batchWriteItem struct {
+	TagID     string   `json:"tag_id"`
+	DeviceID  string   `json:"device_id"`
+	Value     any      `json:"value"`
+	ValueNum  *float64 `json:"value_num"`
+	ValueText *string  `json:"value_text"`
+	ValueBool *bool    `json:"value_bool"`
+}
+
+type batchWriteResult struct {
 	TagID    string         `json:"tag_id"`
-	DeviceID string         `json:"device_id"`
-	NodeID   string         `json:"node_id"`
-	Status   string         `json:"status"`
-	Written  sampleDTOType  `json:"written"`
-	Verified bool           `json:"verified"`
+	DeviceID string         `json:"device_id,omitempty"`
+	NodeID   string         `json:"node_id,omitempty"`
+	OK       bool           `json:"ok"`
+	Status   string         `json:"status,omitempty"`
+	Written  *sampleDTOType `json:"written,omitempty"`
+	Error    string         `json:"error,omitempty"`
+	HTTP     int            `json:"http_status"`
+}
+
+type batchWriteResponse struct {
+	Results   []batchWriteResult `json:"results"`
+	OKCount   int                `json:"ok_count"`
+	FailCount int                `json:"fail_count"`
 }
 
 func (s *Server) opcWriteEnabled() bool {
@@ -67,52 +100,140 @@ func (s *Server) handleWriteTagValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deviceID, tag, err := s.resolveWritableTag(tagID, body.DeviceID)
+	res := s.executeWrite(r.Context(), tagID, body.DeviceID, raw)
+	if !res.OK {
+		http.Error(w, res.Error, res.HTTP)
+		return
+	}
+	writeJSON(w, http.StatusOK, writeValueResponse{
+		TagID:    res.TagID,
+		DeviceID: res.DeviceID,
+		NodeID:   res.NodeID,
+		Status:   res.Status,
+		Written:  *res.Written,
+		Verified: false,
+	})
+}
+
+func (s *Server) handleBatchWriteTagValues(w http.ResponseWriter, r *http.Request) {
+	if !s.opcWriteEnabled() {
+		diag.OPCWrite(diag.LevelWarn, "", "", "opc batch write denied", "opc_write_enabled=false")
+		http.Error(w, "OPC write is disabled (opc_write_enabled=false)", http.StatusForbidden)
+		return
+	}
+
+	var body batchWriteBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	if len(body.Writes) == 0 {
+		http.Error(w, "writes array is required and must be non-empty", http.StatusBadRequest)
+		return
+	}
+	if len(body.Writes) > maxBatchWrites {
+		http.Error(w, fmt.Sprintf("writes exceeds max %d items", maxBatchWrites), http.StatusBadRequest)
+		return
+	}
+
+	out := batchWriteResponse{Results: make([]batchWriteResult, 0, len(body.Writes))}
+	for _, item := range body.Writes {
+		raw, err := pickWriteRawValue(writeValueBody{
+			Value: item.Value, ValueNum: item.ValueNum, ValueText: item.ValueText, ValueBool: item.ValueBool,
+		})
+		if err != nil {
+			out.Results = append(out.Results, batchWriteResult{
+				TagID: item.TagID, DeviceID: item.DeviceID, OK: false, Error: err.Error(), HTTP: http.StatusBadRequest,
+			})
+			out.FailCount++
+			continue
+		}
+		if item.TagID == "" {
+			out.Results = append(out.Results, batchWriteResult{
+				TagID: item.TagID, DeviceID: item.DeviceID, OK: false, Error: "tag_id required", HTTP: http.StatusBadRequest,
+			})
+			out.FailCount++
+			continue
+		}
+		res := s.executeWrite(r.Context(), item.TagID, item.DeviceID, raw)
+		out.Results = append(out.Results, res)
+		if res.OK {
+			out.OKCount++
+		} else {
+			out.FailCount++
+		}
+	}
+	// HTTP 200 when the batch request itself was parsed; per-item ok/error in results.
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) executeWrite(parent context.Context, tagID, deviceIDHint string, raw any) batchWriteResult {
+	deviceID, tag, err := s.resolveWritableTag(tagID, deviceIDHint)
 	if err != nil {
 		code := http.StatusNotFound
 		if errors.Is(err, errAmbiguousTag) {
 			code = http.StatusBadRequest
 		}
-		http.Error(w, err.Error(), code)
-		return
+		return batchWriteResult{TagID: tagID, DeviceID: deviceIDHint, OK: false, Error: err.Error(), HTTP: code}
+	}
+	if !tag.Writable {
+		diag.OPCWrite(diag.LevelWarn, deviceID, tag.ID, "opc write denied", "tag writable=false")
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: false, Error: "tag is not writable (writable=false)", HTTP: http.StatusForbidden,
+		}
 	}
 
 	coerced, err := opcuaDriver.CoerceWriteValue(tag.DataType, raw)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: false, Error: err.Error(), HTTP: http.StatusBadRequest,
+		}
 	}
 
 	if s.DevHub == nil {
-		http.Error(w, "device hub unavailable", http.StatusServiceUnavailable)
-		return
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: false, Error: "device hub unavailable", HTTP: http.StatusServiceUnavailable,
+		}
 	}
 	writer, err := s.DevHub.ValueWriter(deviceID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusConflict)
-		return
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: false, Error: err.Error(), HTTP: http.StatusConflict,
+		}
 	}
 	ent, ok := s.DevHub.Entry(deviceID)
 	if !ok || ent.Driver == nil || !ent.Driver.Connected() {
-		http.Error(w, fmt.Sprintf("device %q not connected", deviceID), http.StatusConflict)
-		return
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: false, Error: fmt.Sprintf("device %q not connected", deviceID), HTTP: http.StatusConflict,
+		}
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), writeTimeout)
+	ctx, cancel := context.WithTimeout(parent, writeTimeout)
 	defer cancel()
 	if err := writer.WriteValue(ctx, tag, coerced); err != nil {
 		var stErr *opcuaDriver.WriteStatusError
 		if errors.As(err, &stErr) {
-			http.Error(w, stErr.Error(), http.StatusBadGateway)
-			return
+			return batchWriteResult{
+				TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+				OK: false, Error: stErr.Error(), HTTP: http.StatusBadGateway,
+			}
 		}
 		if err.Error() == "not connected" {
-			http.Error(w, fmt.Sprintf("device %q not connected", deviceID), http.StatusConflict)
-			return
+			return batchWriteResult{
+				TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+				OK: false, Error: fmt.Sprintf("device %q not connected", deviceID), HTTP: http.StatusConflict,
+			}
 		}
 		diag.OPCWrite(diag.LevelError, deviceID, tag.ID, "opc write failed", err.Error())
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: false, Error: err.Error(), HTTP: http.StatusBadGateway,
+		}
 	}
 
 	written := sampleFromCoerced(tag.ID, tag.DataType, coerced)
@@ -122,15 +243,11 @@ func (s *Server) handleWriteTagValue(w http.ResponseWriter, r *http.Request) {
 	if s.Hub != nil {
 		s.Hub.Broadcast(written)
 	}
-
-	writeJSON(w, http.StatusOK, writeValueResponse{
-		TagID:    tag.ID,
-		DeviceID: deviceID,
-		NodeID:   tag.NodeID,
-		Status:   "Good",
-		Written:  sampleDTO(written),
-		Verified: false,
-	})
+	dto := sampleDTO(written)
+	return batchWriteResult{
+		TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+		OK: true, Status: "Good", Written: &dto, HTTP: http.StatusOK,
+	}
 }
 
 var errAmbiguousTag = errors.New("ambiguous tag_id; provide device_id")

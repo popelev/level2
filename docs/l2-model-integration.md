@@ -46,9 +46,9 @@ flowchart TB
 ## Closed loop via API
 
 1. `GET /readyz` (and optionally `GET /api/v1/devices`) until connected.
-2. Inputs: `GET /api/v1/ws/stream` (filter `tag_id` client-side) and/or `GET /api/v1/tags`.
+2. Inputs: `GET /api/v1/ws/stream?tag_id=…` (server-side filter) and/or `GET /api/v1/tags`.
 3. Compute setpoints / commands from technology rules.
-4. Outputs: `PUT /api/v1/tags/{tag_id}/value` with JSON body `{ "value": …, "device_id": "…" }`.
+4. Outputs: `PUT /api/v1/tags/{tag_id}/value` or batch `POST /api/v1/tags/values` (tags must be `writable: true`).
 5. Confirm via next Live/WS sample; **no silent retry** of writes after ambiguous timeouts.
 
 Bind only on stable **`tag_id`** (+ `device_id` when needed). Level2 owns the DB write list / project; the model keeps its own Inputs/Outputs → `tag_id` mapping (versioned with the technology).
@@ -57,13 +57,17 @@ Sample contract: `time`, `tag_id`, `value_num` | `value_text` | `value_bool`, `q
 
 ---
 
-## Write gate (required for outputs)
+## Write gates (required for outputs)
 
 | Setting | Default | Effect |
 |---------|---------|--------|
-| `opc_write_enabled` (YAML) / **`LEVEL2_OPC_WRITE_ENABLED`** | **`false`** | When off, PUT returns **403** |
+| `opc_write_enabled` / **`LEVEL2_OPC_WRITE_ENABLED`** | **`false`** | Master kill switch; when off, write APIs return **403** |
+| Tag **`writable`** | **`false`** | Per-tag allow-list; write returns **403** when false. Set via tag CRUD / project.xlsx column / YAML |
+| **`LEVEL2_API_TOKEN`** / `api_token` | empty (auth off) | When set, mutating `/api/v1/*` + WS require Bearer / `X-API-Token` / `?token=` → **401** if missing/wrong |
 
-Enable only on intentional lab/plant setups. Diagnostics category: `opc_write`.
+Prefer env for the token (`LEVEL2_API_TOKEN`); rewritten `config.yaml` does not persist `api_token`. Existing tags without `writable` load as **false** — set `writable: true` on outputs (or backfill via project import / API).
+
+Enable write only on intentional lab/plant setups. Diagnostics category: `opc_write`.
 
 ---
 
@@ -72,17 +76,16 @@ Enable only on intentional lab/plant setups. Diagnostics category: `opc_write`.
 | Phase | Platform | Model |
 |-------|----------|--------|
 | **0** | Reads, WS, history, OpenAPI/Swagger | Dry-run: mapping + HTTP/WS client; log intended writes without PUT |
-| **1** (this delivery) | OPC write MVP + OpenAPI + `/docs` | PUT outputs when gate on |
-| **2** | Batch write, tag `writable`, WS filter by `tag_id` | First production model container on lab network |
-| **3** | API token, write-then-verify, roles | Hardened plant deployment |
+| **1** | OPC write MVP + OpenAPI + `/docs` | PUT outputs when gate on |
+| **2–3** (this delivery) | Batch write, tag `writable`, WS filter, API token | Production-minded model container on lab network |
 
-Phase 2–3 items are **not** in this change; they are planned only.
+Still deferred: write-then-verify, split read/write roles, Admin UI writable toggle.
 
 ---
 
 ## Safety notes
 
-1. Platform: keep write **off** until lab-proven; anyone who can reach `:8080` can write when the gate is on (no HTTP auth yet).
+1. Platform: keep write **off** until lab-proven; when on, use token + `writable` so the model cannot touch arbitrary tags.
 2. Model: do not write when Level2 is unready or input quality is bad unless a documented fail-safe applies.
 3. Separate setpoints vs pulse/edge commands in the model mapping.
 4. Isolate model on Docker network; do not publish it unless needed.
