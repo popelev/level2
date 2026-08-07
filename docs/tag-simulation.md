@@ -1,31 +1,70 @@
-# Tag simulation (opt-in)
+# Tag simulation (per-tag + legacy global)
 
-Synthetic tag samples for PLC-off / lab UI without pretending the plant is live.
+Synthetic tag samples for PLC-off / lab UI without pretending the whole plant is live.
 
-## Defaults
+## Source of truth
 
-| Control | Default | Auto on disconnect? |
-|---------|---------|---------------------|
-| `tag_simulation` / `LEVEL2_TAG_SIMULATION` | **off** | **Never** |
-| `LEVEL2_SIM_BROWSER` | lab `.env.example` may set `1` | **Never** (env only) |
+| Control | Default | Auto on disconnect? | Effect |
+|---------|---------|---------------------|--------|
+| **Per-tag `simulate`** | **false** | **Never** | Mock samples for that tag only; **real OPC continues** for other tags |
+| Legacy `tag_simulation` / `LEVEL2_TAG_SIMULATION` | **off** | **Never** | All enabled tags mocked; **OPC collect paused** (master) |
+| `LEVEL2_SIM_BROWSER` | lab `.env.example` may set `1` | **Never** (env only) | Full in-memory browse + all samples |
 
-Disconnect honesty (sim **off**): Overview COLLECTOR / TAGS must not show green “all good” from stale Live Good samples. Status counts disconnected devices’ Live Good as bad; OPC poll failure emits Bad samples into FanIn.
+**Prefer per-tag `simulate`.** The global master remains for “simulate everything” lab setups; it is opt-in and never turns on when OPC drops.
 
-## Enable tag simulation
+Disconnect honesty (no global/sim-browser): Overview TAGS must not show green “all good” from stale Live Good on disconnected devices — except tags with `simulate=true`, which keep Good mock samples.
 
-Primary controls (same pattern as `opc_write_enabled`):
+## Per-tag simulate
+
+YAML / project.xlsx column `simulate` (same pattern as `writable`):
 
 ```yaml
-# config.yaml — default false
+tags:
+  - id: demo_sp
+    node_id: ns=4;i=1
+    datatype: float64
+    enabled: true
+    simulate: true   # default false when omitted
+```
+
+### Runtime (PLC connected vs not)
+
+| Tag | PLC up | PLC down |
+|-----|--------|----------|
+| `simulate: false` | Live OPC values | Stale / bad (honest) |
+| `simulate: true` | **Mock overrides** that tag (OPC skipped for it) | Mock continues |
+
+Collector always runs a mock loop for tags with `simulate=true`. OPC subscribe lists exclude those tags so writers do not fight.
+
+### API
+
+```http
+PATCH /api/v1/devices/{device_id}/tags/{tag_id}
+{"simulate": true}
+
+POST /api/v1/devices/{device_id}/tags/simulate
+{"simulate": true, "tag_ids": ["a","b"]}
+# or all tags on device:
+{"simulate": true, "all": true}
+
+POST /api/v1/tags/simulate
+{"simulate": false, "all": true}
+{"simulate": true, "tag_ids": ["a"], "device_id": "plc"}
+```
+
+Applies immediately (config gen reload) — **no collector recreate** for per-tag flags.
+
+`GET /api/v1/status/summary` includes `tags_simulated` (count of tags with `simulate=true`, or all enabled under global/sim browser).
+
+## Legacy global master
+
+```yaml
 tag_simulation: false
 ```
 
 ```bash
-# env overrides YAML
 LEVEL2_TAG_SIMULATION=true
 ```
-
-API (persists YAML; **recreate collector** to apply sample path):
 
 ```http
 GET  /api/v1/tag-simulation
@@ -33,35 +72,17 @@ PUT  /api/v1/tag-simulation
 {"enabled": true}
 ```
 
-Admin UI Overview has a checkbox that calls the same PUT.
+After enabling global master: recreate collector so the process starts with OPC paused and mock for all enabled tags.
 
-After enabling: `docker compose -f deploy/platform/docker-compose.yml up -d --force-recreate` (or equivalent) so the process starts `mock.NewDemo`.
-
-## What it does
-
-When **active** (`tag_simulation` or `LEVEL2_SIM_BROWSER` at process start):
-
-1. Starts `internal/driver/mock.NewDemo` → synthetic Good samples for configured enabled tags.
-2. Skips real OPC collect loops (no dual writers).
-3. `/readyz` and `collector_ready` are true with `ready_detail`: `tag simulation` or `sim browser`.
-4. Status JSON: `tag_simulation: true` (and `sim_browser: true` when browse sim is on).
-5. UI labels **sim** / **simulation · not live PLC** (not green “live healthy”).
-
-`LEVEL2_SIM_BROWSER=1` additionally replaces OPC browse/expand with `simbrowser` (full PLC-off). Tag simulation alone keeps the real device hub (Servers may show down) while feeding synthetic tag values.
+Admin Overview keeps a demoted “legacy: simulate all tags” control; primary UX is per-tag on **DB write list**.
 
 ## Writes / safety
 
-While tag simulation or sim browser is **active**:
+- Global master or `LEVEL2_SIM_BROWSER` active → all Write API calls **409**.
+- Per-tag: writes to a tag with `simulate=true` → **409**; other writable tags still go to the PLC when write gate is on.
 
-- `PUT /api/v1/tags/{id}/value` and batch write return **409** — **no writes to the real PLC**.
-- Mock driver has no OPC Writer; a sim-only write store is not in MVP (TODO if needed for CI write tests).
+## Status / UI
 
-Turn simulation **off** and recreate collector before enabling `opc_write_enabled` against a real PLC.
-
-## Status fields
-
-`GET /api/v1/status/summary` includes:
-
-- `tag_simulation` — process feeding synthetic samples
-- `sim_browser` — full browse sim
-- `ready_detail` — `ready` | `not connected` | `tag simulation` | `sim browser`
+- `tags_simulated` — pill on Overview TAGS card and DB write list header
+- Filter: “Simulated only” on DB write list
+- Bulk: enable/disable simulation for all or selected tags

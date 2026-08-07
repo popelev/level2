@@ -2,7 +2,9 @@
 #
 # Secrets via env: DATABASE_URL, PLC_OPC_ENDPOINT, OPC_UA_USERNAME, OPC_UA_PASSWORD
 # PLC-off browse/expand: LEVEL2_SIM_BROWSER=1
-# Opt-in tag samples only (default false; NEVER auto on disconnect): tag_simulation / LEVEL2_TAG_SIMULATION
+# Opt-in tag samples: prefer per-tag `simulate: true` (default false).
+# Legacy global master (simulates ALL tags, pauses OPC): tag_simulation / LEVEL2_TAG_SIMULATION
+# NEVER auto on disconnect. See docs/tag-simulation.md.
 # PLC write API: opc_write_enabled / LEVEL2_OPC_WRITE_ENABLED (default false)
 # Optional API token: api_token / LEVEL2_API_TOKEN (empty = auth disabled; prefer env)
 
@@ -36,6 +38,7 @@ devices:
         enabled: true
         interval_ms: 1000
         # writable: false   # default; set true to allow Write API
+        # simulate: false   # default; set true for per-tag mock samples (OPC continues for others)
       # Example second tag for multi-tag poll (PLC-off harmless if node missing)
       # - id: opc_measure_unit
       #   node_id: "ns=4;i=4209"

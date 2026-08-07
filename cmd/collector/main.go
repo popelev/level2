@@ -72,14 +72,15 @@ func main() {
 	go api.FanIn(ctx, raw, live, wsHub, toHist)
 
 	useSim := os.Getenv("LEVEL2_SIM_BROWSER") == "1" || os.Getenv("LEVEL2_SIM_BROWSER") == "true"
-	// Opt-in tag simulation (config/env). NEVER auto-enabled on OPC disconnect.
-	tagSim := cfg.TagSimulation
-	samplesSim := useSim || tagSim
+	// Legacy global master (config/env). NEVER auto-enabled on OPC disconnect.
+	// Prefer per-tag Tag.Simulate — real OPC continues for non-simulated tags.
+	globalTagSim := cfg.TagSimulation
+	fullSamplesSim := useSim || globalTagSim
 	devHub := devruntime.NewHub(log, useSim)
 	var collectOnce sync.Map // deviceID -> true
 
 	startCollect := func(deviceID string) {
-		if samplesSim {
+		if fullSamplesSim {
 			return
 		}
 		if _, loaded := collectOnce.LoadOrStore(deviceID, true); loaded {
@@ -103,18 +104,22 @@ func main() {
 		startCollect(dev.ID)
 	}
 
-	if samplesSim {
-		demo := mock.NewDemo(time.Second)
-		if err := demo.Connect(ctx); err != nil {
-			log.Error("demo connect", "err", err)
-			os.Exit(1)
-		}
-		go runDemo(ctx, log, demo, cfgStore, raw)
+	demo := mock.NewDemo(time.Second)
+	if err := demo.Connect(ctx); err != nil {
+		log.Error("demo connect", "err", err)
+		os.Exit(1)
+	}
+	if fullSamplesSim {
+		go runDemo(ctx, log, demo, cfgStore, raw, true)
 		if useSim {
 			log.Info("PLC-off demo mode: multi-server sim address space + synthetic samples")
 		} else {
-			log.Info("tag simulation enabled: synthetic samples (opt-in); real OPC collect paused")
+			log.Info("legacy global tag_simulation: synthetic samples for all tags; real OPC collect paused")
 		}
+	} else {
+		// Per-tag simulation: mock only tags with simulate=true; OPC collect stays up for the rest.
+		go runDemo(ctx, log, demo, cfgStore, raw, false)
+		log.Info("per-tag simulation ready (opt-in via tag.simulate); real OPC collect active")
 	}
 
 	go flushLoop(ctx, log, hist, sp, toHist)
@@ -133,10 +138,10 @@ func main() {
 		Tags:      cfgStore.AllTags,
 		Devices:   cfgStore.Devices,
 		ReadyCheck: func() bool {
-			return samplesSim || devHub.AnyConnected()
+			return fullSamplesSim || devHub.AnyConnected()
 		},
 		OPCWriteEnabled:     cfgStore.OPCWriteEnabled,
-		TagSimulationActive: func() bool { return samplesSim },
+		TagSimulationActive: func() bool { return fullSamplesSim },
 		SimBrowserActive:    func() bool { return useSim },
 		APIToken:            cfgStore.APIToken,
 		OnDeviceChanged: func(deviceID string, removed bool) {
@@ -163,7 +168,7 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if samplesSim || devHub.AnyConnected() {
+		if fullSamplesSim || devHub.AnyConnected() {
 			metrics.OPCConnected.Set(1)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ready"))
@@ -198,13 +203,25 @@ func main() {
 	log.Info("collector stopped")
 }
 
-func runDemo(ctx context.Context, log *slog.Logger, demo *mock.Driver, cfgStore *config.Store, samples chan<- core.Sample) {
+func runDemo(ctx context.Context, log *slog.Logger, demo *mock.Driver, cfgStore *config.Store, samples chan<- core.Sample, allTags bool) {
 	for {
 		if ctx.Err() != nil {
 			return
 		}
 		gen := cfgStore.Gen()
-		tags := cfgStore.AllTags()
+		tags := selectSimTags(cfgStore.AllTags(), allTags || cfgStore.TagSimulation())
+		if len(tags) == 0 {
+			subCtx, cancel := context.WithCancel(ctx)
+			go watchConfig(subCtx, cancel, cfgStore, gen)
+			select {
+			case <-ctx.Done():
+				cancel()
+				return
+			case <-subCtx.Done():
+				cancel()
+			}
+			continue
+		}
 		subCtx, cancel := context.WithCancel(ctx)
 		go watchConfig(subCtx, cancel, cfgStore, gen)
 		err := demo.Subscribe(subCtx, tags, samples)
@@ -215,6 +232,30 @@ func runDemo(ctx context.Context, log *slog.Logger, demo *mock.Driver, cfgStore 
 		log.Info("demo subscribe reload", "err", err, "tags", len(tags))
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+func selectSimTags(all []core.Tag, allEnabled bool) []core.Tag {
+	out := make([]core.Tag, 0, len(all))
+	for _, t := range all {
+		if !t.Enabled {
+			continue
+		}
+		if allEnabled || t.Simulate {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func selectOPCTags(all []core.Tag) []core.Tag {
+	out := make([]core.Tag, 0, len(all))
+	for _, t := range all {
+		if t.Simulate {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 func runDevice(ctx context.Context, log *slog.Logger, cfgStore *config.Store, deviceID string, drv *opcuaDriver.Driver, samples chan<- core.Sample) {
@@ -242,6 +283,19 @@ func runDevice(ctx context.Context, log *slog.Logger, cfgStore *config.Store, de
 		if err != nil {
 			log.Error("device tags", "err", err)
 			return
+		}
+		tags = selectOPCTags(tags)
+		if len(tags) == 0 {
+			subCtx, cancel := context.WithCancel(ctx)
+			go watchConfig(subCtx, cancel, cfgStore, gen)
+			select {
+			case <-ctx.Done():
+				cancel()
+				return
+			case <-subCtx.Done():
+				cancel()
+			}
+			continue
 		}
 		subCtx, cancel := context.WithCancel(ctx)
 		go watchConfig(subCtx, cancel, cfgStore, gen)

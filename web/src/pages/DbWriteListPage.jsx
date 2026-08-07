@@ -14,6 +14,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
   const [tags, setTags] = useState([])
   const [filter, setFilter] = useState('')
   const [badOnly, setBadOnly] = useState(false)
+  const [simOnly, setSimOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [dbSelected, setDbSelected] = useState(() => new Set())
   const [bulkBusy, setBulkBusy] = useState('')
@@ -96,11 +97,69 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
     }
   }
 
+  const setTagsSimulate = async (tagList, simulate) => {
+    if (!deviceId || !tagList?.length) return
+    onError('')
+    setTags((prev) =>
+      prev.map((tv) =>
+        tagList.some((t) => t.id === tv.tag.id)
+          ? { ...tv, tag: { ...tv.tag, simulate } }
+          : tv,
+      ),
+    )
+    try {
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/simulate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          simulate,
+          tag_ids: tagList.map((t) => t.id),
+        }),
+      })
+      if (!r.ok) throw new Error(await r.text())
+      await refreshTags(deviceId)
+    } catch (ex) {
+      onError(String(ex.message || ex))
+      await refreshTags(deviceId).catch(() => {})
+    }
+  }
+
+  const bulkSimulate = async (simulate, mode) => {
+    if (!deviceId) return
+    const selectedList = tags.filter((t) => dbSelected.has(t.tag.id)).map((t) => t.tag)
+    const target = mode === 'selected' ? selectedList : tags.map((t) => t.tag)
+    if (!target.length) return
+    const label = mode === 'selected'
+      ? `${simulate ? 'Enable' : 'Disable'} simulation for ${target.length} selected tag(s)?`
+      : `${simulate ? 'Enable' : 'Disable'} simulation for all ${target.length} tag(s) on this server?`
+    if (!window.confirm(label)) return
+    const busyKey = `${simulate ? 'sim-on' : 'sim-off'}-${mode}`
+    setBulkBusy(busyKey)
+    onError('')
+    setMsg('')
+    try {
+      const body = mode === 'selected'
+        ? { simulate, tag_ids: target.map((t) => t.id) }
+        : { simulate, all: true }
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/simulate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json()
+      setMsg(`${simulate ? 'Simulation on' : 'Simulation off'}: ${data.updated} tag(s)`)
+      await refreshTags(deviceId)
+    } catch (ex) {
+      onError(String(ex.message || ex))
+    } finally {
+      setBulkBusy('')
+    }
+  }
+
   const updateTag = async (tag) => {
     if (!deviceId || !tag?.id) return
     onError('')
-    // Optimistic local update so controlled Type select does not snap back
-    // while PUT is in flight or races with the 3s refresh.
     setTags((prev) =>
       prev.map((tv) => (tv.tag.id === tag.id ? { ...tv, tag: { ...tv.tag, ...tag } } : tv)),
     )
@@ -130,11 +189,14 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
   }
 
   const badTags = useMemo(() => tags.filter(isBadTag), [tags])
+  const simTags = useMemo(() => tags.filter((t) => !!t.tag.simulate), [tags])
+  const simCount = simTags.length
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase()
     let list = tags
     if (badOnly) list = list.filter(isBadTag)
+    if (simOnly) list = list.filter((t) => !!t.tag.simulate)
     if (!q) return list
     return list.filter(
       (t) =>
@@ -142,7 +204,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
         t.tag.node_id.toLowerCase().includes(q) ||
         String(t.tag.path || '').toLowerCase().includes(q),
     )
-  }, [tags, filter, badOnly])
+  }, [tags, filter, badOnly, simOnly])
 
   const sortedFiltered = useMemo(() => {
     const list = [...filtered]
@@ -160,7 +222,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
 
   useEffect(() => {
     setPage(1)
-  }, [deviceId, filter, badOnly])
+  }, [deviceId, filter, badOnly, simOnly])
 
   useEffect(() => {
     if (page !== pageClamped) setPage(pageClamped)
@@ -168,7 +230,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
 
   const pageTags = useMemo(() => {
     const start = (pageClamped - 1) * PAGE_SIZE
-    return sortedFiltered.slice(start, start + PAGE_SIZE)
+    return sortedFiltered.slice(start, pageClamped * PAGE_SIZE)
   }, [sortedFiltered, pageClamped])
 
   const pageFrom = sortedFiltered.length === 0 ? 0 : (pageClamped - 1) * PAGE_SIZE + 1
@@ -244,7 +306,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
       {!deviceId && <p className="muted">Create a server on the Servers page first</p>}
 
       {deviceId && currentDevice && !currentDevice.connected && (
-        <p className="err">Server “{deviceId}” is disconnected — live values may be stale</p>
+        <p className="err">Server “{deviceId}” is disconnected — live values may be stale (except simulated tags)</p>
       )}
 
       {deviceId && (
@@ -252,10 +314,15 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
           <div className="panel-head">
             <h3>
               {currentDevice?.tag_count ?? tags.length} tag(s)
+              {simCount > 0 && (
+                <span className="pill sim-count-pill" title="Tags with simulate=true">
+                  sim {simCount}
+                </span>
+              )}
               {badTags.length > 0 && (
                 <span className="badq small"> · {badTags.length} bad</span>
               )}
-              {(sortedFiltered.length > PAGE_SIZE || badOnly || filter.trim()) && (
+              {(sortedFiltered.length > PAGE_SIZE || badOnly || simOnly || filter.trim()) && (
                 <span className="muted small">
                   {' '}
                   · showing {pageFrom}–{pageTo}
@@ -272,6 +339,14 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
                 />
                 Bad only
               </label>
+              <label className="diag-check">
+                <input
+                  type="checkbox"
+                  checked={simOnly}
+                  onChange={(e) => setSimOnly(e.target.checked)}
+                />
+                Simulated only
+              </label>
               <input
                 className="search"
                 value={filter}
@@ -281,7 +356,8 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
             </div>
           </div>
           <p className="hint">
-            Only enabled tags are polled. Add tags from Address Space or Import / Export.
+            Only enabled tags are polled. Use <strong>Sim</strong> for per-tag mock samples (OPC continues for others).
+            Add tags from Address Space or Import / Export.
           </p>
           <div className="sel-bar db-actions">
             <button
@@ -301,6 +377,22 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
             >
               {bulkBusy === 'sync-bad' ? 'Syncing…' : `Sync bad (${badTags.length})`}
             </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!!bulkBusy || !tags.length}
+              onClick={() => bulkSimulate(true, 'all')}
+            >
+              {bulkBusy === 'sim-on-all' ? '…' : 'Sim all'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!!bulkBusy || simCount === 0}
+              onClick={() => bulkSimulate(false, 'all')}
+            >
+              {bulkBusy === 'sim-off-all' ? '…' : 'Unsim all'}
+            </button>
           </div>
           {msg && <p className="ok small">{msg}</p>}
           {dbSelected.size > 0 && (
@@ -313,6 +405,22 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
                 onClick={() => syncFromOpc([...dbSelected])}
               >
                 {bulkBusy === 'sync-sel' ? 'Syncing…' : 'Sync selected from OPC'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!!bulkBusy}
+                onClick={() => bulkSimulate(true, 'selected')}
+              >
+                {bulkBusy === 'sim-on-selected' ? '…' : 'Sim selected'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!!bulkBusy}
+                onClick={() => bulkSimulate(false, 'selected')}
+              >
+                {bulkBusy === 'sim-off-selected' ? '…' : 'Unsim selected'}
               </button>
               <button
                 type="button"
@@ -356,6 +464,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
               selected={dbSelected}
               onToggleSelect={onDbToggleSelect}
               onSetEnabled={setTagsEnabled}
+              onSetSimulate={setTagsSimulate}
               onRemove={unmonitorTags}
               onUpdateTag={updateTag}
             />

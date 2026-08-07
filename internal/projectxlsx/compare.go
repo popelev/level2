@@ -68,6 +68,7 @@ func Compare(a, b []core.Device) []DiffRow {
 			{"enabled", strconv.FormatBool(ta.Enabled), strconv.FormatBool(tb.Enabled)},
 			{"interval_ms", strconv.Itoa(ta.IntervalMs), strconv.Itoa(tb.IntervalMs)},
 			{"writable", strconv.FormatBool(ta.Writable), strconv.FormatBool(tb.Writable)},
+			{"simulate", strconv.FormatBool(ta.Simulate), strconv.FormatBool(tb.Simulate)},
 		} {
 			if f.av != f.bv {
 				out = append(out, DiffRow{Status: "changed", Kind: "tag", DeviceID: dev, ID: tid, Field: f.name, A: f.av, B: f.bv})

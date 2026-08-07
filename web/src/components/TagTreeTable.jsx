@@ -12,12 +12,15 @@ function FolderRow({
   selected,
   onToggleSelect,
   onSetEnabled,
+  onSetSimulate,
   onRemove,
 }) {
   const leaves = useMemo(() => collectLeaves(node), [node])
   const checkRef = useRef(null)
   const allOn = leaves.length > 0 && leaves.every((tv) => tv.tag.enabled)
   const someOn = leaves.some((tv) => tv.tag.enabled)
+  const allSim = leaves.length > 0 && leaves.every((tv) => tv.tag.simulate)
+  const someSim = leaves.some((tv) => tv.tag.simulate)
   const allSel = leaves.length > 0 && leaves.every((tv) => selected.has(tv.tag.id))
   const someSel = leaves.some((tv) => selected.has(tv.tag.id))
 
@@ -49,6 +52,15 @@ function FolderRow({
       <span className="tt-meta muted">—</span>
       <input
         type="checkbox"
+        title="Simulate all under folder"
+        checked={allSim}
+        ref={(el) => {
+          if (el) el.indeterminate = someSim && !allSim
+        }}
+        onChange={(e) => onSetSimulate(leaves.map((tv) => tv.tag), e.target.checked)}
+      />
+      <input
+        type="checkbox"
         title="Enable / disable all under folder"
         checked={allOn}
         ref={(el) => {
@@ -77,6 +89,7 @@ function LeafRow({
   selected,
   onToggleSelect,
   onSetEnabled,
+  onSetSimulate,
   onRemove,
   onUpdateTag,
 }) {
@@ -84,7 +97,7 @@ function LeafRow({
   const tag = tv.tag
   return (
     <div
-      className={`tt-row leaf${tag.enabled ? '' : ' dim'}${selected.has(tag.id) ? ' selected' : ''}`}
+      className={`tt-row leaf${tag.enabled ? '' : ' dim'}${selected.has(tag.id) ? ' selected' : ''}${tag.simulate ? ' sim' : ''}`}
       style={{ ['--depth']: depth }}
     >
       <input
@@ -96,7 +109,10 @@ function LeafRow({
       <div className="tt-label tt-tag">
         <span className="chev">·</span>
         <div>
-          <div className="name">{node.name}</div>
+          <div className="name">
+            {node.name}
+            {tag.simulate ? <span className="sim-pill" title="Per-tag simulation">sim</span> : null}
+          </div>
           <div className="mono small muted tt-sub">
             {node.name !== tag.id && <span className="tt-id">{tag.id}</span>}
             {node.name !== tag.id && tag.node_id ? <span className="tt-sep"> · </span> : null}
@@ -143,6 +159,12 @@ function LeafRow({
       </span>
       <input
         type="checkbox"
+        checked={!!tag.simulate}
+        onChange={(e) => onSetSimulate([tag], e.target.checked)}
+        title="Simulate (mock samples; OPC skipped for this tag)"
+      />
+      <input
+        type="checkbox"
         checked={!!tag.enabled}
         onChange={(e) => onSetEnabled([tag], e.target.checked)}
         title="Write to DB"
@@ -170,7 +192,7 @@ function pollClass(avg, configured) {
 function TreeBranch(props) {
   const {
     node, depth, openMap, setOpenMap, selected,
-    onToggleSelect, onSetEnabled, onRemove, onUpdateTag,
+    onToggleSelect, onSetEnabled, onSetSimulate, onRemove, onUpdateTag,
   } = props
   const open = openMap[node.key] !== false
   if (node.type === 'leaf') {
@@ -181,6 +203,7 @@ function TreeBranch(props) {
         selected={selected}
         onToggleSelect={onToggleSelect}
         onSetEnabled={onSetEnabled}
+        onSetSimulate={onSetSimulate}
         onRemove={onRemove}
         onUpdateTag={onUpdateTag}
       />
@@ -196,6 +219,7 @@ function TreeBranch(props) {
         selected={selected}
         onToggleSelect={onToggleSelect}
         onSetEnabled={onSetEnabled}
+        onSetSimulate={onSetSimulate}
         onRemove={onRemove}
       />
       {open && node.children.map((ch) => (
@@ -208,6 +232,7 @@ function TreeBranch(props) {
           selected={selected}
           onToggleSelect={onToggleSelect}
           onSetEnabled={onSetEnabled}
+          onSetSimulate={onSetSimulate}
           onRemove={onRemove}
           onUpdateTag={onUpdateTag}
         />
@@ -221,6 +246,7 @@ export default function TagTreeTable({
   selected,
   onToggleSelect,
   onSetEnabled,
+  onSetSimulate,
   onRemove,
   onUpdateTag,
 }) {
@@ -242,6 +268,7 @@ export default function TagTreeTable({
         <span>Type</span>
         <span>ms</span>
         <span title="Average of last 5 poll intervals">avg</span>
+        <span title="Per-tag simulation">Sim</span>
         <span>On</span>
         <span />
       </div>
@@ -255,6 +282,7 @@ export default function TagTreeTable({
           selected={selected}
           onToggleSelect={onToggleSelect}
           onSetEnabled={onSetEnabled}
+          onSetSimulate={onSetSimulate}
           onRemove={onRemove}
           onUpdateTag={onUpdateTag}
         />

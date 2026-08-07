@@ -48,7 +48,7 @@ func Write(devices []core.Device) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	tagHeaders := []string{"device_id", "id", "path", "node_id", "datatype", "enabled", "interval_ms", "writable"}
+	tagHeaders := []string{"device_id", "id", "path", "node_id", "datatype", "enabled", "interval_ms", "writable", "simulate"}
 	for i, h := range tagHeaders {
 		_ = f.SetCellValue(SheetTags, cell(i+1, 1), h)
 	}
@@ -63,6 +63,7 @@ func Write(devices []core.Device) ([]byte, error) {
 			_ = f.SetCellValue(SheetTags, cell(6, tr), t.Enabled)
 			_ = f.SetCellValue(SheetTags, cell(7, tr), t.IntervalMs)
 			_ = f.SetCellValue(SheetTags, cell(8, tr), t.Writable)
+			_ = f.SetCellValue(SheetTags, cell(9, tr), t.Simulate)
 			tr++
 		}
 	}
@@ -178,6 +179,7 @@ func parseProject(f *excelize.File) (Project, error) {
 					iv = 1000
 				}
 				wr := parseBool(cellAt(row, col["writable"]), false)
+				sim := parseBool(cellAt(row, col["simulate"]), false)
 				dev := byID[devID]
 				if dev == nil {
 					dev = &core.Device{ID: devID, Endpoint: "opc.tcp://unknown", Security: "None", Tags: nil}
@@ -192,6 +194,7 @@ func parseProject(f *excelize.File) (Project, error) {
 					Enabled:    en,
 					IntervalMs: iv,
 					Writable:   wr,
+					Simulate:   sim,
 				})
 			}
 		}

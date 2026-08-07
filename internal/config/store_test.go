@@ -247,3 +247,37 @@ func TestUpsertDevice_NormalizesPollConcurrency(t *testing.T) {
 		t.Fatalf("keep: got %d", got)
 	}
 }
+
+func TestSetTagsSimulate(t *testing.T) {
+	s := testStore(t, core.Device{
+		ID: "plc", Endpoint: "opc.tcp://x:4840", Security: "None",
+		Tags: []core.Tag{
+			{ID: "a", NodeID: "ns=4;i=1", DataType: core.ValueFloat64, Enabled: true, IntervalMs: 1000},
+			{ID: "b", NodeID: "ns=4;i=2", DataType: core.ValueFloat64, Enabled: true, IntervalMs: 1000},
+		},
+	})
+	if s.CountSimulatedTags() != 0 {
+		t.Fatal("default false")
+	}
+	n, err := s.SetTagsSimulate("plc", []string{"a"}, true)
+	if err != nil || n != 1 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	if s.CountSimulatedTags() != 1 {
+		t.Fatal(s.CountSimulatedTags())
+	}
+	n, err = s.SetTagsSimulate("plc", nil, true)
+	if err != nil || n != 2 {
+		t.Fatalf("all n=%d err=%v", n, err)
+	}
+	tags, _ := s.DeviceTags("plc")
+	for _, tg := range tags {
+		if !tg.Simulate {
+			t.Fatalf("%s not simulated", tg.ID)
+		}
+	}
+	n, err = s.SetTagsSimulate("plc", []string{"missing"}, false)
+	if err == nil || n != 0 {
+		t.Fatalf("want error for missing, n=%d err=%v", n, err)
+	}
+}

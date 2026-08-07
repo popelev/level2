@@ -356,20 +356,22 @@ paths:
       responses:
         "200":
           description: |
-            Summary JSON. Includes `tag_simulation` / `sim_browser` (opt-in synthetic
-            samples; never auto-enabled on disconnect), quality counts (stale Good on
-            disconnected devices counted as bad when sim is off), and ready_detail.
+            Summary JSON. Includes `tags_simulated` (per-tag simulate count, or all
+            enabled under legacy global / sim browser), `tag_simulation` / `sim_browser`
+            (legacy global master; never auto-enabled on disconnect), quality counts
+            (stale Good on disconnected devices counted as bad except for tags with
+            simulate=true), and ready_detail.
 
   /api/v1/tag-simulation:
     get:
       tags: [diagnostics]
-      summary: Tag simulation preference and process active state
+      summary: Legacy global master preference + tags_simulated count
       responses:
         "200":
-          description: enabled/active/sim_browser/restart_required
+          description: enabled/active/sim_browser/tags_simulated/restart_required
     put:
       tags: [diagnostics]
-      summary: Persist tag_simulation (recreate collector to apply)
+      summary: Persist legacy global tag_simulation (recreate collector to apply)
       requestBody:
         required: true
         content:
@@ -383,6 +385,99 @@ paths:
       responses:
         "200":
           description: Updated preference; restart_required when process not yet matching
+
+  /api/v1/devices/{id}/tags/{tagId}:
+    patch:
+      tags: [tags]
+      summary: Partial update of tag flags (simulate, writable, enabled)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tagId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                simulate:
+                  type: boolean
+                writable:
+                  type: boolean
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated tag
+        "404":
+          description: Device or tag not found
+
+  /api/v1/devices/{id}/tags/simulate:
+    post:
+      tags: [tags]
+      summary: Bulk enable/disable per-tag simulation on a device
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [simulate]
+              properties:
+                simulate:
+                  type: boolean
+                tag_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Empty or omitted with all=true → all tags on device
+                all:
+                  type: boolean
+                  description: When true, ignore tag_ids and update every tag on the device
+      responses:
+        "200":
+          description: "{device_id, simulate, updated, tags_simulated}"
+
+  /api/v1/tags/simulate:
+    post:
+      tags: [tags]
+      summary: Bulk enable/disable simulation across devices
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [simulate]
+              properties:
+                simulate:
+                  type: boolean
+                tag_ids:
+                  type: array
+                  items:
+                    type: string
+                all:
+                  type: boolean
+                device_id:
+                  type: string
+                  description: Optional device scope
+      responses:
+        "200":
+          description: "{simulate, updated, tags_simulated}"
 
 components:
   securitySchemes:
@@ -453,6 +548,14 @@ components:
             Level2 allow-list for Write API (default false for new/omitted tags).
             Existing YAML without the field loads as false — set true explicitly to allow writes.
             Independent of Siemens AccessLevel.
+          default: false
+        simulate:
+          type: boolean
+          description: |
+            Per-tag synthetic samples (default false). Source of truth for which tags are mocked.
+            Real OPC collect continues for tags with simulate=false. When true, mock values
+            override that tag whether or not the PLC is connected. Never auto-enabled on disconnect.
+            Writes to a simulated tag return 409.
           default: false
         mode:
           type: string

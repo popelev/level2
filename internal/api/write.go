@@ -81,9 +81,14 @@ func (s *Server) handleWriteTagValue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "OPC write is disabled (opc_write_enabled=false)", http.StatusForbidden)
 		return
 	}
+	if s.simBrowserActive() {
+		diag.OPCWrite(diag.LevelWarn, "", r.PathValue("id"), "opc write denied", "sim_browser active")
+		http.Error(w, "OPC write blocked while sim browser is active (no writes to real PLC)", http.StatusConflict)
+		return
+	}
 	if s.tagSimulationActive() {
 		diag.OPCWrite(diag.LevelWarn, "", r.PathValue("id"), "opc write denied", "tag_simulation active")
-		http.Error(w, "OPC write blocked while tag simulation / sim browser is active (no writes to real PLC)", http.StatusConflict)
+		http.Error(w, "OPC write blocked while legacy global tag_simulation is active (no writes to real PLC)", http.StatusConflict)
 		return
 	}
 
@@ -126,9 +131,14 @@ func (s *Server) handleBatchWriteTagValues(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "OPC write is disabled (opc_write_enabled=false)", http.StatusForbidden)
 		return
 	}
+	if s.simBrowserActive() {
+		diag.OPCWrite(diag.LevelWarn, "", "", "opc batch write denied", "sim_browser active")
+		http.Error(w, "OPC write blocked while sim browser is active (no writes to real PLC)", http.StatusConflict)
+		return
+	}
 	if s.tagSimulationActive() {
 		diag.OPCWrite(diag.LevelWarn, "", "", "opc batch write denied", "tag_simulation active")
-		http.Error(w, "OPC write blocked while tag simulation / sim browser is active (no writes to real PLC)", http.StatusConflict)
+		http.Error(w, "OPC write blocked while legacy global tag_simulation is active (no writes to real PLC)", http.StatusConflict)
 		return
 	}
 
@@ -191,6 +201,13 @@ func (s *Server) executeWrite(parent context.Context, tagID, deviceIDHint string
 		return batchWriteResult{
 			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
 			OK: false, Error: "tag is not writable (writable=false)", HTTP: http.StatusForbidden,
+		}
+	}
+	if tag.Simulate {
+		diag.OPCWrite(diag.LevelWarn, deviceID, tag.ID, "opc write denied", "tag simulate=true")
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: false, Error: "tag is simulated (simulate=true); no writes to real PLC", HTTP: http.StatusConflict,
 		}
 	}
 

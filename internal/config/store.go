@@ -237,6 +237,56 @@ func (s *Store) DeleteTag(deviceID, tagID string) error {
 	return nil
 }
 
+// SetTagsSimulate sets simulate on matching tags for a device and persists YAML.
+// If tagIDs is empty, all tags on the device are updated. Returns how many tags were set.
+func (s *Store) SetTagsSimulate(deviceID string, tagIDs []string, simulate bool) (updated int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	idx, err := s.deviceIndexLocked(deviceID)
+	if err != nil {
+		return 0, err
+	}
+	dev := &s.file.Devices[idx]
+	filter := map[string]struct{}{}
+	for _, id := range tagIDs {
+		if id != "" {
+			filter[id] = struct{}{}
+		}
+	}
+	all := len(filter) == 0
+	for i := range dev.Tags {
+		if !all {
+			if _, ok := filter[dev.Tags[i].ID]; !ok {
+				continue
+			}
+		}
+		dev.Tags[i].Simulate = simulate
+		updated++
+	}
+	if !all && updated == 0 && len(tagIDs) > 0 {
+		return 0, fmt.Errorf("no matching tags")
+	}
+	if err := s.saveLocked(); err != nil {
+		return 0, err
+	}
+	s.gen.Add(1)
+	return updated, nil
+}
+
+// CountSimulatedTags returns how many tags have simulate=true (config flag only).
+func (s *Store) CountSimulatedTags() int {
+	if s == nil {
+		return 0
+	}
+	n := 0
+	for _, t := range s.AllTags() {
+		if t.Simulate {
+			n++
+		}
+	}
+	return n
+}
+
 // SetDeviceTags replaces the full tag list for a device (single persist).
 func (s *Store) SetDeviceTags(deviceID string, tags []core.Tag) error {
 	s.mu.Lock()

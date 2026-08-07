@@ -18,7 +18,8 @@ type File struct {
 	UIDir    string        `yaml:"ui_dir"`
 	// OPCWriteEnabled gates PUT /api/v1/tags/{id}/value. Default false; override with LEVEL2_OPC_WRITE_ENABLED.
 	OPCWriteEnabled bool `yaml:"opc_write_enabled"`
-	// TagSimulation feeds synthetic Good samples via mock.NewDemo when explicitly enabled.
+	// TagSimulation is the legacy global master: when true at process start, ALL enabled tags
+	// are simulated and real OPC collect is paused. Prefer per-tag Tag.Simulate (source of truth).
 	// Default false — NEVER auto-enabled on OPC disconnect. Override with LEVEL2_TAG_SIMULATION.
 	// Distinct from LEVEL2_SIM_BROWSER (full in-memory browse). See docs/tag-simulation.md.
 	TagSimulation bool `yaml:"tag_simulation"`

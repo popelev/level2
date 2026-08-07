@@ -91,6 +91,10 @@ type Tag struct {
 	// Writable allows Level2 Write API / UI to set this tag (default false).
 	// Independent of Siemens AccessLevel — server can still deny.
 	Writable bool `yaml:"writable,omitempty" json:"writable"`
+	// Simulate feeds synthetic Good samples for this tag (default false).
+	// Real OPC collect continues for tags with simulate=false. Never auto-enabled on disconnect.
+	// See docs/tag-simulation.md.
+	Simulate bool `yaml:"simulate,omitempty" json:"simulate"`
 	// Mode is poll (legacy) or subscribe (OPC Subscription). See docs/opc-subscription-mode.md.
 	Mode PollMode `yaml:"mode,omitempty" json:"mode,omitempty"`
 }

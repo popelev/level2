@@ -27,6 +27,7 @@ type statusSummary struct {
 	OPCDisconnectsByDevice map[string]int `json:"opc_disconnects_by_device,omitempty"`
 	TagsTotal              int            `json:"tags_total"`
 	TagsEnabled            int            `json:"tags_enabled"`
+	TagsSimulated          int            `json:"tags_simulated"`
 	QualityGood            int            `json:"quality_good"`
 	QualityBad             int            `json:"quality_bad"`
 	QualityUnknown         int            `json:"quality_unknown"`
@@ -92,8 +93,7 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 		}
 	}
 
-	// When deliberately simulating tags, Live Good is expected — do not treat
-	// disconnected OPC as stale-bad (sim is the data source).
+	// Global/sim-browser: Live Good is expected. Per-tag simulate skips stale override for those tags only.
 	countStaleAsBad := s.DevHub != nil && !out.TagSimulation && !out.SimBrowser
 
 	if s.Live != nil && len(devs) > 0 {
@@ -105,9 +105,12 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 			if tv.Tag.Enabled {
 				out.TagsEnabled++
 			}
+			if tv.Tag.Simulate || ((out.TagSimulation || out.SimBrowser) && tv.Tag.Enabled) {
+				out.TagsSimulated++
+			}
 			if tv.Sample == nil {
 				if tv.Tag.Enabled {
-					if countStaleAsBad && !conn[tv.DeviceID] {
+					if countStaleAsBad && !conn[tv.DeviceID] && !tv.Tag.Simulate {
 						out.QualityBad++
 					} else {
 						out.QualityUnknown++
@@ -116,7 +119,7 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 				continue
 			}
 			q := tv.Sample.Quality
-			if countStaleAsBad && !conn[tv.DeviceID] {
+			if countStaleAsBad && !conn[tv.DeviceID] && !tv.Tag.Simulate {
 				q = core.QualityBad
 			}
 			switch q {
@@ -145,7 +148,12 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 			if t.Enabled {
 				out.TagsEnabled++
 			}
+			if t.Simulate || ((out.TagSimulation || out.SimBrowser) && t.Enabled) {
+				out.TagsSimulated++
+			}
 		}
+	} else {
+		out.TagsSimulated = s.countTagsSimulated()
 	}
 
 	if s.DB != nil {

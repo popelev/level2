@@ -92,6 +92,7 @@ function StatusPills({ summary }) {
   const apiOk = summary.api_ok !== false
   const ready = !!(summary.collector_ready ?? summary.ready)
   const tagSim = !!(summary.tag_simulation || summary.sim_browser)
+  const tagsSimulated = summary.tags_simulated ?? 0
   const total = summary.devices_total ?? summary.servers?.total ?? 0
   const connected = summary.devices_connected ?? summary.servers?.connected ?? 0
   const tagsEnabled = summary.tags_enabled ?? summary.tags?.enabled ?? 0
@@ -147,7 +148,7 @@ function StatusPills({ summary }) {
       <span
         className={`pill ${tagSim ? '' : ready ? 'ok' : 'bad'}`}
         title={tagSim
-          ? 'Tag simulation or sim browser active — synthetic samples, not live PLC'
+          ? 'Legacy global tag simulation or sim browser — synthetic samples, not live PLC'
           : `Same as /readyz: collector is ready when OPC is connected (or SIM mode). ${collectorDrops} not-ready drops / last hour`}
       >
         {tagSim
@@ -162,10 +163,18 @@ function StatusPills({ summary }) {
       </span>
       <span
         className={`pill ${qualityClass}`}
-        title={`Tags ${tagsEnabled}/${tagsTotal} enabled · Good ${qualityGood} · Bad ${qualityBad}`}
+        title={`Tags ${tagsEnabled}/${tagsTotal} enabled · Good ${qualityGood} · Bad ${qualityBad} · Simulated ${tagsSimulated}`}
       >
         {qualityLabel}
       </span>
+      {(tagsSimulated > 0 || tagSim) && (
+        <span
+          className="pill sim-count-pill"
+          title="Tags with simulate=true (or all enabled under global/sim browser)"
+        >
+          Sim: {tagsSimulated}
+        </span>
+      )}
       <span
         className="pill"
         title="Average wall-clock gap between last samples (poll_avg_ms across tags)"
