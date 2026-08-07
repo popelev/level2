@@ -37,7 +37,7 @@ pipeline {
             -e GOTOOLCHAIN=auto \
             -v "$PWD":/src -w /src \
             golang:1.24 \
-            go test ./...
+            bash -lc 'go run gotest.tools/gotestsum@v1.12.3 --junitfile test-results.xml -- ./...'
         '''
       }
     }
@@ -98,6 +98,7 @@ pipeline {
   post {
     always {
       echo "Finished ${env.GIT_COMMIT} on ${env.BRANCH_NAME}"
+      junit allowEmptyResults: true, testResults: 'test-results.xml'
     }
   }
 }

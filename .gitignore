@@ -13,3 +13,4 @@ deploy/smoke/telegraf/opcua/*.key
 
 .tmp-opcua*
 *.xlsx.tmp
+test-results.xml

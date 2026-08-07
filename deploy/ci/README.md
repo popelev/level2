@@ -96,11 +96,13 @@ Root [`Jenkinsfile`](../../Jenkinsfile) (Declarative):
 | Stage | Command / action | Paths |
 |-------|------------------|--------|
 | Checkout | SCM (Multibranch) | — |
-| Go Test | `go test ./...` in `golang:1.24` | `go.mod`, all packages |
+| Go Test | `gotestsum --junitfile test-results.xml -- ./...` in `golang:1.24` | `go.mod`, all packages → `test-results.xml` |
 | Web Build | `npm ci` && `npm run build` in `node:22-bookworm` | `web/` |
 | Docker Build | `docker build -f deploy/platform/Dockerfile …` | platform Dockerfile |
 | Push *(optional)* | gated by `ENABLE_PUSH=true` | Phase 2 |
 | Deploy *(optional)* | gated by `ENABLE_DEPLOY=true` + `main` | Phase 2 |
+
+After a build, open **Test Result** from the build page (or the job’s **Test Result** trend): `job/level2` → branch → build → **Test Result**. Jenkins publishes `test-results.xml` via the `junit` post step (`allowEmptyResults: true`). Rebuild Jenkins after adding plugins (`docker compose … up -d --build`) so the `junit` plugin is installed.
 
 ## GitHub credentials (optional)
 
