@@ -14,6 +14,125 @@ export async function putJSON(url, body) {
   return r.json()
 }
 
+export async function postJSON(url, body) {
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`)
+  const text = await r.text()
+  if (!text) return null
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
+export async function deleteOK(url) {
+  const r = await fetch(url, { method: 'DELETE' })
+  if (!r.ok && r.status !== 204) throw new Error(await r.text())
+}
+
+/** NDJSON or JSON expand of leaf tags under a browse node. */
+export async function expandTags(deviceId, nodeId, parentTagId, onProgress) {
+  const r = await fetch('/api/v1/expand', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/x-ndjson',
+    },
+    body: JSON.stringify({
+      device_id: deviceId,
+      node_id: nodeId,
+      parent_tag_id: parentTagId || '',
+      max_depth: 16,
+      stream: true,
+    }),
+  })
+  if (!r.ok) throw new Error(await r.text())
+  const ct = r.headers.get('content-type') || ''
+  if (!ct.includes('ndjson')) {
+    return r.json()
+  }
+  const reader = r.body.getReader()
+  const dec = new TextDecoder()
+  let buf = ''
+  let tags = null
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += dec.decode(value, { stream: true })
+    let nl
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (!line) continue
+      let ev
+      try {
+        ev = JSON.parse(line)
+      } catch {
+        continue
+      }
+      if (ev.type === 'progress') {
+        onProgress?.(ev)
+      } else if (ev.type === 'result') {
+        tags = ev.tags || []
+      } else if (ev.type === 'error') {
+        throw new Error(ev.error || 'expand failed')
+      }
+    }
+  }
+  if (!tags) throw new Error('expand returned no result')
+  return tags
+}
+
+export async function postTagsSimulate(deviceId, body) {
+  return postJSON(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/simulate`, body)
+}
+
+export async function postTagsWritable(deviceId, body) {
+  return postJSON(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/writable`, body)
+}
+
+export async function postTagsBulk(deviceId, tags) {
+  return postJSON(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/bulk`, { tags })
+}
+
+export async function postTagsSync(deviceId, tagIds) {
+  const url = `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/sync`
+  if (tagIds?.length) {
+    return postJSON(url, { tag_ids: tagIds })
+  }
+  const r = await fetch(url, { method: 'POST' })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
+}
+
+export async function upsertDeviceTag(deviceId, body) {
+  return postJSON(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags`, body)
+}
+
+export async function putDeviceTag(deviceId, tag) {
+  const r = await fetch(
+    `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag.id)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(tag),
+    },
+  )
+  if (!r.ok) throw new Error(await r.text())
+  return r.json().catch(() => null)
+}
+
+export async function deleteDeviceTag(deviceId, tagId) {
+  await deleteOK(
+    `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tagId)}`,
+  )
+}
+
 export function formatBytes(n) {
   if (n == null || Number.isNaN(Number(n))) return '—'
   const v = Number(n)

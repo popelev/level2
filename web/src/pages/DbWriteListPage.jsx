@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import TagTreeTable from '../components/TagTreeTable.jsx'
 import TagPager from '../components/TagPager.jsx'
-import { displayQuality, getJSON } from '../api.js'
+import { displayQuality, getJSON, postTagsSync, putDeviceTag } from '../api.js'
+import useTagFlags from '../hooks/useTagFlags.js'
 
 const PAGE_SIZE = 50
 
@@ -18,8 +19,6 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
   const [simOnly, setSimOnly] = useState(false)
   const [page, setPage] = useState(1)
   const [dbSelected, setDbSelected] = useState(() => new Set())
-  const [bulkBusy, setBulkBusy] = useState('')
-  const [msg, setMsg] = useState('')
 
   useEffect(() => {
     if (initialDeviceId && devices.some((d) => d.id === initialDeviceId)) {
@@ -35,13 +34,33 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
   const currentDevice = devices.find((d) => d.id === deviceId)
   const opcConnected = currentDevice ? !!currentDevice.connected : undefined
 
-  const refreshTags = async (dev = deviceId) => {
+  const refreshTags = useCallback(async (dev = deviceId) => {
     if (!dev) {
       setTags([])
       return
     }
     setTags(await getJSON(`/api/v1/tags?device_id=${encodeURIComponent(dev)}`))
-  }
+  }, [deviceId])
+
+  const {
+    bulkBusy,
+    setBulkBusy,
+    msg,
+    setMsg,
+    setTagsSimulate,
+    setTagsWritable,
+    bulkSimulate,
+    bulkWritable,
+    setTagsEnabled,
+    unmonitorTags: unmonitorTagsBase,
+  } = useTagFlags({
+    deviceId,
+    tags,
+    setTags,
+    selectedIds: dbSelected,
+    onError,
+    refreshTags,
+  })
 
   useEffect(() => {
     if (!deviceId) return
@@ -56,166 +75,19 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
   }, [deviceId])
 
   const unmonitorTags = async (tagIds) => {
-    if (!deviceId || !tagIds?.length) return
-    onError('')
     try {
-      for (const tagId of tagIds) {
-        const r = await fetch(
-          `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tagId)}`,
-          { method: 'DELETE' },
-        )
-        if (!r.ok && r.status !== 204) throw new Error(await r.text())
-      }
-      setDbSelected((prev) => {
-        const next = new Set(prev)
-        for (const id of tagIds) next.delete(id)
-        return next
+      await unmonitorTagsBase(tagIds, {
+        onRemoved: (ids) => {
+          setDbSelected((prev) => {
+            const next = new Set(prev)
+            for (const id of ids) next.delete(id)
+            return next
+          })
+        },
       })
-      await refreshTags(deviceId)
       await onDevicesChanged()
-    } catch (ex) {
-      onError(String(ex.message || ex))
-    }
-  }
-
-  const setTagsEnabled = async (tagList, enabled) => {
-    if (!deviceId || !tagList?.length) return
-    onError('')
-    try {
-      for (const tag of tagList) {
-        const r = await fetch(
-          `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag.id)}`,
-          {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...tag, enabled }),
-          },
-        )
-        if (!r.ok) throw new Error(await r.text())
-      }
-      await refreshTags(deviceId)
-    } catch (ex) {
-      onError(String(ex.message || ex))
-    }
-  }
-
-  const setTagsSimulate = async (tagList, simulate) => {
-    if (!deviceId || !tagList?.length) return
-    onError('')
-    setTags((prev) =>
-      prev.map((tv) =>
-        tagList.some((t) => t.id === tv.tag.id)
-          ? { ...tv, tag: { ...tv.tag, simulate } }
-          : tv,
-      ),
-    )
-    try {
-      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/simulate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          simulate,
-          tag_ids: tagList.map((t) => t.id),
-        }),
-      })
-      if (!r.ok) throw new Error(await r.text())
-      await refreshTags(deviceId)
-    } catch (ex) {
-      onError(String(ex.message || ex))
-      await refreshTags(deviceId).catch(() => {})
-    }
-  }
-
-  const setTagsWritable = async (tagList, writable) => {
-    if (!deviceId || !tagList?.length) return
-    onError('')
-    setTags((prev) =>
-      prev.map((tv) =>
-        tagList.some((t) => t.id === tv.tag.id)
-          ? { ...tv, tag: { ...tv.tag, writable } }
-          : tv,
-      ),
-    )
-    try {
-      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/writable`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          writable,
-          tag_ids: tagList.map((t) => t.id),
-        }),
-      })
-      if (!r.ok) throw new Error(await r.text())
-      await refreshTags(deviceId)
-    } catch (ex) {
-      onError(String(ex.message || ex))
-      await refreshTags(deviceId).catch(() => {})
-    }
-  }
-
-  const bulkSimulate = async (simulate, mode) => {
-    if (!deviceId) return
-    const selectedList = tags.filter((t) => dbSelected.has(t.tag.id)).map((t) => t.tag)
-    const target = mode === 'selected' ? selectedList : tags.map((t) => t.tag)
-    if (!target.length) return
-    const label = mode === 'selected'
-      ? `${simulate ? 'Enable' : 'Disable'} simulation for ${target.length} selected tag(s)?`
-      : `${simulate ? 'Enable' : 'Disable'} simulation for all ${target.length} tag(s) on this server?`
-    if (!window.confirm(label)) return
-    const busyKey = `${simulate ? 'sim-on' : 'sim-off'}-${mode}`
-    setBulkBusy(busyKey)
-    onError('')
-    setMsg('')
-    try {
-      const body = mode === 'selected'
-        ? { simulate, tag_ids: target.map((t) => t.id) }
-        : { simulate, all: true }
-      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/simulate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!r.ok) throw new Error(await r.text())
-      const data = await r.json()
-      setMsg(`${simulate ? 'Simulation on' : 'Simulation off'}: ${data.updated} tag(s)`)
-      await refreshTags(deviceId)
-    } catch (ex) {
-      onError(String(ex.message || ex))
-    } finally {
-      setBulkBusy('')
-    }
-  }
-
-  const bulkWritable = async (writable, mode) => {
-    if (!deviceId) return
-    const selectedList = tags.filter((t) => dbSelected.has(t.tag.id)).map((t) => t.tag)
-    const target = mode === 'selected' ? selectedList : tags.map((t) => t.tag)
-    if (!target.length) return
-    const label = mode === 'selected'
-      ? `${writable ? 'Enable' : 'Disable'} writable for ${target.length} selected tag(s)?`
-      : `${writable ? 'Enable' : 'Disable'} writable for all ${target.length} tag(s) on this server?`
-    if (!window.confirm(label)) return
-    const busyKey = `${writable ? 'wr-on' : 'wr-off'}-${mode}`
-    setBulkBusy(busyKey)
-    onError('')
-    setMsg('')
-    try {
-      const body = mode === 'selected'
-        ? { writable, tag_ids: target.map((t) => t.id) }
-        : { writable, all: true }
-      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/writable`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      })
-      if (!r.ok) throw new Error(await r.text())
-      const data = await r.json()
-      setMsg(`${writable ? 'Writable on' : 'Writable off'}: ${data.updated} tag(s)`)
-      await refreshTags(deviceId)
-    } catch (ex) {
-      onError(String(ex.message || ex))
-    } finally {
-      setBulkBusy('')
+    } catch {
+      // onError already reported inside the hook
     }
   }
 
@@ -226,16 +98,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
       prev.map((tv) => (tv.tag.id === tag.id ? { ...tv, tag: { ...tv.tag, ...tag } } : tv)),
     )
     try {
-      const r = await fetch(
-        `/api/v1/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(tag.id)}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(tag),
-        },
-      )
-      if (!r.ok) throw new Error(await r.text())
-      const saved = await r.json().catch(() => null)
+      const saved = await putDeviceTag(deviceId, tag)
       if (saved?.datatype) {
         setTags((prev) =>
           prev.map((tv) =>
@@ -335,13 +198,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
     onError('')
     setMsg('')
     try {
-      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/sync`, {
-        method: 'POST',
-        headers: tagIds?.length ? { 'Content-Type': 'application/json' } : undefined,
-        body: tagIds?.length ? JSON.stringify({ tag_ids: tagIds }) : undefined,
-      })
-      if (!r.ok) throw new Error(await r.text())
-      const data = await r.json()
+      const data = await postTagsSync(deviceId, tagIds?.length ? tagIds : null)
       setMsg(`Synced ${data.total} tag(s); ${data.updated} datatype(s) updated`)
       await refreshTags(deviceId)
       await onDevicesChanged()
