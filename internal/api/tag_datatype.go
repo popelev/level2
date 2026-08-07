@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 
-	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
 	"github.com/popelev/level2/internal/core"
 )
 
@@ -19,22 +18,15 @@ func (s *Server) resolveTagDataType(ctx context.Context, deviceID string, tag *c
 		tag.DataType = core.NormalizeValueType(tag.DataType)
 		return
 	}
-	if s.DevHub == nil {
-		return
-	}
-	ent, ok := s.DevHub.Entry(deviceID)
-	if !ok || !ent.Connected {
-		return
-	}
-	drv, ok := ent.Driver.(*opcuaDriver.Driver)
-	if !ok {
+	resolver := s.dataTypeResolver(deviceID)
+	if resolver == nil {
 		return
 	}
 	hint := tag.ID
 	if hint == "" {
 		hint = tag.NodeID
 	}
-	if dt := drv.ResolveTagDataType(ctx, tag.NodeID, hint); dt != "" {
+	if dt := resolver.ResolveTagDataType(ctx, tag.NodeID, hint); dt != "" {
 		tag.DataType = dt
 	}
 }
@@ -53,21 +45,14 @@ func (s *Server) resolveEmptyDataTypesBatch(ctx context.Context, deviceID string
 	if len(need) == 0 {
 		return
 	}
-	ent, ok := s.DevHub.Entry(deviceID)
-	if !ok || !ent.Connected {
+	resolver := s.dataTypeResolver(deviceID)
+	if resolver == nil {
 		for _, i := range need {
 			hint := tags[i].ID
 			if hint == "" {
 				hint = tags[i].NodeID
 			}
-			tags[i].DataType = opcuaDriver.GuessDataType(hint)
-		}
-		return
-	}
-	drv, ok := ent.Driver.(*opcuaDriver.Driver)
-	if !ok {
-		for _, i := range need {
-			tags[i].DataType = opcuaDriver.GuessDataType(tags[i].ID)
+			tags[i].DataType = core.GuessDataType(hint)
 		}
 		return
 	}
@@ -75,7 +60,7 @@ func (s *Server) resolveEmptyDataTypesBatch(ctx context.Context, deviceID string
 	for j, i := range need {
 		subset[j] = tags[i]
 	}
-	opcuaDriver.ApplyDataTypesFromOPC(ctx, drv, subset)
+	resolver.ApplyDataTypes(ctx, subset)
 	for j, i := range need {
 		tags[i].DataType = subset[j].DataType
 	}

@@ -61,22 +61,6 @@ func TestResolveTagDataType_DisconnectedGuess(t *testing.T) {
 	}
 }
 
-func TestLooksLikeStringNameTable(t *testing.T) {
-	// looksLikeStringName is called with lowercased hints from GuessDataType.
-	yes := []string{"sunit", "tank_sunit", "unit", "name", "text", "sunitx", "foo.sname", "a_stext"}
-	for _, n := range yes {
-		if !looksLikeStringName(n) {
-			t.Fatalf("want true: %q", n)
-		}
-	}
-	no := []string{"rvalueout", "count", "benable", "runtime"}
-	for _, n := range no {
-		if looksLikeStringName(n) {
-			t.Fatalf("want false: %q", n)
-		}
-	}
-}
-
 func TestAsNumericHelpers(t *testing.T) {
 	if v, err := asFloat64(float64(1.25)); err != nil || v != 1.25 {
 		t.Fatalf("f64 %v %v", v, err)

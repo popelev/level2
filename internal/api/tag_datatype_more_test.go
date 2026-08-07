@@ -8,7 +8,7 @@ import (
 	devruntime "github.com/popelev/level2/internal/runtime"
 )
 
-// onlineNonOPC is Connected but not *opcua.Driver — covers type-assert miss paths.
+// onlineNonOPC is Connected but does not implement core.DataTypeResolver — covers interface miss paths.
 type onlineNonOPC struct{}
 
 func (onlineNonOPC) Connect(context.Context) error    { return nil }

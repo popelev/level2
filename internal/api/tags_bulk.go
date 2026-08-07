@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
 	"github.com/popelev/level2/internal/core"
 )
 
@@ -134,7 +133,7 @@ func (s *Server) handleSyncTags(w http.ResponseWriter, r *http.Request) {
 
 	updated := 0
 	var errors []string
-	drv := s.opcDriver(deviceID)
+	resolver := s.dataTypeResolver(deviceID)
 
 	var toSync []core.Tag
 	var syncIdx []int
@@ -161,11 +160,11 @@ func (s *Server) handleSyncTags(w http.ResponseWriter, r *http.Request) {
 	for i := range toSync {
 		oldTypes[i] = toSync[i].DataType
 	}
-	if drv != nil {
-		opcuaDriver.ApplyDataTypesFromOPC(ctx, drv, toSync)
+	if resolver != nil {
+		resolver.ApplyDataTypes(ctx, toSync)
 	} else {
 		for i := range toSync {
-			toSync[i].DataType = opcuaDriver.GuessDataType(toSync[i].ID)
+			toSync[i].DataType = core.GuessDataType(toSync[i].ID)
 		}
 	}
 	for j := range toSync {
@@ -214,19 +213,19 @@ func (s *Server) handleDeleteAllTags(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) opcDriver(deviceID string) *opcuaDriver.Driver {
+func (s *Server) dataTypeResolver(deviceID string) core.DataTypeResolver {
 	if s.DevHub == nil {
 		return nil
 	}
 	ent, ok := s.DevHub.Entry(deviceID)
-	if !ok || !ent.Connected {
+	if !ok || !ent.Connected || ent.Driver == nil {
 		return nil
 	}
-	drv, ok := ent.Driver.(*opcuaDriver.Driver)
+	r, ok := ent.Driver.(core.DataTypeResolver)
 	if !ok {
 		return nil
 	}
-	return drv
+	return r
 }
 
 func validateTagFields(t *core.Tag) error {

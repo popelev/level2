@@ -297,7 +297,7 @@ func (s *Server) executeWrite(parent context.Context, tagID, deviceIDHint string
 		}
 	}
 
-	coerced, err := opcuaDriver.CoerceWriteValue(tag.DataType, raw)
+	coerced, err := core.CoerceWriteValue(tag.DataType, raw)
 	if err != nil {
 		return batchWriteResult{
 			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,

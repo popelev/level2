@@ -153,6 +153,14 @@ type ValueReader interface {
 	ReadValue(ctx context.Context, tag Tag) (Sample, error)
 }
 
+// DataTypeResolver resolves tag datatypes from the field protocol (optional driver capability).
+// Used by the API for empty-datatype fill and Sync-from-OPC without coupling to a concrete driver.
+type DataTypeResolver interface {
+	ResolveTagDataType(ctx context.Context, nodeID, browseHint string) ValueType
+	// ApplyDataTypes overwrites each tag's DataType from protocol metadata (batched when possible).
+	ApplyDataTypes(ctx context.Context, tags []Tag)
+}
+
 // Historian stores time series.
 type Historian interface {
 	EnsureSchema(ctx context.Context) error

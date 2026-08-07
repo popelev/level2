@@ -162,9 +162,9 @@ func TestBulkWritableTags(t *testing.T) {
 	}
 }
 
-func TestOPCDriverAndWriteEnabledViaCfg(t *testing.T) {
+func TestDataTypeResolverAndWriteEnabledViaCfg(t *testing.T) {
 	s := &Server{}
-	if s.opcDriver("x") != nil {
+	if s.dataTypeResolver("x") != nil {
 		t.Fatal("no hub")
 	}
 	if s.opcWriteEnabled() {
@@ -175,17 +175,17 @@ func TestOPCDriverAndWriteEnabledViaCfg(t *testing.T) {
 	hub := devruntime.NewHub(log, false)
 	hub.InjectDriver(core.Device{ID: "plc"}, offlineDriver{}, nil)
 	s.DevHub = hub
-	if s.opcDriver("plc") != nil {
-		t.Fatal("non-opcua driver")
+	if s.dataTypeResolver("plc") != nil {
+		t.Fatal("non-resolver driver")
 	}
-	if s.opcDriver("missing") != nil {
+	if s.dataTypeResolver("missing") != nil {
 		t.Fatal("missing")
 	}
 
 	drv := opcuaDriver.New(core.Device{ID: "opc"}, log)
 	hub.InjectDriver(core.Device{ID: "opc"}, drv, nil)
 	// Injected entry Connected follows Driver.Connected(); New driver is offline.
-	if s.opcDriver("opc") != nil {
+	if s.dataTypeResolver("opc") != nil {
 		t.Fatal("disconnected opcua driver")
 	}
 
