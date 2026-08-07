@@ -91,6 +91,7 @@ func TestLive_MarkQuality(t *testing.T) {
 	}
 }
 
+func TestAvgIntervals(t *testing.T) {
 	if avgIntervals(nil) != 0 {
 		t.Fatal("empty")
 	}

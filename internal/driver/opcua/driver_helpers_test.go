@@ -51,6 +51,7 @@ func TestEmitBadSamples(t *testing.T) {
 	emitBadSamples(ctx, tags, make(chan core.Sample))
 }
 
+func TestMarkDown_RecordsOnce(t *testing.T) {
 	inc := diag.NewIncidentTracker(100, 0)
 	diag.SetDefaultIncidents(inc)
 	t.Cleanup(func() { diag.SetDefaultIncidents(diag.NewIncidentTracker(100, 0)) })
