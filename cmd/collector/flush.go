@@ -30,10 +30,17 @@ func flushLoop(ctx context.Context, log *slog.Logger, hist core.Historian, sp *s
 				diag.DBWrite(diag.LevelWarn, "historian halted by capacity policy", err.Error(), len(batch))
 				return
 			}
-			metrics.WriteErrors.Inc()
-			diag.RecordDBWriteError()
-			log.Error("write batch", "err", err, "n", len(batch))
-			diag.DBWrite(diag.LevelError, "historian write batch failed", err.Error(), len(batch))
+			// drop_oldest over limit while trimming: spool (no halt, not a hard write error).
+			spooling := errors.Is(err, timescale.ErrCapacityBusy)
+			if !spooling {
+				metrics.WriteErrors.Inc()
+				diag.RecordDBWriteError()
+				log.Error("write batch", "err", err, "n", len(batch))
+				diag.DBWrite(diag.LevelError, "historian write batch failed", err.Error(), len(batch))
+			} else {
+				log.Warn("write batch deferred to spool while capacity trimming", "err", err, "n", len(batch))
+				diag.DBWrite(diag.LevelWarn, "historian capacity busy; spooling", err.Error(), len(batch))
+			}
 			if serr := sp.Enqueue(batch); serr != nil {
 				log.Error("spool enqueue", "err", serr)
 				diag.DBWrite(diag.LevelError, "spool enqueue failed", serr.Error(), len(batch))
@@ -90,9 +97,9 @@ func replaySpool(ctx context.Context, log *slog.Logger, hist core.Historian, sp 
 				continue
 			}
 			if err := hist.WriteBatch(ctx, batch); err != nil {
-				if errors.Is(err, timescale.ErrCapacityHalt) {
-					log.Warn("spool replay halted by capacity policy", "err", err)
-					diag.DBWrite(diag.LevelWarn, "spool replay halted by capacity policy", err.Error(), len(batch))
+				if errors.Is(err, timescale.ErrCapacityHalt) || errors.Is(err, timescale.ErrCapacityBusy) {
+					log.Warn("spool replay deferred by capacity policy", "err", err)
+					diag.DBWrite(diag.LevelWarn, "spool replay deferred by capacity policy", err.Error(), len(batch))
 					continue
 				}
 				log.Warn("spool replay failed", "err", err)

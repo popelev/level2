@@ -189,6 +189,21 @@ func TestFlushLoop_WriteAndSpoolOnError(t *testing.T) {
 		t.Fatalf("capacity halt must not spool: before=%d after=%d", before, sp.Len())
 	}
 
+	hist.err = timescale.ErrCapacityBusy
+	before = sp.Len()
+	v4 := 4.0
+	in <- core.Sample{TagID: "d", ValueNum: &v4, Quality: core.QualityGood, Time: time.Now().UTC()}
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if sp.Len() > before {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if sp.Len() <= before {
+		t.Fatalf("capacity busy must spool: before=%d after=%d", before, sp.Len())
+	}
+
 	cancel()
 	select {
 	case <-done:

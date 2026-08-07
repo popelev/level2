@@ -437,14 +437,16 @@ func TestEnforceCapacity_DropOldest(t *testing.T) {
 		t.Fatalf("drop_oldest: %v", err)
 	}
 
-	// Still over after drop → halt.
+	// Still over after drop but trim made progress → ErrCapacityBusy (spool), not halt.
 	sizeIdx = 0
 	sizes = []int64{2000, 2000, 2000, 2000}
+	p.queryFn = func(sql string, _ []any) (pgx.Rows, error) {
+		return nil, errors.New("no chunk list")
+	}
 	p.queryRowFn = func(sql string, _ []any) pgx.Row {
 		switch {
 		case sqlHas(sql, "pg_database_size"):
-			v := sizes[0]
-			return rowInt64(v)
+			return rowInt64(2000)
 		case sqlHas(sql, "timescaledb_information.chunks"):
 			return rowErr(errors.New("no chunks"))
 		case sqlHas(sql, "min(time)"):
@@ -453,11 +455,20 @@ func TestEnforceCapacity_DropOldest(t *testing.T) {
 			return rowErr(errors.New(sql))
 		}
 	}
-	if err := h.enforceCapacity(context.Background()); !errors.Is(err, ErrCapacityHalt) {
-		t.Fatalf("want halt still over, got %v", err)
+	p.execFn = func(sql string, _ []any) (pgconn.CommandTag, error) {
+		if sqlHas(sql, "drop_chunks") {
+			return pgconn.NewCommandTag(""), errors.New("no drop_chunks")
+		}
+		if sqlHas(sql, "delete from collector.samples") {
+			return pgconn.NewCommandTag("DELETE 10"), nil
+		}
+		return pgconn.NewCommandTag(""), errors.New(sql)
+	}
+	if err := h.enforceCapacity(context.Background()); !errors.Is(err, ErrCapacityBusy) {
+		t.Fatalf("want busy (spool) still over, got %v", err)
 	}
 
-	// dropOldestChunk failure bubbles as halt.
+	// dropOldestChunk failure with zero progress → halt.
 	p.execFn = func(sql string, _ []any) (pgconn.CommandTag, error) {
 		return pgconn.NewCommandTag(""), errors.New("cannot delete")
 	}
@@ -582,7 +593,7 @@ func TestDropOldestUntilUnder_NoProgress(t *testing.T) {
 		}
 		return pgconn.NewCommandTag(""), errors.New("no drop")
 	}
-	if err := h.dropOldestUntilUnder(context.Background(), 1000, 90); err == nil {
+	if _, _, err := h.dropOldestUntilUnder(context.Background(), 1000, 90); err == nil {
 		t.Fatal("expected no older chunks/rows")
 	}
 
@@ -592,7 +603,7 @@ func TestDropOldestUntilUnder_NoProgress(t *testing.T) {
 		}
 		return rowErr(errors.New(sql))
 	}
-	if err := h.dropOldestUntilUnder(context.Background(), 1000, 90); err == nil {
+	if _, _, err := h.dropOldestUntilUnder(context.Background(), 1000, 90); err == nil {
 		t.Fatal("expected policyLimitBytes error")
 	}
 }
@@ -628,20 +639,99 @@ func TestDiskSpace_InvalidPath(t *testing.T) {
 	}
 }
 
-func TestDropOldestUntilUnder_AlreadyUnder(t *testing.T) {
+func TestDropOldestUntilUnder_MultiChunk(t *testing.T) {
 	t.Setenv("LEVEL2_DB_CAPACITY_BYTES", "1000")
+	base := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	sizes := []int64{2000, 2000, 400}
+	var sizeIdx int
+	var droppedCutoff time.Time
 	p := &fakePool{
 		queryRowFn: func(sql string, _ []any) pgx.Row {
 			if sqlHas(sql, "pg_database_size") {
-				return rowInt64(100)
+				v := sizes[sizeIdx]
+				if sizeIdx < len(sizes)-1 {
+					sizeIdx++
+				}
+				return rowInt64(v)
 			}
 			return rowErr(errors.New(sql))
 		},
+		queryFn: func(sql string, _ []any) (pgx.Rows, error) {
+			if !sqlHas(sql, "timescaledb_information.chunks") {
+				return nil, errors.New(sql)
+			}
+			vals := make([][]any, 5)
+			for i := range vals {
+				vals[i] = []any{base.Add(time.Duration(i) * time.Hour), int64(400)}
+			}
+			return &fakeRows{vals: vals}, nil
+		},
+		execFn: func(sql string, args []any) (pgconn.CommandTag, error) {
+			if sqlHas(sql, "drop_chunks") {
+				if len(args) > 0 {
+					if ts, ok := args[0].(time.Time); ok {
+						droppedCutoff = ts
+					}
+				}
+				return pgconn.NewCommandTag("SELECT 3"), nil
+			}
+			return pgconn.NewCommandTag(""), errors.New(sql)
+		},
 	}
-	if err := (&Historian{pool: p}).dropOldestUntilUnder(context.Background(), 1000, 90); err != nil {
+	h := &Historian{pool: p}
+	dropped, freed, err := h.dropOldestUntilUnder(context.Background(), 850, 90)
+	if err != nil {
 		t.Fatal(err)
 	}
+	if dropped < 1 || freed < 1 {
+		t.Fatalf("dropped=%d freed=%d", dropped, freed)
+	}
+	// need ~1150 bytes at 400/chunk → 3 chunks; cutoff = range_start of 4th (index 3)
+	want := base.Add(3 * time.Hour)
+	if !droppedCutoff.Equal(want) {
+		t.Fatalf("cutoff=%v want %v", droppedCutoff, want)
+	}
 }
+
+func TestEnforceCapacity_DropOldestApproachingUnderHardLimit(t *testing.T) {
+	// used at 95% of limit → proactive trim; after trim under hard limit → allow write.
+	t.Setenv("LEVEL2_DB_CAPACITY_BYTES", "1000")
+	sizes := []int64{950, 950, 800}
+	var sizeIdx int
+	base := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	p := &fakePool{
+		queryRowFn: func(sql string, _ []any) pgx.Row {
+			if sqlHas(sql, "pg_database_size") {
+				v := sizes[sizeIdx]
+				if sizeIdx < len(sizes)-1 {
+					sizeIdx++
+				}
+				return rowInt64(v)
+			}
+			return rowErr(errors.New(sql))
+		},
+		queryFn: func(sql string, _ []any) (pgx.Rows, error) {
+			vals := [][]any{
+				{base, int64(200)},
+				{base.Add(time.Hour), int64(200)},
+				{base.Add(2 * time.Hour), int64(200)},
+			}
+			return &fakeRows{vals: vals}, nil
+		},
+		execFn: func(sql string, _ []any) (pgconn.CommandTag, error) {
+			if sqlHas(sql, "drop_chunks") {
+				return pgconn.NewCommandTag("SELECT 1"), nil
+			}
+			return pgconn.NewCommandTag(""), errors.New(sql)
+		},
+	}
+	h := &Historian{pool: p}
+	h.SetCapacityPolicy(90, config.FullPolicyDropOldest)
+	if err := h.enforceCapacity(context.Background()); err != nil {
+		t.Fatalf("approaching should allow after trim: %v", err)
+	}
+}
+
 
 func TestDropOldestChunk_DropChunksFallbackAndShortCut(t *testing.T) {
 	// drop_chunks succeeds after min/max (chunk metadata missing).

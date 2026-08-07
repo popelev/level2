@@ -61,7 +61,10 @@ func TestErrCapacityHaltWrapped(t *testing.T) {
 	if !errors.Is(wrapped, ErrCapacityHalt) {
 		t.Fatalf("wrapped halt: %v", wrapped)
 	}
-	if !errors.Is(fmt.Errorf("%w: still over limit after drop_oldest", ErrCapacityHalt), ErrCapacityHalt) {
-		t.Fatal("drop_oldest wrap")
+	if !errors.Is(fmt.Errorf("%w: still over limit after drop_oldest", ErrCapacityBusy), ErrCapacityBusy) {
+		t.Fatal("drop_oldest busy wrap")
+	}
+	if errors.Is(fmt.Errorf("%w: still over limit after drop_oldest", ErrCapacityBusy), ErrCapacityHalt) {
+		t.Fatal("busy must not match halt")
 	}
 }

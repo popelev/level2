@@ -23,12 +23,22 @@ limit_bytes = disk_total × capacity_percent / 100
 
 ### Policies
 
-| Policy | Behavior (Phase 1) |
-|--------|--------------------|
+| Policy | Behavior |
+|--------|----------|
 | `stop` | Skip `WriteBatch`, log diagnostics, increment `level2_historian_capacity_halts_total`. **Do not spool.** |
-| `drop_oldest` | Prefer Timescale `drop_chunks` on `collector.samples`; fallback `DELETE … WHERE time < …`. Then write. |
+| `drop_oldest` | See algorithm below. |
 | `rotate` | **Phase 2 stub** — same as `stop`, UI explains rotation is not implemented. |
 | `expand_limit` | User raises the capacity slider; until then same as `stop`. |
+
+### `drop_oldest` algorithm
+
+1. **Proactive trim** when `used ≥ 90%` of `limit_bytes` (not only when over the hard limit).
+2. Free toward a **target** of `85%` of limit: estimate oldest chunk sizes via `timescaledb_information.chunks` + `pg_total_relation_size`, then one `drop_chunks(older_than ⇒ …)` covering **N** oldest chunks (proportional to overrun, cap 64/pass). Fallback: single-chunk / `DELETE` slice.
+3. If after trim `used < limit` → allow `WriteBatch`.
+4. If still over limit but trim made (or can make) progress → return **`ErrCapacityBusy`**: flush path **spools** the batch; replay waits until under limit. No halt, no data loss.
+5. **Halt** (`ErrCapacityHalt`, no spool) only when nothing left to drop and size is still over the hard limit (or size re-check fails with zero progress).
+
+`pg_database_size` may lag after drops (bloat); estimated freed bytes count as progress so the collector spools instead of falsely halting.
 
 ## UI
 
