@@ -37,8 +37,9 @@ pipeline {
             -e GOTOOLCHAIN=auto \
             -v "$PWD":/src -w /src \
             golang:1.24 \
-            bash -lc '
+            bash -c '
               set -euo pipefail
+              export PATH=/usr/local/go/bin:$PATH
               go run gotest.tools/gotestsum@v1.12.3 --junitfile test-results.xml -- ./... -coverprofile=cov.out -covermode=atomic
               go tool cover -html=cov.out -o coverage.html
             '
