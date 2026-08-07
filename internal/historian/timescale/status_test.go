@@ -19,17 +19,17 @@ func TestDiskFreeLocalPath(t *testing.T) {
 		// Some Docker/overlay mounts report Bavail=0; still exercise the syscall path.
 		t.Logf("diskFree(%s)=0 (ok for constrained mounts)", dir)
 	}
-	// Also works on a file path's volume (Windows drive / Linux mount).
+	// Re-query via the directory (Windows GetDiskFreeSpaceEx rejects bare file paths).
 	f := filepath.Join(dir, "marker")
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	n2, err := diskFree(f)
+	n2, err := diskFree(filepath.Dir(f))
 	if err != nil {
-		t.Fatalf("diskFree(file): %v", err)
+		t.Fatalf("diskFree(dir): %v", err)
 	}
 	if n2 < 0 {
-		t.Fatalf("expected free bytes >= 0 for file path, got %d", n2)
+		t.Fatalf("expected free bytes >= 0 for dir path, got %d", n2)
 	}
 }
 

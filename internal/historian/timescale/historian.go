@@ -6,16 +6,28 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/popelev/level2/internal/config"
 	"github.com/popelev/level2/internal/core"
 )
 
+// dbPool is the *pgxpool.Pool surface used by Historian (narrowed for fakes in tests).
+// Pool stats stay on *pgxpool.Pool (see Status) because pgxpool.Stat cannot be faked.
+type dbPool interface {
+	Close()
+	Ping(ctx context.Context) error
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
 // Historian writes samples to Timescale/Postgres.
 type Historian struct {
-	pool             *pgxpool.Pool
-	capacityPercent  atomic.Int64
-	fullPolicy       atomic.Value // string
+	pool            dbPool
+	capacityPercent atomic.Int64
+	fullPolicy      atomic.Value // string
 }
 
 func New(ctx context.Context, databaseURL string) (*Historian, error) {

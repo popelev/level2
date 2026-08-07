@@ -67,11 +67,13 @@ func (h *Historian) Status(ctx context.Context, databaseURL string) ConnectionSt
 		return st
 	}
 
-	stat := h.pool.Stat()
-	st.PoolMaxConns = stat.MaxConns()
-	st.PoolTotalConns = stat.TotalConns()
-	st.PoolIdleConns = stat.IdleConns()
-	st.PoolAcquired = stat.AcquiredConns()
+	if p, ok := h.pool.(*pgxpool.Pool); ok {
+		stat := p.Stat()
+		st.PoolMaxConns = stat.MaxConns()
+		st.PoolTotalConns = stat.TotalConns()
+		st.PoolIdleConns = stat.IdleConns()
+		st.PoolAcquired = stat.AcquiredConns()
+	}
 
 	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -303,10 +305,11 @@ func ParseDatabaseURL(raw string) (host, port, database, user, sslmode string) {
 	return host, port, database, user, sslmode
 }
 
-// Pool exposes the underlying pool for tests.
+// Pool exposes the underlying *pgxpool.Pool when the historian uses a real pool.
 func (h *Historian) Pool() *pgxpool.Pool {
-	if h == nil {
+	if h == nil || h.pool == nil {
 		return nil
 	}
-	return h.pool
+	p, _ := h.pool.(*pgxpool.Pool)
+	return p
 }
