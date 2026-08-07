@@ -126,6 +126,33 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
     }
   }
 
+  const setTagsWritable = async (tagList, writable) => {
+    if (!deviceId || !tagList?.length) return
+    onError('')
+    setTags((prev) =>
+      prev.map((tv) =>
+        tagList.some((t) => t.id === tv.tag.id)
+          ? { ...tv, tag: { ...tv.tag, writable } }
+          : tv,
+      ),
+    )
+    try {
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/writable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          writable,
+          tag_ids: tagList.map((t) => t.id),
+        }),
+      })
+      if (!r.ok) throw new Error(await r.text())
+      await refreshTags(deviceId)
+    } catch (ex) {
+      onError(String(ex.message || ex))
+      await refreshTags(deviceId).catch(() => {})
+    }
+  }
+
   const bulkSimulate = async (simulate, mode) => {
     if (!deviceId) return
     const selectedList = tags.filter((t) => dbSelected.has(t.tag.id)).map((t) => t.tag)
@@ -151,6 +178,39 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
       if (!r.ok) throw new Error(await r.text())
       const data = await r.json()
       setMsg(`${simulate ? 'Simulation on' : 'Simulation off'}: ${data.updated} tag(s)`)
+      await refreshTags(deviceId)
+    } catch (ex) {
+      onError(String(ex.message || ex))
+    } finally {
+      setBulkBusy('')
+    }
+  }
+
+  const bulkWritable = async (writable, mode) => {
+    if (!deviceId) return
+    const selectedList = tags.filter((t) => dbSelected.has(t.tag.id)).map((t) => t.tag)
+    const target = mode === 'selected' ? selectedList : tags.map((t) => t.tag)
+    if (!target.length) return
+    const label = mode === 'selected'
+      ? `${writable ? 'Enable' : 'Disable'} writable for ${target.length} selected tag(s)?`
+      : `${writable ? 'Enable' : 'Disable'} writable for all ${target.length} tag(s) on this server?`
+    if (!window.confirm(label)) return
+    const busyKey = `${writable ? 'wr-on' : 'wr-off'}-${mode}`
+    setBulkBusy(busyKey)
+    onError('')
+    setMsg('')
+    try {
+      const body = mode === 'selected'
+        ? { writable, tag_ids: target.map((t) => t.id) }
+        : { writable, all: true }
+      const r = await fetch(`/api/v1/devices/${encodeURIComponent(deviceId)}/tags/writable`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) throw new Error(await r.text())
+      const data = await r.json()
+      setMsg(`${writable ? 'Writable on' : 'Writable off'}: ${data.updated} tag(s)`)
       await refreshTags(deviceId)
     } catch (ex) {
       onError(String(ex.message || ex))
@@ -196,6 +256,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
   )
   const simTags = useMemo(() => tags.filter((t) => !!t.tag.simulate), [tags])
   const simCount = simTags.length
+  const writableCount = useMemo(() => tags.filter((t) => !!t.tag.writable).length, [tags])
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase()
@@ -324,6 +385,11 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
                   {' '}· {simCount} sim
                 </span>
               )}
+              {writableCount > 0 && (
+                <span className="muted small" title="Tags with writable=true">
+                  {' '}· {writableCount} writable
+                </span>
+              )}
               {badTags.length > 0 && (
                 <span className="badq small"> · {badTags.length} bad</span>
               )}
@@ -362,7 +428,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
           </div>
           <p className="hint">
             Only enabled tags are polled. Use <strong>Sim</strong> for per-tag mock samples (OPC continues for others).
-            Add tags from Address Space or Import / Export.
+            <strong> Writable</strong> allows the Write API (default off). Add tags from Address Space or Import / Export.
           </p>
           <div className="sel-bar db-actions">
             <button
@@ -398,6 +464,23 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
             >
               {bulkBusy === 'sim-off-all' ? '…' : 'Unsim all'}
             </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!!bulkBusy || !tags.length}
+              onClick={() => bulkWritable(true, 'all')}
+              title="Allow Write API for all tags on this server"
+            >
+              {bulkBusy === 'wr-on-all' ? '…' : 'Writable all'}
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              disabled={!!bulkBusy || writableCount === 0}
+              onClick={() => bulkWritable(false, 'all')}
+            >
+              {bulkBusy === 'wr-off-all' ? '…' : 'Unwritable all'}
+            </button>
           </div>
           {msg && <p className="ok small">{msg}</p>}
           {dbSelected.size > 0 && (
@@ -426,6 +509,22 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
                 onClick={() => bulkSimulate(false, 'selected')}
               >
                 {bulkBusy === 'sim-off-selected' ? '…' : 'Unsim selected'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!!bulkBusy}
+                onClick={() => bulkWritable(true, 'selected')}
+              >
+                {bulkBusy === 'wr-on-selected' ? '…' : 'Writable selected'}
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                disabled={!!bulkBusy}
+                onClick={() => bulkWritable(false, 'selected')}
+              >
+                {bulkBusy === 'wr-off-selected' ? '…' : 'Unwritable selected'}
               </button>
               <button
                 type="button"
@@ -470,6 +569,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
               onToggleSelect={onDbToggleSelect}
               onSetEnabled={setTagsEnabled}
               onSetSimulate={setTagsSimulate}
+              onSetWritable={setTagsWritable}
               onRemove={unmonitorTags}
               onUpdateTag={updateTag}
               opcConnected={opcConnected}

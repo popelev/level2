@@ -240,6 +240,16 @@ func (s *Store) DeleteTag(deviceID, tagID string) error {
 // SetTagsSimulate sets simulate on matching tags for a device and persists YAML.
 // If tagIDs is empty, all tags on the device are updated. Returns how many tags were set.
 func (s *Store) SetTagsSimulate(deviceID string, tagIDs []string, simulate bool) (updated int, err error) {
+	return s.setTagsBool(deviceID, tagIDs, func(t *core.Tag) { t.Simulate = simulate })
+}
+
+// SetTagsWritable sets writable on matching tags for a device and persists YAML.
+// If tagIDs is empty, all tags on the device are updated. Returns how many tags were set.
+func (s *Store) SetTagsWritable(deviceID string, tagIDs []string, writable bool) (updated int, err error) {
+	return s.setTagsBool(deviceID, tagIDs, func(t *core.Tag) { t.Writable = writable })
+}
+
+func (s *Store) setTagsBool(deviceID string, tagIDs []string, apply func(*core.Tag)) (updated int, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	idx, err := s.deviceIndexLocked(deviceID)
@@ -260,7 +270,7 @@ func (s *Store) SetTagsSimulate(deviceID string, tagIDs []string, simulate bool)
 				continue
 			}
 		}
-		dev.Tags[i].Simulate = simulate
+		apply(&dev.Tags[i])
 		updated++
 	}
 	if !all && updated == 0 && len(tagIDs) > 0 {

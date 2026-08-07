@@ -13,6 +13,7 @@ func (s *Server) mountTagSimulation(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/tag-simulation", s.handlePutTagSimulation)
 	mux.HandleFunc("POST /api/v1/devices/{id}/tags/simulate", s.handleBulkSimulateTags)
 	mux.HandleFunc("POST /api/v1/tags/simulate", s.handleBulkSimulateTagsAll)
+	mux.HandleFunc("POST /api/v1/devices/{id}/tags/writable", s.handleBulkWritableTags)
 	mux.HandleFunc("PATCH /api/v1/devices/{id}/tags/{tagId}", s.handlePatchTag)
 }
 
@@ -167,6 +168,47 @@ func (s *Server) handleBulkSimulateTags(w http.ResponseWriter, r *http.Request) 
 		"simulate":        body.Simulate,
 		"updated":         updated,
 		"tags_simulated":  s.countTagsSimulated(),
+	})
+}
+
+type bulkWritableBody struct {
+	Writable bool     `json:"writable"`
+	TagIDs   []string `json:"tag_ids"`
+	All      bool     `json:"all"`
+}
+
+func (s *Server) handleBulkWritableTags(w http.ResponseWriter, r *http.Request) {
+	if s.Cfg == nil {
+		http.Error(w, "config store not available", http.StatusServiceUnavailable)
+		return
+	}
+	deviceID := r.PathValue("id")
+	var body bulkWritableBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+	tagIDs := body.TagIDs
+	if body.All {
+		tagIDs = nil
+	}
+	if !body.All && len(tagIDs) == 0 {
+		http.Error(w, "tag_ids required unless all=true", http.StatusBadRequest)
+		return
+	}
+	updated, err := s.Cfg.SetTagsWritable(deviceID, tagIDs, body.Writable)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "no matching") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"device_id": deviceID,
+		"writable":  body.Writable,
+		"updated":   updated,
 	})
 }
 

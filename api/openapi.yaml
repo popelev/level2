@@ -452,6 +452,38 @@ paths:
         "200":
           description: "{device_id, simulate, updated, tags_simulated}"
 
+  /api/v1/devices/{id}/tags/writable:
+    post:
+      tags: [tags]
+      summary: Bulk enable/disable per-tag writable on a device
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [writable]
+              properties:
+                writable:
+                  type: boolean
+                tag_ids:
+                  type: array
+                  items:
+                    type: string
+                  description: Empty or omitted with all=true → all tags on device
+                all:
+                  type: boolean
+                  description: When true, ignore tag_ids and update every tag on the device
+      responses:
+        "200":
+          description: "{device_id, writable, updated}"
+
   /api/v1/tags/simulate:
     post:
       tags: [tags]

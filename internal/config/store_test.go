@@ -281,3 +281,39 @@ func TestSetTagsSimulate(t *testing.T) {
 		t.Fatalf("want error for missing, n=%d err=%v", n, err)
 	}
 }
+
+func TestSetTagsWritable(t *testing.T) {
+	s := testStore(t, core.Device{
+		ID: "plc", Endpoint: "opc.tcp://x:4840", Security: "None",
+		Tags: []core.Tag{
+			{ID: "a", NodeID: "ns=4;i=1", DataType: core.ValueFloat64, Enabled: true, IntervalMs: 1000},
+			{ID: "b", NodeID: "ns=4;i=2", DataType: core.ValueFloat64, Enabled: true, IntervalMs: 1000},
+		},
+	})
+	tags, _ := s.DeviceTags("plc")
+	for _, tg := range tags {
+		if tg.Writable {
+			t.Fatalf("%s default writable want false", tg.ID)
+		}
+	}
+	n, err := s.SetTagsWritable("plc", []string{"a"}, true)
+	if err != nil || n != 1 {
+		t.Fatalf("n=%d err=%v", n, err)
+	}
+	tags, _ = s.DeviceTags("plc")
+	byID := map[string]core.Tag{}
+	for _, tg := range tags {
+		byID[tg.ID] = tg
+	}
+	if !byID["a"].Writable || byID["b"].Writable {
+		t.Fatalf("a=%v b=%v", byID["a"].Writable, byID["b"].Writable)
+	}
+	n, err = s.SetTagsWritable("plc", nil, true)
+	if err != nil || n != 2 {
+		t.Fatalf("all n=%d err=%v", n, err)
+	}
+	n, err = s.SetTagsWritable("plc", []string{"missing"}, false)
+	if err == nil || n != 0 {
+		t.Fatalf("want error for missing, n=%d err=%v", n, err)
+	}
+}

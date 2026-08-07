@@ -606,7 +606,7 @@ tr.dim, .tt-row.dim { opacity: 0.55; }
 .tt-head,
 .tt-row {
   display: grid;
-  grid-template-columns: 18px minmax(140px, 1.4fr) 72px 52px 64px 88px 56px 52px 28px 28px 72px;
+  grid-template-columns: 18px minmax(140px, 1.4fr) 72px 52px 64px 88px 56px 52px 28px 52px 28px 72px;
   gap: 6px;
   align-items: center;
   padding: 4px 8px;

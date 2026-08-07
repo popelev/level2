@@ -19,6 +19,7 @@ function FolderRow({
   onToggleSelect,
   onSetEnabled,
   onSetSimulate,
+  onSetWritable,
   onRemove,
 }) {
   const leaves = useMemo(() => collectLeaves(node), [node])
@@ -27,6 +28,8 @@ function FolderRow({
   const someOn = leaves.some((tv) => tv.tag.enabled)
   const allSim = leaves.length > 0 && leaves.every((tv) => tv.tag.simulate)
   const someSim = leaves.some((tv) => tv.tag.simulate)
+  const allWritable = leaves.length > 0 && leaves.every((tv) => tv.tag.writable)
+  const someWritable = leaves.some((tv) => tv.tag.writable)
   const allSel = leaves.length > 0 && leaves.every((tv) => selected.has(tv.tag.id))
   const someSel = leaves.some((tv) => selected.has(tv.tag.id))
 
@@ -67,6 +70,15 @@ function FolderRow({
       />
       <input
         type="checkbox"
+        title="Writable all under folder (Write API allow-list)"
+        checked={allWritable}
+        ref={(el) => {
+          if (el) el.indeterminate = someWritable && !allWritable
+        }}
+        onChange={(e) => onSetWritable(leaves.map((tv) => tv.tag), e.target.checked)}
+      />
+      <input
+        type="checkbox"
         title="Enable / disable all under folder"
         checked={allOn}
         ref={(el) => {
@@ -96,6 +108,7 @@ function LeafRow({
   onToggleSelect,
   onSetEnabled,
   onSetSimulate,
+  onSetWritable,
   onRemove,
   onUpdateTag,
   opcConnected,
@@ -180,6 +193,12 @@ function LeafRow({
       />
       <input
         type="checkbox"
+        checked={!!tag.writable}
+        onChange={(e) => onSetWritable([tag], e.target.checked)}
+        title="Writable (Write API allow-list; default off)"
+      />
+      <input
+        type="checkbox"
         checked={!!tag.enabled}
         onChange={(e) => onSetEnabled([tag], e.target.checked)}
         title="Write to DB"
@@ -207,7 +226,7 @@ function pollClass(avg, configured) {
 function TreeBranch(props) {
   const {
     node, depth, openMap, setOpenMap, selected,
-    onToggleSelect, onSetEnabled, onSetSimulate, onRemove, onUpdateTag, opcConnected,
+    onToggleSelect, onSetEnabled, onSetSimulate, onSetWritable, onRemove, onUpdateTag, opcConnected,
   } = props
   const open = openMap[node.key] !== false
   if (node.type === 'leaf') {
@@ -219,6 +238,7 @@ function TreeBranch(props) {
         onToggleSelect={onToggleSelect}
         onSetEnabled={onSetEnabled}
         onSetSimulate={onSetSimulate}
+        onSetWritable={onSetWritable}
         onRemove={onRemove}
         onUpdateTag={onUpdateTag}
         opcConnected={opcConnected}
@@ -236,6 +256,7 @@ function TreeBranch(props) {
         onToggleSelect={onToggleSelect}
         onSetEnabled={onSetEnabled}
         onSetSimulate={onSetSimulate}
+        onSetWritable={onSetWritable}
         onRemove={onRemove}
       />
       {open && node.children.map((ch) => (
@@ -249,6 +270,7 @@ function TreeBranch(props) {
           onToggleSelect={onToggleSelect}
           onSetEnabled={onSetEnabled}
           onSetSimulate={onSetSimulate}
+          onSetWritable={onSetWritable}
           onRemove={onRemove}
           onUpdateTag={onUpdateTag}
           opcConnected={opcConnected}
@@ -264,6 +286,7 @@ export default function TagTreeTable({
   onToggleSelect,
   onSetEnabled,
   onSetSimulate,
+  onSetWritable,
   onRemove,
   onUpdateTag,
   opcConnected,
@@ -287,6 +310,7 @@ export default function TagTreeTable({
         <span>ms</span>
         <span title="Average of last 5 poll intervals">avg</span>
         <span title="Per-tag simulation">Sim</span>
+        <span title="Write API allow-list (default off)">Writable</span>
         <span>On</span>
         <span />
       </div>
@@ -301,6 +325,7 @@ export default function TagTreeTable({
           onToggleSelect={onToggleSelect}
           onSetEnabled={onSetEnabled}
           onSetSimulate={onSetSimulate}
+          onSetWritable={onSetWritable}
           onRemove={onRemove}
           onUpdateTag={onUpdateTag}
           opcConnected={opcConnected}
