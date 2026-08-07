@@ -51,8 +51,8 @@ func TestWriteGuards_SimBrowserAndTagSimulation(t *testing.T) {
 	rr = httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/v1/tags/values",
 		bytes.NewReader([]byte(`{"writes":[{"tag_id":"Motor1.SpeedSP","value":1}]}`))))
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("sim browser batch: %d", rr.Code)
+	if rr.Code != http.StatusConflict || !strings.Contains(rr.Body.String(), "sim browser") {
+		t.Fatalf("sim browser batch: %d %s", rr.Code, rr.Body.String())
 	}
 
 	s.SimBrowserActive = nil
@@ -67,8 +67,8 @@ func TestWriteGuards_SimBrowserAndTagSimulation(t *testing.T) {
 	rr = httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/v1/tags/values",
 		bytes.NewReader([]byte(`{"writes":[{"tag_id":"Motor1.SpeedSP","value":1}]}`))))
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("tag sim batch: %d", rr.Code)
+	if rr.Code != http.StatusConflict || !strings.Contains(rr.Body.String(), "tag_simulation") {
+		t.Fatalf("tag sim batch: %d %s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -268,7 +268,14 @@ func TestSampleFromCoerced_AllTypes(t *testing.T) {
 	if s.ValueBool == nil || !*s.ValueBool {
 		t.Fatalf("alias bool %#v", s)
 	}
-	_ = time.Now()
+	ts := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	s = sampleFromCoerced("t", core.ValueDateTime, ts)
+	if s.ValueText == nil || !strings.HasPrefix(*s.ValueText, "2026-03-04") {
+		t.Fatalf("datetime %#v", s)
+	}
+	if s.TagID != "t" || s.Quality != core.QualityGood {
+		t.Fatalf("meta %#v", s)
+	}
 }
 
 func TestPickWriteRawValue_TextAndBool(t *testing.T) {

@@ -91,4 +91,19 @@ func TestAPIAuth_CfgTokenAndExtractors(t *testing.T) {
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("want 401 got %d", rr.Code)
 	}
+
+	rr = httptest.NewRecorder()
+	okReq := httptest.NewRequest(http.MethodDelete, "/api/v1/devices/x", nil)
+	okReq.Header.Set("Authorization", "Bearer cfg-secret")
+	handler.ServeHTTP(rr, okReq)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("authorized want 204 got %d", rr.Code)
+	}
+
+	rr = httptest.NewRecorder()
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/tags", nil)
+	handler.ServeHTTP(rr, getReq)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("GET without token want 204 got %d", rr.Code)
+	}
 }

@@ -101,11 +101,36 @@ func TestExpandStream_SimBrowser(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("stream %d %s", rr.Code, rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), `"type":"result"`) && !strings.Contains(rr.Body.String(), `"type": "result"`) {
-		// json.Encoder omits spaces
-		if !strings.Contains(rr.Body.String(), `"type":"result"`) {
-			t.Fatalf("ndjson missing result: %s", rr.Body.String())
+	bodyOut := rr.Body.String()
+	if !strings.Contains(bodyOut, `"type":"result"`) {
+		t.Fatalf("ndjson missing result: %s", bodyOut)
+	}
+	var sawResult bool
+	var tagCount int
+	for _, line := range strings.Split(bodyOut, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
+		var evt map[string]any
+		if err := json.Unmarshal([]byte(line), &evt); err != nil {
+			t.Fatalf("ndjson line %q: %v", line, err)
+		}
+		switch evt["type"] {
+		case "progress":
+			if evt["phase"] == nil {
+				t.Fatalf("progress without phase: %v", evt)
+			}
+		case "result":
+			sawResult = true
+			tags, _ := evt["tags"].([]any)
+			tagCount = len(tags)
+		case "error":
+			t.Fatalf("unexpected error event: %v", evt)
+		}
+	}
+	if !sawResult || tagCount < 2 {
+		t.Fatalf("want result with tags>=2, got count=%d body=%s", tagCount, bodyOut)
 	}
 }
 
@@ -233,6 +258,20 @@ func TestProjectExportAndPreview(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("preview %d %s", rr.Code, rr.Body.String())
 	}
+	var preview map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview["legacy"] != false {
+		t.Fatalf("preview legacy: %v", preview)
+	}
+	if int(preview["servers"].(float64)) != 1 || int(preview["tags"].(float64)) != 1 {
+		t.Fatalf("preview summary: %v", preview)
+	}
+	ids, _ := preview["device_ids"].([]any)
+	if len(ids) != 1 || ids[0] != "plc" {
+		t.Fatalf("device_ids: %v", preview["device_ids"])
+	}
 
 	// Import merge
 	var buf2 bytes.Buffer
@@ -246,6 +285,20 @@ func TestProjectExportAndPreview(t *testing.T) {
 	mux.ServeHTTP(rr, req)
 	if rr.Code != 200 {
 		t.Fatalf("import %d %s", rr.Code, rr.Body.String())
+	}
+	var imported map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &imported); err != nil {
+		t.Fatal(err)
+	}
+	if imported["mode"] != "merge" || int(imported["servers"].(float64)) != 1 || int(imported["tags"].(float64)) != 1 {
+		t.Fatalf("import body: %v", imported)
+	}
+	tags, err := cfg.DeviceTags("plc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tags) != 1 || tags[0].ID != "t1" {
+		t.Fatalf("merged tags: %#v", tags)
 	}
 }
 
@@ -279,9 +332,15 @@ func TestProjectCompare_LiveVsFile(t *testing.T) {
 		t.Fatalf("compare %d %s", rr.Code, rr.Body.String())
 	}
 	var out map[string]any
-	_ = json.Unmarshal(rr.Body.Bytes(), &out)
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
 	if int(out["count"].(float64)) < 1 {
 		t.Fatalf("expected diff rows, got %v", out)
+	}
+	rows, _ := out["rows"].([]any)
+	if len(rows) < 1 {
+		t.Fatalf("rows missing: %v", out)
 	}
 }
 
@@ -299,10 +358,16 @@ func TestDiagLogsAndClear(t *testing.T) {
 		t.Fatalf("%d", rr.Code)
 	}
 	var out map[string]any
-	_ = json.Unmarshal(rr.Body.Bytes(), &out)
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
 	entries, _ := out["entries"].([]any)
 	if len(entries) != 1 {
 		t.Fatalf("entries=%v", out["entries"])
+	}
+	entry, _ := entries[0].(map[string]any)
+	if entry["message"] != "boom" {
+		t.Fatalf("filtered entry: %v", entry)
 	}
 
 	rr = httptest.NewRecorder()
@@ -322,6 +387,13 @@ func TestDiagLogsAndClear(t *testing.T) {
 	mux2.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/diagnostics/logs", nil))
 	if rr.Code != 200 {
 		t.Fatalf("nil diag %d", rr.Code)
+	}
+	var empty map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &empty); err != nil {
+		t.Fatal(err)
+	}
+	if ents, _ := empty["entries"].([]any); len(ents) != 0 {
+		t.Fatalf("nil diag entries: %v", empty)
 	}
 }
 

@@ -77,12 +77,17 @@ func TestDatabaseStatus_WithCfgURL(t *testing.T) {
 		t.Fatalf("%d", rr.Code)
 	}
 	var out map[string]any
-	_ = json.Unmarshal(rr.Body.Bytes(), &out)
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
 	if out["connected"] != false {
 		t.Fatalf("%v", out)
 	}
 	if out["url_masked"] == nil || out["url_masked"] == "" {
 		t.Fatalf("expected masked url: %v", out)
+	}
+	if !strings.Contains(out["url_masked"].(string), "postgres") {
+		t.Fatalf("url_masked=%v", out["url_masked"])
 	}
 }
 
@@ -94,9 +99,11 @@ func TestWipeSamples_EmptyHistorianAndBadJSON(t *testing.T) {
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/v1/database/wipe-samples?confirm=wipe",
 		strings.NewReader(`not-json`)))
-	if rr.Code != http.StatusBadRequest && rr.Code != http.StatusInternalServerError {
-		// invalid JSON before wipe, or wipe fails on empty pool
-		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("bad json want 400 got %d %s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "invalid JSON") {
+		t.Fatalf("body=%s", rr.Body.String())
 	}
 
 	rr = httptest.NewRecorder()

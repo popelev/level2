@@ -130,7 +130,9 @@ func TestHandleCapacity_FakeDBError(t *testing.T) {
 		t.Fatalf("%d", rr.Code)
 	}
 	var out map[string]any
-	_ = json.Unmarshal(rr.Body.Bytes(), &out)
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
 	if out["error"] != "capacity query failed" {
 		t.Fatalf("%v", out)
 	}
@@ -157,7 +159,9 @@ func TestCapacityPolicy_WithFakeDB(t *testing.T) {
 		t.Fatalf("%d", rr.Code)
 	}
 	var got map[string]any
-	_ = json.Unmarshal(rr.Body.Bytes(), &got)
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
 	if got["capacity_percent"].(float64) != 85 || got["full_policy"] != "drop_oldest" {
 		t.Fatalf("live policy: %v", got)
 	}
@@ -247,9 +251,14 @@ func TestWipeSamples_FakeReseedErrorAndWipeError(t *testing.T) {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
 	var out map[string]any
-	_ = json.Unmarshal(rr.Body.Bytes(), &out)
+	if err := json.Unmarshal(rr.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
 	if out["reseed_error"] == nil || !strings.Contains(out["reseed_error"].(string), "reseed failed") {
 		t.Fatalf("%v", out)
+	}
+	if out["status"] != "wiped" || out["method"] != "delete" {
+		t.Fatalf("wipe status: %v", out)
 	}
 
 	db2 := &fakeDB{wipeErr: errors.New("wipe boom")}

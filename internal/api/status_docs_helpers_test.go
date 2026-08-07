@@ -86,10 +86,8 @@ func TestBuildStatusSummary_LivePollAvgAndNilSample(t *testing.T) {
 	live := store.NewLive()
 	n := 3.0
 	live.Update(core.Sample{TagID: "good", Time: time.Now().UTC(), ValueNum: &n, Quality: core.QualityGood})
-	avg := int64(12)
 	// SnapshotDevices fills PollAvgMs from live history; seed a second update so avg can exist.
 	live.Update(core.Sample{TagID: "good", Time: time.Now().UTC(), ValueNum: &n, Quality: core.QualityGood})
-	_ = avg
 
 	hub := devruntime.NewHub(nil, false)
 	hub.InjectDriver(core.Device{ID: "dev1"}, statusOnlineDriver{}, nil)
@@ -125,6 +123,13 @@ func TestBuildStatusSummary_LivePollAvgAndNilSample(t *testing.T) {
 	}
 	if out.TagsSimulated < 1 {
 		t.Fatalf("per-tag simulate count %#v", out)
+	}
+	if out.DevicesTotal != 1 || out.TagsTotal != 3 || out.TagsEnabled != 3 {
+		t.Fatalf("counts %#v", out)
+	}
+	// Successive live updates on "good" should contribute a poll average when history exists.
+	if out.PollAvgMs != nil && *out.PollAvgMs < 0 {
+		t.Fatalf("poll_avg_ms %#v", out.PollAvgMs)
 	}
 }
 

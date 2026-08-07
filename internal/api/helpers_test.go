@@ -156,4 +156,11 @@ func TestWriteJSON(t *testing.T) {
 	if ct := rr.Header().Get("Content-Type"); ct != "application/json" {
 		t.Fatalf("ct=%q", ct)
 	}
+	var body map[string]string
+	if err := json.Unmarshal(rr.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["ok"] != "1" {
+		t.Fatalf("%v", body)
+	}
 }

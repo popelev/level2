@@ -56,6 +56,12 @@ func TestHandleWS_SubscribeFilter(t *testing.T) {
 	if dto.TagID != "keep" {
 		t.Fatalf("%#v", dto)
 	}
+	if dto.ValueNum == nil || *dto.ValueNum != 2 {
+		t.Fatalf("filtered value: %#v", dto)
+	}
+	if dto.Quality != int(core.QualityGood) {
+		t.Fatalf("quality: %#v", dto)
+	}
 
 	if err := c.WriteMessage(websocket.TextMessage, []byte(`{"tag_ids":[]}`)); err != nil {
 		t.Fatal(err)

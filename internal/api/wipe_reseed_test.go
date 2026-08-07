@@ -97,12 +97,18 @@ func TestFanIn_AfterWipeClear_DoesNotSuppress(t *testing.T) {
 	if err != nil || cleared != 1 || written != 1 {
 		t.Fatalf("reseed cleared=%d written=%d err=%v", cleared, written, err)
 	}
+	if len(live.All()) != 0 {
+		t.Fatal("live must be empty after reseed clear")
+	}
 
 	// Same payload after wipe must reach historian again (no Live prev).
 	in <- core.Sample{Time: time.Unix(3, 0).UTC(), TagID: "tag.a", ValueNum: &nSame, Quality: core.QualityGood}
 	got := recvSample(t, out, 500*time.Millisecond)
 	if got.TagID != "tag.a" || got.ValueNum == nil || *got.ValueNum != 10 {
 		t.Fatalf("post-wipe sample suppressed: %#v", got)
+	}
+	if sample, ok := live.Get("tag.a"); !ok || sample.ValueNum == nil || *sample.ValueNum != 10 {
+		t.Fatalf("live after post-wipe: %#v ok=%v", sample, ok)
 	}
 
 	cancel()

@@ -93,10 +93,59 @@ func TestDeviceCRUD_AndTagLifecycle(t *testing.T) {
 			if rr.Code != tc.want {
 				t.Fatalf("got %d want %d body=%s", rr.Code, tc.want, rr.Body.String())
 			}
+			switch tc.name {
+			case "create ok":
+				var created map[string]string
+				if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil {
+					t.Fatal(err)
+				}
+				if created["id"] != "plc" {
+					t.Fatalf("create body: %v", created)
+				}
+				devs := cfg.Devices()
+				if len(devs) != 1 || devs[0].Endpoint != "opc.tcp://x:4840" || devs[0].PollConcurrency != 2 {
+					t.Fatalf("device after create: %#v", devs)
+				}
+			case "update ok":
+				var updated map[string]string
+				if err := json.Unmarshal(rr.Body.Bytes(), &updated); err != nil {
+					t.Fatal(err)
+				}
+				if updated["id"] != "plc" {
+					t.Fatalf("update body: %v", updated)
+				}
+				devs := cfg.Devices()
+				if len(devs) != 1 || devs[0].Endpoint != "opc.tcp://y:4840" || devs[0].PollConcurrency != 4 {
+					t.Fatalf("device after update: %#v", devs)
+				}
+			case "upsert tag":
+				var tag core.Tag
+				if err := json.Unmarshal(rr.Body.Bytes(), &tag); err != nil {
+					t.Fatal(err)
+				}
+				if tag.ID != "t1" || tag.NodeID != "ns=4;i=1" || tag.DataType != core.ValueFloat64 || !tag.Enabled {
+					t.Fatalf("upsert tag: %#v", tag)
+				}
+			case "put tag":
+				var tag core.Tag
+				if err := json.Unmarshal(rr.Body.Bytes(), &tag); err != nil {
+					t.Fatal(err)
+				}
+				if tag.NodeID != "ns=4;i=2" || tag.DataType != core.ValueBool || tag.IntervalMs != 250 {
+					t.Fatalf("put tag: %#v", tag)
+				}
+			}
 		})
 	}
 	if len(changed) == 0 {
 		t.Fatal("expected OnDeviceChanged callbacks")
+	}
+	// Final delete device must have fired remove callback and left config empty.
+	if changed[len(changed)-1] != "rm:plc" {
+		t.Fatalf("changed=%v", changed)
+	}
+	if len(cfg.Devices()) != 0 {
+		t.Fatalf("devices left: %#v", cfg.Devices())
 	}
 }
 
@@ -232,8 +281,13 @@ func TestSyncTags_EmptySelection(t *testing.T) {
 		t.Fatalf("%d %s", rr.Code, rr.Body.String())
 	}
 	var resp map[string]any
-	_ = json.Unmarshal(rr.Body.Bytes(), &resp)
-	if int(resp["total"].(float64)) != 0 {
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["device_id"] != "plc" || int(resp["total"].(float64)) != 0 || int(resp["updated"].(float64)) != 0 {
 		t.Fatalf("%v", resp)
+	}
+	if errs, ok := resp["errors"].([]any); !ok || len(errs) != 0 {
+		t.Fatalf("errors: %v", resp["errors"])
 	}
 }

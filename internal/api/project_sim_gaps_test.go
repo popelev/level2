@@ -67,6 +67,27 @@ func TestTagSimulation_ErrorEdges(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("ids bulk %d %s", rr.Code, rr.Body.String())
 	}
+	var bulk map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &bulk); err != nil {
+		t.Fatal(err)
+	}
+	if bulk["device_id"] != "plc" || bulk["simulate"] != true || int(bulk["updated"].(float64)) != 1 {
+		t.Fatalf("ids bulk body: %v", bulk)
+	}
+	if int(bulk["tags_simulated"].(float64)) != 1 {
+		t.Fatalf("tags_simulated after t1: %v", bulk)
+	}
+	tags, err := cfg.DeviceTags("plc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]core.Tag{}
+	for _, tg := range tags {
+		byID[tg.ID] = tg
+	}
+	if !byID["t1"].Simulate || byID["t2"].Simulate {
+		t.Fatalf("only t1 should be simulated: %#v", byID)
+	}
 
 	rr = httptest.NewRecorder()
 	muxNoCfg.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/v1/devices/plc/tags/simulate",
@@ -103,12 +124,38 @@ func TestTagSimulation_ErrorEdges(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("all scoped %d %s", rr.Code, rr.Body.String())
 	}
+	var scoped map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &scoped); err != nil {
+		t.Fatal(err)
+	}
+	if scoped["simulate"] != false || int(scoped["updated"].(float64)) < 1 {
+		t.Fatalf("scoped clear: %v", scoped)
+	}
+	if int(scoped["tags_simulated"].(float64)) != 0 {
+		t.Fatalf("want tags_simulated=0 after clear: %v", scoped)
+	}
+	tags, err = cfg.DeviceTags("plc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tg := range tags {
+		if tg.Simulate {
+			t.Fatalf("simulate still set after clear: %#v", tg)
+		}
+	}
 
 	rr = httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/v1/tags/simulate",
 		strings.NewReader(`{"simulate":true,"tag_ids":["no-such"]}`)))
 	if rr.Code != 200 {
 		t.Fatalf("no matching ids still 200 updated=0: %d %s", rr.Code, rr.Body.String())
+	}
+	var miss map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &miss); err != nil {
+		t.Fatal(err)
+	}
+	if int(miss["updated"].(float64)) != 0 || miss["simulate"] != true {
+		t.Fatalf("no-such ids: %v", miss)
 	}
 
 	rr = httptest.NewRecorder()

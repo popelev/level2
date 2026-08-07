@@ -13,7 +13,6 @@ import (
 	"github.com/popelev/level2/internal/core"
 	opcuaDriver "github.com/popelev/level2/internal/driver/opcua"
 	devruntime "github.com/popelev/level2/internal/runtime"
-	"github.com/popelev/level2/internal/store"
 )
 
 func TestTagEffectivelySimulatedAndCount(t *testing.T) {
@@ -112,12 +111,30 @@ func TestBulkWritableTags(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("ids %d %s", rr.Code, rr.Body.String())
 	}
+	var partial map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &partial); err != nil {
+		t.Fatal(err)
+	}
+	if partial["writable"] != false || int(partial["updated"].(float64)) != 1 {
+		t.Fatalf("partial clear: %v", partial)
+	}
+	tags, _ = cfg.DeviceTags("plc")
+	byID := map[string]core.Tag{}
+	for _, tg := range tags {
+		byID[tg.ID] = tg
+	}
+	if byID["a"].Writable || !byID["b"].Writable {
+		t.Fatalf("only a cleared: %#v", byID)
+	}
 
 	rr = httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/v1/devices/plc/tags/writable",
 		strings.NewReader(`{"writable":true}`)))
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("want tag_ids required, got %d", rr.Code)
+	}
+	if !strings.Contains(rr.Body.String(), "tag_ids") {
+		t.Fatalf("body=%s", rr.Body.String())
 	}
 
 	rr = httptest.NewRecorder()
@@ -186,7 +203,7 @@ func TestOPCDriverAndWriteEnabledViaCfg(t *testing.T) {
 
 func TestHubSetFilterAndTagIDSet(t *testing.T) {
 	hub := NewHub()
-	// setFilter on unknown conn is a no-op
+	// setFilter on unknown/nil conn is a no-op (must not panic).
 	hub.setFilter(nil, map[string]struct{}{"a": {}})
 
 	got := tagIDSet([]string{"a", "", "b", "a"})
@@ -196,9 +213,18 @@ func TestHubSetFilterAndTagIDSet(t *testing.T) {
 	if _, ok := got["a"]; !ok {
 		t.Fatal("missing a")
 	}
-
-	s := &Server{Hub: hub, Live: store.NewLive()}
-	_ = s
+	if _, ok := got["b"]; !ok {
+		t.Fatal("missing b")
+	}
+	if _, ok := got[""]; ok {
+		t.Fatal("empty id must be dropped")
+	}
+	if empty := tagIDSet(nil); len(empty) != 0 {
+		t.Fatalf("nil input: %#v", empty)
+	}
+	if empty := tagIDSet([]string{"", ""}); len(empty) != 0 {
+		t.Fatalf("only empties: %#v", empty)
+	}
 }
 
 func TestPatchTag_WritableAndEnabled(t *testing.T) {

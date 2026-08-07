@@ -119,12 +119,18 @@ func TestHandleTags_ConnectedKeepsGood(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/v1/tags?device_id=dev1", nil))
+	if rr.Code != 200 {
+		t.Fatalf("status %d body %s", rr.Code, rr.Body.String())
+	}
 	var list []store.TagValue
 	if err := json.Unmarshal(rr.Body.Bytes(), &list); err != nil {
 		t.Fatal(err)
 	}
 	if len(list) != 1 || list[0].Sample == nil || list[0].Sample.Quality != core.QualityGood {
 		t.Fatalf("connected must keep Good: %#v", list)
+	}
+	if list[0].Sample.ValueNum == nil || *list[0].Sample.ValueNum != 1.0 {
+		t.Fatalf("value preserved: %#v", list[0].Sample)
 	}
 }
 
