@@ -28,7 +28,7 @@ func Write(tags []core.Tag) ([]byte, error) {
 			path,
 			t.ID,
 			t.NodeID,
-			opcTypeCode(t.DataType),
+			core.OPCTypeCode(t.DataType),
 			typeDisplayName(t.DataType),
 		}
 		for c, v := range row {
@@ -74,19 +74,3 @@ func typeDisplayName(dt core.ValueType) string {
 	}
 }
 
-func opcTypeCode(dt core.ValueType) string {
-	switch dt {
-	case core.ValueBool:
-		return "i=1"
-	case core.ValueInt64:
-		return "i=4"
-	case core.ValueUint:
-		return "i=7"
-	case core.ValueString:
-		return "i=12"
-	case core.ValueDateTime:
-		return "i=13"
-	default:
-		return "i=10"
-	}
-}

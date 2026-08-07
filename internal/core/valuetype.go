@@ -5,17 +5,17 @@ import "strings"
 // NormalizeValueType maps aliases (e.g. plant Excel date_time) to platform types.
 func NormalizeValueType(dt ValueType) ValueType {
 	switch strings.ToLower(strings.TrimSpace(string(dt))) {
-	case "date_time", "datetim", "timestamp":
+	case "date_time", "datetim", "timestamp", "utctime":
 		return ValueDateTime
 	case "bool", "boolean":
 		return ValueBool
-	case "int", "int16", "int32", "int64", "sbyte":
+	case "int", "int16", "int32", "int64", "sbyte", "integer":
 		return ValueInt64
 	case "uint", "uint16", "uint32", "uint64", "byte", "unsigned", "unsignedint":
 		return ValueUint
 	case "float", "float32", "float64", "double":
 		return ValueFloat64
-	case "string":
+	case "string", "bytestring", "localizedtext", "xmlelement":
 		return ValueString
 	case "datetime":
 		return ValueDateTime

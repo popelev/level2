@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gopcua/opcua/id"
 	"github.com/gopcua/opcua/ua"
 	"github.com/popelev/level2/internal/core"
 )
@@ -138,24 +137,7 @@ func mapOPCDataType(typeNID *ua.NodeID) core.ValueType {
 		// Vendor types (e.g. Siemens DATE_AND_TIME) — caller may refine via name hint.
 		return ""
 	}
-	switch typeNID.IntID() {
-	case id.Boolean:
-		return core.ValueBool
-	case id.Float, id.Double:
-		return core.ValueFloat64
-	case id.SByte, id.Int16, id.Int32, id.Int64:
-		return core.ValueInt64
-	case id.Byte, id.UInt16, id.UInt32, id.UInt64:
-		return core.ValueUint
-	case id.String, id.LocalizedText, id.ByteString, id.XMLElement:
-		// String / CharArray-as-String / LocalizedText / XMLElement.
-		// ByteString is also how Siemens often exposes DATE_AND_TIME; refined by name.
-		return core.ValueString
-	case id.DateTime, id.UtcTime: // DateTime=i=13, UtcTime=i=294 (subtype)
-		return core.ValueDateTime
-	default:
-		return ""
-	}
+	return core.MapOPCTypeID(typeNID.IntID())
 }
 
 // resolveMappedDataType combines OPC DataType Attribute mapping with browse-name hints.

@@ -64,7 +64,7 @@ func TestSplitStoredPathAndTypeHelpers(t *testing.T) {
 		core.ValueBool, core.ValueInt64, core.ValueUint, core.ValueString, core.ValueDateTime, core.ValueFloat64,
 	}
 	for _, dt := range types {
-		if typeDisplayName(dt) == "" || opcTypeCode(dt) == "" {
+		if typeDisplayName(dt) == "" || core.OPCTypeCode(dt) == "" {
 			t.Fatalf("helpers empty for %q", dt)
 		}
 	}

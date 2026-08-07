@@ -167,34 +167,12 @@ func joinPath(parts ...string) string {
 
 func mapDataType(typeName, typeCode string) core.ValueType {
 	n := strings.ToLower(strings.TrimSpace(typeName))
-	switch n {
-	case "float", "double", "float32", "float64":
-		return core.ValueFloat64
-	case "boolean", "bool":
-		return core.ValueBool
-	case "string", "bytestring":
-		return core.ValueString
-	case "datetime", "date_time", "datetim", "timestamp", "utctime":
-		return core.ValueDateTime
-	case "int16", "int32", "int64", "sbyte", "integer", "int":
-		return core.ValueInt64
-	case "byte", "uint16", "uint32", "uint64", "uint", "unsigned", "unsignedint":
-		return core.ValueUint
+	if dt := core.MapOPCTypeName(n); dt != "" {
+		return dt
 	}
-	// Fallback on OPC UA type NodeId like i=10 (Float), i=1 (Boolean), i=4 (Int16)
-	switch strings.TrimSpace(typeCode) {
-	case "i=1":
-		return core.ValueBool
-	case "i=2", "i=4", "i=6", "i=8":
-		return core.ValueInt64
-	case "i=3", "i=5", "i=7", "i=9":
-		return core.ValueUint
-	case "i=10", "i=11":
-		return core.ValueFloat64
-	case "i=12":
-		return core.ValueString
-	case "i=13":
-		return core.ValueDateTime
+	// Fallback on OPC UA type NodeId like i=10 (Float), i=1 (Boolean), i=4 (Int16).
+	if dt := core.MapOPCTypeCode(typeCode); dt != "" {
+		return dt
 	}
 	return core.NormalizeValueType(core.ValueType(n))
 }
