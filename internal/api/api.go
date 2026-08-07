@@ -41,6 +41,11 @@ type Server struct {
 	ReadyCheck func() bool
 	// OPCWriteEnabled gates PUT …/value (optional; falls back to Cfg.OPCWriteEnabled, else false).
 	OPCWriteEnabled func() bool
+	// TagSimulationActive is true when this process is feeding mock tag samples
+	// (tag_simulation / LEVEL2_TAG_SIMULATION or LEVEL2_SIM_BROWSER). Never inferred from disconnect.
+	TagSimulationActive func() bool
+	// SimBrowserActive is true when LEVEL2_SIM_BROWSER replaced OPC browse with simbrowser.
+	SimBrowserActive func() bool
 	// APIToken returns the shared API token; empty disables auth (optional; falls back to Cfg.APIToken).
 	APIToken func() string
 	// OnDeviceChanged is called after device create/update/delete (optional).
@@ -128,6 +133,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	s.mountDiagnostics(mux)
 	s.mountDatabase(mux)
 	s.mountTagBulk(mux)
+	s.mountTagSimulation(mux)
 	s.mountStatus(mux)
 	s.mountOpenAPI(mux)
 }

@@ -17,6 +17,8 @@ type statusSummary struct {
 	APIOK                  bool           `json:"api_ok"`
 	CollectorReady         bool           `json:"collector_ready"`
 	ReadyDetail            string         `json:"ready_detail"`
+	TagSimulation          bool           `json:"tag_simulation"`
+	SimBrowser             bool           `json:"sim_browser"`
 	CollectorDownLastHour  int            `json:"collector_down_last_hour"`
 	DevicesTotal           int            `json:"devices_total"`
 	DevicesConnected       int            `json:"devices_connected"`
@@ -77,9 +79,22 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 	case s.DevHub != nil:
 		out.CollectorReady = s.DevHub.AnyConnected()
 	}
+	out.TagSimulation = s.tagSimulationActive()
+	out.SimBrowser = s.simBrowserActive()
 	if out.CollectorReady {
-		out.ReadyDetail = "ready"
+		switch {
+		case out.SimBrowser:
+			out.ReadyDetail = "sim browser"
+		case out.TagSimulation:
+			out.ReadyDetail = "tag simulation"
+		default:
+			out.ReadyDetail = "ready"
+		}
 	}
+
+	// When deliberately simulating tags, Live Good is expected — do not treat
+	// disconnected OPC as stale-bad (sim is the data source).
+	countStaleAsBad := s.DevHub != nil && !out.TagSimulation && !out.SimBrowser
 
 	if s.Live != nil && len(devs) > 0 {
 		tvs := s.Live.SnapshotDevices(devs)
@@ -92,11 +107,19 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 			}
 			if tv.Sample == nil {
 				if tv.Tag.Enabled {
-					out.QualityUnknown++
+					if countStaleAsBad && !conn[tv.DeviceID] {
+						out.QualityBad++
+					} else {
+						out.QualityUnknown++
+					}
 				}
 				continue
 			}
-			switch tv.Sample.Quality {
+			q := tv.Sample.Quality
+			if countStaleAsBad && !conn[tv.DeviceID] {
+				q = core.QualityBad
+			}
+			switch q {
 			case core.QualityGood:
 				out.QualityGood++
 			default:

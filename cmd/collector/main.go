@@ -72,11 +72,14 @@ func main() {
 	go api.FanIn(ctx, raw, live, wsHub, toHist)
 
 	useSim := os.Getenv("LEVEL2_SIM_BROWSER") == "1" || os.Getenv("LEVEL2_SIM_BROWSER") == "true"
+	// Opt-in tag simulation (config/env). NEVER auto-enabled on OPC disconnect.
+	tagSim := cfg.TagSimulation
+	samplesSim := useSim || tagSim
 	devHub := devruntime.NewHub(log, useSim)
 	var collectOnce sync.Map // deviceID -> true
 
 	startCollect := func(deviceID string) {
-		if useSim {
+		if samplesSim {
 			return
 		}
 		if _, loaded := collectOnce.LoadOrStore(deviceID, true); loaded {
@@ -100,14 +103,18 @@ func main() {
 		startCollect(dev.ID)
 	}
 
-	if useSim {
+	if samplesSim {
 		demo := mock.NewDemo(time.Second)
 		if err := demo.Connect(ctx); err != nil {
 			log.Error("demo connect", "err", err)
 			os.Exit(1)
 		}
 		go runDemo(ctx, log, demo, cfgStore, raw)
-		log.Info("PLC-off demo mode: multi-server sim address space + synthetic samples")
+		if useSim {
+			log.Info("PLC-off demo mode: multi-server sim address space + synthetic samples")
+		} else {
+			log.Info("tag simulation enabled: synthetic samples (opt-in); real OPC collect paused")
+		}
 	}
 
 	go flushLoop(ctx, log, hist, sp, toHist)
@@ -126,10 +133,12 @@ func main() {
 		Tags:      cfgStore.AllTags,
 		Devices:   cfgStore.Devices,
 		ReadyCheck: func() bool {
-			return useSim || devHub.AnyConnected()
+			return samplesSim || devHub.AnyConnected()
 		},
-		OPCWriteEnabled: cfgStore.OPCWriteEnabled,
-		APIToken:        cfgStore.APIToken,
+		OPCWriteEnabled:     cfgStore.OPCWriteEnabled,
+		TagSimulationActive: func() bool { return samplesSim },
+		SimBrowserActive:    func() bool { return useSim },
+		APIToken:            cfgStore.APIToken,
 		OnDeviceChanged: func(deviceID string, removed bool) {
 			if removed {
 				devHub.Remove(ctx, deviceID)
@@ -154,7 +163,7 @@ func main() {
 		_, _ = w.Write([]byte("ok"))
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if useSim || devHub.AnyConnected() {
+		if samplesSim || devHub.AnyConnected() {
 			metrics.OPCConnected.Set(1)
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("ready"))

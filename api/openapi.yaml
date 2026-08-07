@@ -355,7 +355,34 @@ paths:
       summary: Overview status counters
       responses:
         "200":
-          description: Summary JSON
+          description: |
+            Summary JSON. Includes `tag_simulation` / `sim_browser` (opt-in synthetic
+            samples; never auto-enabled on disconnect), quality counts (stale Good on
+            disconnected devices counted as bad when sim is off), and ready_detail.
+
+  /api/v1/tag-simulation:
+    get:
+      tags: [diagnostics]
+      summary: Tag simulation preference and process active state
+      responses:
+        "200":
+          description: enabled/active/sim_browser/restart_required
+    put:
+      tags: [diagnostics]
+      summary: Persist tag_simulation (recreate collector to apply)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: Updated preference; restart_required when process not yet matching
 
 components:
   securitySchemes:

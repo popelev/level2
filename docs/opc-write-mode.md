@@ -293,7 +293,7 @@ Disable Set controls when:
 - global write flag off;
 - device disconnected;
 - tag `writable === false` (once field exists);
-- sim browser mode (`LEVEL2_SIM_BROWSER=1`) unless we add a sim Writer stub.
+- sim browser mode (`LEVEL2_SIM_BROWSER=1`) or tag simulation (`tag_simulation` / `LEVEL2_TAG_SIMULATION`) — writes to real PLC are rejected (409) while active; see [tag-simulation.md](tag-simulation.md).
 
 ---
 

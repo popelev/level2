@@ -67,6 +67,31 @@ func (l *Live) All() []core.Sample {
 	return out
 }
 
+// MarkQuality sets quality on existing samples (keeps last values/timestamps payload).
+// Returns the updated samples (for FanIn/WS). Tags with no live entry are skipped.
+func (l *Live) MarkQuality(tagIDs []string, q core.Quality) []core.Sample {
+	if l == nil || len(tagIDs) == 0 {
+		return nil
+	}
+	now := time.Now().UTC()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([]core.Sample, 0, len(tagIDs))
+	for _, id := range tagIDs {
+		ent, ok := l.byID[id]
+		if !ok {
+			continue
+		}
+		if ent.sample.Quality == q {
+			continue
+		}
+		ent.sample.Quality = q
+		ent.sample.Time = now
+		out = append(out, ent.sample)
+	}
+	return out
+}
+
 // Clear removes every cached sample. Used after historian wipe so FanIn treats
 // the next poll as a first sample (no Phase 1 suppress against stale Live).
 func (l *Live) Clear() int {

@@ -18,6 +18,10 @@ type File struct {
 	UIDir    string        `yaml:"ui_dir"`
 	// OPCWriteEnabled gates PUT /api/v1/tags/{id}/value. Default false; override with LEVEL2_OPC_WRITE_ENABLED.
 	OPCWriteEnabled bool `yaml:"opc_write_enabled"`
+	// TagSimulation feeds synthetic Good samples via mock.NewDemo when explicitly enabled.
+	// Default false — NEVER auto-enabled on OPC disconnect. Override with LEVEL2_TAG_SIMULATION.
+	// Distinct from LEVEL2_SIM_BROWSER (full in-memory browse). See docs/tag-simulation.md.
+	TagSimulation bool `yaml:"tag_simulation"`
 	// APIToken, when non-empty, requires Bearer / X-API-Token on mutating /api/v1 routes (and WS).
 	// Empty = auth disabled (lab backward compatible). Override with LEVEL2_API_TOKEN.
 	APIToken string        `yaml:"api_token,omitempty"`
@@ -94,6 +98,13 @@ func Load(path string) (*File, error) {
 			return nil, fmt.Errorf("LEVEL2_OPC_WRITE_ENABLED: %w", err)
 		}
 		f.OPCWriteEnabled = enabled
+	}
+	if v := strings.TrimSpace(os.Getenv("LEVEL2_TAG_SIMULATION")); v != "" {
+		enabled, err := parseEnvBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("LEVEL2_TAG_SIMULATION: %w", err)
+		}
+		f.TagSimulation = enabled
 	}
 	if v, ok := os.LookupEnv("LEVEL2_API_TOKEN"); ok {
 		f.APIToken = strings.TrimSpace(v)

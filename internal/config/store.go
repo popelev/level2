@@ -55,6 +55,35 @@ func (s *Store) OPCWriteEnabled() bool {
 	return s.file.OPCWriteEnabled
 }
 
+// TagSimulation reports whether synthetic tag samples are enabled (tag_simulation / LEVEL2_TAG_SIMULATION).
+// Default false; never inferred from OPC disconnect.
+func (s *Store) TagSimulation() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.file == nil {
+		return false
+	}
+	return s.file.TagSimulation
+}
+
+// SetTagSimulation persists the opt-in flag. Collector applies sample simulation on process start
+// (compose recreate); PUT API returns restart_required until then.
+func (s *Store) SetTagSimulation(enabled bool) error {
+	if s == nil {
+		return fmt.Errorf("nil config store")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.file == nil {
+		return fmt.Errorf("nil config file")
+	}
+	s.file.TagSimulation = enabled
+	return s.saveLocked()
+}
+
 // APIToken returns the shared API token (empty = auth disabled).
 func (s *Store) APIToken() string {
 	if s == nil {

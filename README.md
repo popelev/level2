@@ -125,6 +125,7 @@ Admin UI navigation (`http://<host>:8080/`):
 6. **Grafana** (smoke `:3000`) — template [OPC Structure Measure](deploy/smoke/grafana/README-opc-structure.md) (pick structure → value / scale / unit).
 
 PLC-less mode: `LEVEL2_SIM_BROWSER=1` — in-memory browse/expand and synthetic samples.
+Opt-in tag samples only (default **off**, never auto on disconnect): `tag_simulation` / `LEVEL2_TAG_SIMULATION` — [docs/tag-simulation.md](docs/tag-simulation.md).
 
 ---
 
@@ -133,6 +134,7 @@ PLC-less mode: `LEVEL2_SIM_BROWSER=1` — in-memory browse/expand and synthetic 
 | Variable | Purpose |
 |----------|---------|
 | `LEVEL2_SIM_BROWSER` | `1` — demo without PLC; `0` — live OPC UA |
+| `LEVEL2_TAG_SIMULATION` | `true` — synthetic tag samples only (opt-in; default off) |
 | `DATABASE_URL` | PostgreSQL/Timescale DSN (set automatically in compose) |
 | `PLC_OPC_ENDPOINT` | `opc.tcp://…:4840` |
 | `OPC_UA_USERNAME` / `OPC_UA_PASSWORD` | OPC credentials (same as in UaExpert) |

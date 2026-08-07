@@ -81,6 +81,11 @@ func (s *Server) handleWriteTagValue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "OPC write is disabled (opc_write_enabled=false)", http.StatusForbidden)
 		return
 	}
+	if s.tagSimulationActive() {
+		diag.OPCWrite(diag.LevelWarn, "", r.PathValue("id"), "opc write denied", "tag_simulation active")
+		http.Error(w, "OPC write blocked while tag simulation / sim browser is active (no writes to real PLC)", http.StatusConflict)
+		return
+	}
 
 	tagID := r.PathValue("id")
 	if tagID == "" {
@@ -119,6 +124,11 @@ func (s *Server) handleBatchWriteTagValues(w http.ResponseWriter, r *http.Reques
 	if !s.opcWriteEnabled() {
 		diag.OPCWrite(diag.LevelWarn, "", "", "opc batch write denied", "opc_write_enabled=false")
 		http.Error(w, "OPC write is disabled (opc_write_enabled=false)", http.StatusForbidden)
+		return
+	}
+	if s.tagSimulationActive() {
+		diag.OPCWrite(diag.LevelWarn, "", "", "opc batch write denied", "tag_simulation active")
+		http.Error(w, "OPC write blocked while tag simulation / sim browser is active (no writes to real PLC)", http.StatusConflict)
 		return
 	}
 

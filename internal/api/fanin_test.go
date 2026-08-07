@@ -68,6 +68,22 @@ func TestFanIn_SuppressUnchanged(t *testing.T) {
 	in <- core.Sample{Time: time.Unix(5, 0).UTC(), TagID: "tag.a", ValueNum: &n4, Quality: core.QualityBad}
 	assertNoSample(t, out, 80*time.Millisecond)
 
+	// Bare Bad (no values) after Good — keep last value, flip quality (link loss path).
+	in <- core.Sample{Time: time.Unix(6, 0).UTC(), TagID: "tag.a", Quality: core.QualityGood, ValueNum: &n2}
+	got = recvSample(t, out, 500*time.Millisecond)
+	if got.Quality != core.QualityGood {
+		t.Fatalf("restore good: %#v", got)
+	}
+	tBare := time.Unix(7, 0).UTC()
+	in <- core.Sample{Time: tBare, TagID: "tag.a", Quality: core.QualityBad}
+	got = recvSample(t, out, 500*time.Millisecond)
+	if got.Quality != core.QualityBad || got.ValueNum == nil || *got.ValueNum != 11 {
+		t.Fatalf("bare Bad should keep last value: %#v", got)
+	}
+	if lv, ok := live.Get("tag.a"); !ok || lv.ValueNum == nil || *lv.ValueNum != 11 || lv.Quality != core.QualityBad {
+		t.Fatalf("live after bare Bad: ok=%v %#v", ok, lv)
+	}
+
 	cancel()
 	select {
 	case <-done:

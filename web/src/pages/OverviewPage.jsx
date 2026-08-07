@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getJSON } from '../api.js'
+import { getJSON, putJSON } from '../api.js'
 
 function formatMs(v) {
   if (v == null || Number.isNaN(Number(v))) return '—'
@@ -35,13 +35,40 @@ function dropsLine(n, label = 'drops') {
   )
 }
 
-export default function OverviewPage({ health, ready, onError, onNavigate, onStatusRefresh }) {
+export default function OverviewPage({ ready, onError, onNavigate, onStatusRefresh }) {
   const [data, setData] = useState(null)
+  const [simBusy, setSimBusy] = useState(false)
 
   const load = useCallback(async () => {
     const st = await getJSON('/api/v1/status/summary')
     setData(st)
   }, [])
+
+  const toggleTagSim = async (enabled) => {
+    if (
+      !window.confirm(
+        enabled
+          ? 'Enable tag simulation? Synthetic samples (not live PLC). Requires collector recreate to apply. Writes to real PLC stay blocked while active.'
+          : 'Disable tag simulation in config? Requires collector recreate to apply.',
+      )
+    ) {
+      return
+    }
+    setSimBusy(true)
+    onError('')
+    try {
+      const r = await putJSON('/api/v1/tag-simulation', { enabled })
+      if (r.restart_required) {
+        onError(r.note || 'Saved — recreate collector to apply tag_simulation.')
+      }
+      await load()
+      if (onStatusRefresh) await onStatusRefresh().catch(() => {})
+    } catch (e) {
+      onError(String(e.message || e))
+    } finally {
+      setSimBusy(false)
+    }
+  }
 
   useEffect(() => {
     onError('')
@@ -73,13 +100,38 @@ export default function OverviewPage({ health, ready, onError, onNavigate, onSta
     }
   }
 
-  const collectorReady = ready === 'ready' || data?.collector_ready
+  // Primary = /readyz (OPC connected, SIM, or tag simulation); process HTTP (/healthz) is secondary only.
+  const tagSim = !!(data?.tag_simulation || data?.sim_browser)
+  const collectorReady = ready === 'ready' || !!data?.collector_ready
+  const processOk = data?.api_ok !== false
+  const collectorPrimary = tagSim
+    ? (data?.sim_browser ? 'sim browser' : 'sim')
+    : collectorReady
+      ? 'ready'
+      : (data?.ready_detail || (ready && ready !== '…' ? ready : 'not ready'))
   const disc = (data?.devices_disconnected ?? 0) > 0
   const badTags = (data?.quality_bad ?? 0) > 0
+  // Do not paint Tags green while OPC/collector is down — Live may still hold last Good.
+  // Tag simulation is explicit opt-in: show as sim, not as live PLC health.
+  const tagsOffline = !tagSim && (!collectorReady || disc)
+  const tagsDegraded = tagsOffline || (!tagSim && badTags)
   const errors = data?.recent_errors || []
   const collectorDrops = data?.collector_down_last_hour ?? 0
   const opcDrops = data?.opc_disconnects_last_hour ?? 0
   const dbDrops = data?.db_write_errors_last_hour ?? 0
+  const liveGood = data?.quality_good ?? 0
+  const tagsSub = tagSim
+    ? 'simulation · not live PLC'
+    : tagsOffline
+      ? `stale · not connected${badTags ? ` · ${data.quality_bad} bad` : ''}`
+      : `${data.quality_bad ?? 0} bad quality${
+          data.quality_good_pct != null ? ` · ${Math.round(data.quality_good_pct)}% good` : ''
+        }`
+  const collectorSub = tagSim
+    ? (processOk ? 'process ok · synthetic tags' : 'process down')
+    : processOk
+      ? 'process ok'
+      : 'process down'
 
   return (
     <div className="page">
@@ -102,11 +154,16 @@ export default function OverviewPage({ health, ready, onError, onNavigate, onSta
       ) : (
         <>
           <div className="cap-hero">
-            <div className={`cap-stat${collectorReady ? ' accent' : ''}`}>
+            <div className={`cap-stat${collectorReady && !tagSim ? ' accent' : ''}`}>
               <div className="cap-label">Collector</div>
-              <div className="cap-value">{health || (data.api_ok ? 'ok' : '—')}</div>
-              <div className={`cap-sub small ${collectorReady ? 'good' : 'badq'}`}>
-                {data.ready_detail || (collectorReady ? 'ready' : 'not ready')}
+              <div
+                className={`cap-value ${tagSim ? '' : collectorReady ? 'good' : 'badq'}`}
+                style={{ fontSize: '1.1rem' }}
+              >
+                {collectorPrimary}
+              </div>
+              <div className={`cap-sub small ${processOk ? 'muted' : 'badq'}`}>
+                {collectorSub}
               </div>
               {dropsLine(collectorDrops)}
             </div>
@@ -120,17 +177,14 @@ export default function OverviewPage({ health, ready, onError, onNavigate, onSta
               </div>
               {dropsLine(opcDrops)}
             </div>
-            <div className={`cap-stat${badTags ? '' : ' accent'}`}>
+            <div className={`cap-stat${tagsDegraded || tagSim ? '' : ' accent'}`}>
               <div className="cap-label">Tags</div>
-              <div className="cap-value">
-                {data.tags_enabled ?? 0}
+              <div className={`cap-value${tagsDegraded ? ' badq' : ''}`}>
+                {tagsOffline ? liveGood : (data.tags_enabled ?? 0)}
                 <span className="muted" style={{ fontSize: '0.7em' }}>/{data.tags_total ?? 0}</span>
               </div>
-              <div className={`cap-sub small ${badTags ? 'badq' : 'muted'}`}>
-                {data.quality_bad ?? 0} bad quality
-                {data.quality_good_pct != null && (
-                  <span className="muted"> · {Math.round(data.quality_good_pct)}% good</span>
-                )}
+              <div className={`cap-sub small ${tagsDegraded ? 'badq' : tagSim ? 'muted' : 'muted'}`}>
+                {tagsSub}
               </div>
             </div>
             <div className="cap-stat">
@@ -157,6 +211,29 @@ export default function OverviewPage({ health, ready, onError, onNavigate, onSta
               <div className="cap-sub small muted">historian</div>
             </div>
           </div>
+
+          <section className="panel overview-links">
+            <h3>Tag simulation</h3>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Opt-in only (default off). Never turns on by itself when OPC disconnects.
+              Active process uses <span className="mono">mock.NewDemo</span> samples;
+              real OPC collect is paused. See docs/tag-simulation.md.
+            </p>
+            <div className="overview-link-row" style={{ alignItems: 'center', gap: 12 }}>
+              <label className="muted" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  disabled={simBusy || !!data.sim_browser}
+                  checked={!!tagSim}
+                  onChange={(e) => toggleTagSim(e.target.checked)}
+                />
+                {tagSim ? 'Simulation active' : 'Enable tag simulation'}
+              </label>
+              {data.sim_browser && (
+                <span className="muted small">LEVEL2_SIM_BROWSER is on (full sim)</span>
+              )}
+            </div>
+          </section>
 
           <section className="panel overview-links">
             <h3>Jump to</h3>

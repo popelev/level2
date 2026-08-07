@@ -145,6 +145,8 @@ func (d *Driver) Subscribe(ctx context.Context, tags []core.Tag, out chan<- core
 				d.log.Warn("opcua poll failed", "err", err)
 				diag.OPCRead(diag.LevelWarn, d.device.ID, "", "opc poll failed", err.Error())
 				d.markDown(true)
+				// Push Bad for every enabled tag so Live/UI do not keep last Good after link loss.
+				emitBadSamples(ctx, enabled, out)
 				_ = d.Disconnect(ctx)
 				if cerr := d.Connect(ctx); cerr != nil {
 					d.log.Error("opcua reconnect failed", "err", cerr)
@@ -164,6 +166,19 @@ func (d *Driver) Subscribe(ctx context.Context, tags []core.Tag, out chan<- core
 				okPolls = 0
 				lastSummary = time.Now()
 			}
+		}
+	}
+}
+
+// emitBadSamples publishes QualityBad for each tag (no values). Used on link loss so
+// FanIn/Live/WS stop advertising stale Good while the device is down.
+func emitBadSamples(ctx context.Context, tags []TagView, out chan<- core.Sample) {
+	now := time.Now().UTC()
+	for _, t := range tags {
+		select {
+		case <-ctx.Done():
+			return
+		case out <- core.Sample{Time: now, TagID: t.ID, Quality: core.QualityBad}:
 		}
 	}
 }

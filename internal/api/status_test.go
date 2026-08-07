@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/popelev/level2/internal/core"
 	"github.com/popelev/level2/internal/diag"
+	devruntime "github.com/popelev/level2/internal/runtime"
 	"github.com/popelev/level2/internal/store"
 )
 
@@ -86,5 +88,79 @@ func TestHandleStatusSummary(t *testing.T) {
 	}
 	if out2.OPCDisconnectsByDevice["dev1"] != 2 {
 		t.Fatalf("by device %#v", out2.OPCDisconnectsByDevice)
+	}
+}
+
+type offlineDriver struct{}
+
+func (offlineDriver) Connect(context.Context) error    { return nil }
+func (offlineDriver) Disconnect(context.Context) error { return nil }
+func (offlineDriver) Connected() bool                  { return false }
+func (offlineDriver) Subscribe(context.Context, []core.Tag, chan<- core.Sample) error {
+	return nil
+}
+
+func TestStatusSummary_DisconnectedCountsStaleGoodAsBad(t *testing.T) {
+	live := store.NewLive()
+	n := 1.0
+	live.Update(core.Sample{TagID: "t1", Time: time.Now().UTC(), ValueNum: &n, Quality: core.QualityGood})
+	live.Update(core.Sample{TagID: "t2", Time: time.Now().UTC(), ValueNum: &n, Quality: core.QualityGood})
+
+	hub := devruntime.NewHub(nil, false)
+	hub.InjectDriver(core.Device{ID: "dev1"}, offlineDriver{}, nil)
+
+	s := &Server{
+		Live:   live,
+		DevHub: hub,
+		ReadyCheck: func() bool { return false },
+		Devices: func() []core.Device {
+			return []core.Device{{
+				ID: "dev1",
+				Tags: []core.Tag{
+					{ID: "t1", Enabled: true},
+					{ID: "t2", Enabled: true},
+					{ID: "t3", Enabled: true}, // no live sample
+				},
+			}}
+		},
+	}
+	out := s.buildStatusSummary(httptest.NewRequest(http.MethodGet, "/api/v1/status/summary", nil))
+	if out.CollectorReady || out.DevicesConnected != 0 || out.DevicesDisconnected != 1 {
+		t.Fatalf("connectivity %#v", out)
+	}
+	if out.QualityGood != 0 || out.QualityBad != 3 {
+		t.Fatalf("want all bad while disconnected, got good=%d bad=%d unknown=%d", out.QualityGood, out.QualityBad, out.QualityUnknown)
+	}
+	if out.QualityGoodPct == nil || *out.QualityGoodPct != 0 {
+		t.Fatalf("pct %#v", out.QualityGoodPct)
+	}
+}
+
+func TestStatusSummary_TagSimulationSkipsStaleOverride(t *testing.T) {
+	live := store.NewLive()
+	n := 1.0
+	live.Update(core.Sample{TagID: "t1", Time: time.Now().UTC(), ValueNum: &n, Quality: core.QualityGood})
+
+	hub := devruntime.NewHub(nil, false)
+	hub.InjectDriver(core.Device{ID: "dev1"}, offlineDriver{}, nil)
+
+	s := &Server{
+		Live:   live,
+		DevHub: hub,
+		ReadyCheck: func() bool { return true },
+		TagSimulationActive: func() bool { return true },
+		Devices: func() []core.Device {
+			return []core.Device{{
+				ID:   "dev1",
+				Tags: []core.Tag{{ID: "t1", Enabled: true}},
+			}}
+		},
+	}
+	out := s.buildStatusSummary(httptest.NewRequest(http.MethodGet, "/api/v1/status/summary", nil))
+	if !out.TagSimulation || out.ReadyDetail != "tag simulation" {
+		t.Fatalf("%#v", out)
+	}
+	if out.QualityGood != 1 || out.QualityBad != 0 {
+		t.Fatalf("sim must keep Live Good: good=%d bad=%d", out.QualityGood, out.QualityBad)
 	}
 }

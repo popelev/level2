@@ -91,6 +91,7 @@ function StatusPills({ summary }) {
 
   const apiOk = summary.api_ok !== false
   const ready = !!(summary.collector_ready ?? summary.ready)
+  const tagSim = !!(summary.tag_simulation || summary.sim_browser)
   const total = summary.devices_total ?? summary.servers?.total ?? 0
   const connected = summary.devices_connected ?? summary.servers?.connected ?? 0
   const tagsEnabled = summary.tags_enabled ?? summary.tags?.enabled ?? 0
@@ -114,7 +115,15 @@ function StatusPills({ summary }) {
   const sampled = qualityGood + qualityBad
   let qualityClass = ''
   let qualityLabel = 'Quality: —'
-  if (sampled > 0) {
+  if (tagSim) {
+    qualityClass = ''
+    qualityLabel = `Quality: sim ${qualityGood}/${sampled || tagsEnabled}`
+  } else if (!ready || !opcOk) {
+    qualityClass = 'bad'
+    qualityLabel = sampled > 0
+      ? `Quality: stale (${qualityBad || sampled} bad)`
+      : (tagsEnabled > 0 ? 'Quality: not connected' : 'Quality: —')
+  } else if (sampled > 0) {
     qualityClass = qualityBad > 0 ? 'bad' : 'ok'
     qualityLabel = qualityBad > 0 && qualityBad <= 20
       ? `Quality: ${qualityBad} bad`
@@ -136,10 +145,14 @@ function StatusPills({ summary }) {
         {apiOk ? 'API: healthy' : 'API: down'}
       </span>
       <span
-        className={`pill ${ready ? 'ok' : 'bad'}`}
-        title={`Same as /readyz: collector is ready when OPC is connected (or SIM mode). ${collectorDrops} not-ready drops / last hour`}
+        className={`pill ${tagSim ? '' : ready ? 'ok' : 'bad'}`}
+        title={tagSim
+          ? 'Tag simulation or sim browser active — synthetic samples, not live PLC'
+          : `Same as /readyz: collector is ready when OPC is connected (or SIM mode). ${collectorDrops} not-ready drops / last hour`}
       >
-        {ready ? 'Collector: ready' : 'Collector: not ready'}
+        {tagSim
+          ? (summary.sim_browser ? 'Collector: sim browser' : 'Collector: tag sim')
+          : (ready ? 'Collector: ready' : 'Collector: not ready')}
       </span>
       <span
         className={`pill ${opcOk ? 'ok' : 'bad'}`}
@@ -190,7 +203,6 @@ export default function App() {
     }
   }
 
-  const health = summary?.api_ok === false ? 'down' : (summary ? 'ok' : '…')
   const ready = !summary
     ? '…'
     : (summary.collector_ready || summary.ready ? 'ready' : (summary.ready_detail || 'not ready'))
@@ -338,7 +350,6 @@ export default function App() {
 
       {page === 'overview' && (
         <OverviewPage
-          health={health}
           ready={ready}
           onError={setErr}
           onStatusRefresh={refreshStatus}

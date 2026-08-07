@@ -68,7 +68,29 @@ func TestLive_UpdateGetAndSnapshot(t *testing.T) {
 	}
 }
 
-func TestAvgIntervals(t *testing.T) {
+func TestLive_MarkQuality(t *testing.T) {
+	l := NewLive()
+	n := 3.5
+	ts := time.Unix(10, 0).UTC()
+	l.Update(core.Sample{TagID: "t1", Time: ts, ValueNum: &n, Quality: core.QualityGood})
+	if got := l.MarkQuality([]string{"t1", "missing"}, core.QualityBad); len(got) != 1 {
+		t.Fatalf("updated=%d", len(got))
+	}
+	s, ok := l.Get("t1")
+	if !ok || s.Quality != core.QualityBad || s.ValueNum == nil || *s.ValueNum != 3.5 {
+		t.Fatalf("want Bad keeping value: %#v", s)
+	}
+	if s.Time.Equal(ts) {
+		t.Fatal("expected timestamp refresh on MarkQuality")
+	}
+	if got := l.MarkQuality([]string{"t1"}, core.QualityBad); len(got) != 0 {
+		t.Fatalf("idempotent want 0 got %d", len(got))
+	}
+	if got := (*Live)(nil).MarkQuality([]string{"t1"}, core.QualityBad); got != nil {
+		t.Fatalf("nil live: %#v", got)
+	}
+}
+
 	if avgIntervals(nil) != 0 {
 		t.Fatal("empty")
 	}

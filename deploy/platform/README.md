@@ -14,6 +14,7 @@ cd deploy/platform
 cp -n config.example.yaml config.yaml
 cp -n .env.example .env
 # LEVEL2_SIM_BROWSER=1 enables Browse/Expand + synthetic samples without PLC
+# Opt-in tag samples only (default off): LEVEL2_TAG_SIMULATION / tag_simulation — docs/tag-simulation.md
 docker compose build
 docker compose up -d
 curl -s http://127.0.0.1:8080/healthz

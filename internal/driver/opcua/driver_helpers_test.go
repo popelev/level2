@@ -27,7 +27,30 @@ func TestNewConnectedAndDisconnectNil(t *testing.T) {
 	}
 }
 
-func TestMarkDown_RecordsOnce(t *testing.T) {
+func TestEmitBadSamples(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	out := make(chan core.Sample, 4)
+	tags := []TagView{
+		{Tag: core.Tag{ID: "a"}},
+		{Tag: core.Tag{ID: "b"}},
+	}
+	emitBadSamples(ctx, tags, out)
+	for _, id := range []string{"a", "b"} {
+		select {
+		case s := <-out:
+			if s.TagID != id || s.Quality != core.QualityBad {
+				t.Fatalf("got %#v want Bad %s", s, id)
+			}
+		default:
+			t.Fatalf("missing sample for %s", id)
+		}
+	}
+	cancel()
+	// Cancelled ctx must not block.
+	emitBadSamples(ctx, tags, make(chan core.Sample))
+}
+
 	inc := diag.NewIncidentTracker(100, 0)
 	diag.SetDefaultIncidents(inc)
 	t.Cleanup(func() { diag.SetDefaultIncidents(diag.NewIncidentTracker(100, 0)) })
