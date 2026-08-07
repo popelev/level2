@@ -3,7 +3,7 @@
 Level2 is the **stable plant platform** (OPC UA gateway, Timescale historian, Admin UI, REST/WS API).  
 A **math / control model** is a **separate project and container** that talks to Level2 **only** over HTTP/WebSocket. It never opens OPC UA and never mounts the Timescale volume.
 
-**Canonical API contract:** [`api/openapi.yaml`](../api/openapi.yaml) — served at `GET /api/v1/openapi.yaml` and browsable at **`http://<host>:8080/docs`** (Swagger UI).
+**Canonical API contract:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.2** — served at `GET /api/v1/openapi.yaml` and browsable at **`http://<host>:8080/docs`** (Swagger UI; full collector surface).
 
 Related: [external-client-api.md](external-client-api.md), [opc-write-mode.md](opc-write-mode.md).
 

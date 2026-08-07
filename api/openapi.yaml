@@ -19,7 +19,10 @@ info:
 
     Batch write: `POST /api/v1/tags/values` — HTTP 200 when the request parses; per-item
     `ok`/`error` in `results` (partial success allowed). Max 100 items.
-  version: 1.1.0
+
+    This document enumerates the **full** collector HTTP surface (integration + admin):
+    devices/tags CRUD, project xlsx, diagnostics, database capacity/wipe, health/metrics.
+  version: 1.2.0
   contact:
     name: popelev / Level2
 
@@ -34,6 +37,7 @@ tags:
   - name: tags
   - name: devices
   - name: browse
+  - name: project
   - name: diagnostics
   - name: database
   - name: docs
@@ -81,6 +85,14 @@ paths:
       responses:
         "200":
           description: HTML Swagger UI for this API
+
+  /metrics:
+    get:
+      tags: [health]
+      summary: Prometheus metrics
+      responses:
+        "200":
+          description: Prometheus text exposition format
 
   /api/v1/tags:
     get:
@@ -283,6 +295,72 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Device"
+    post:
+      tags: [devices]
+      summary: Create device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceInput"
+      responses:
+        "201":
+          description: Created
+        "400":
+          description: Invalid body
+        "401":
+          description: API token required
+        "409":
+          description: Device id already exists
+        "503":
+          description: Config store unavailable
+
+  /api/v1/devices/{id}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceID"
+    put:
+      tags: [devices]
+      summary: Update device (id from path)
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceInput"
+      responses:
+        "200":
+          description: Updated
+        "400":
+          description: Invalid body
+        "401":
+          description: API token required
+        "503":
+          description: Config store unavailable
+    delete:
+      tags: [devices]
+      summary: Delete device and its tags
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: API token required
+        "404":
+          description: Unknown device
+        "503":
+          description: Config store unavailable
 
   /api/v1/browse:
     get:
@@ -383,6 +461,123 @@ paths:
       responses:
         "200":
           description: Log entries
+    delete:
+      tags: [diagnostics]
+      summary: Clear diagnostics ring buffer
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: "{status: cleared}"
+        "401":
+          description: API token required
+
+  /api/v1/diagnostics/reset:
+    post:
+      tags: [diagnostics]
+      summary: Clear ring log and Overview drop counters
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: "{status: reset}"
+        "401":
+          description: API token required
+
+  /api/v1/diagnostics/capacity:
+    get:
+      tags: [diagnostics]
+      summary: DB size, growth ETA, capacity policy fields, spool metrics
+      responses:
+        "200":
+          description: Capacity JSON (database_size_bytes, free_bytes, used_over_limit, metrics, …)
+
+  /api/v1/database/status:
+    get:
+      tags: [database]
+      summary: Historian connection / pool status
+      responses:
+        "200":
+          description: connected, ping_ok, versions, pool stats, url_masked
+
+  /api/v1/database/capacity-policy:
+    get:
+      tags: [database]
+      summary: Capacity percent and full-disk policy
+      responses:
+        "200":
+          description: capacity_percent, full_policy, limit/disk fields when DB present
+    put:
+      tags: [database]
+      summary: Persist capacity policy to YAML (+ live historian)
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                capacity_percent:
+                  type: integer
+                  minimum: 1
+                  maximum: 100
+                full_policy:
+                  type: string
+                  enum: [stop, drop_oldest, rotate, expand_limit]
+      responses:
+        "200":
+          description: Saved policy
+        "400":
+          description: Invalid percent/policy
+        "401":
+          description: API token required
+        "503":
+          description: Config store unavailable
+
+  /api/v1/database/wipe-samples:
+    post:
+      tags: [database]
+      summary: Wipe historian samples (lab)
+      description: |
+        Requires `?confirm=wipe`. Truncates Timescale samples, clears Live, re-seeds from Live snapshot.
+        Optional body `{"clear_tags":true}` also clears monitored tags on every device.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - name: confirm
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [wipe]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                clear_tags:
+                  type: boolean
+      responses:
+        "200":
+          description: Wipe result
+        "400":
+          description: Missing confirm=wipe
+        "401":
+          description: API token required
+        "503":
+          description: Historian not configured
 
   /api/v1/status/summary:
     get:
@@ -421,21 +616,79 @@ paths:
         "200":
           description: Updated preference; restart_required when process not yet matching
 
+  /api/v1/devices/{id}/tags:
+    parameters:
+      - $ref: "#/components/parameters/DeviceID"
+    post:
+      tags: [tags]
+      summary: Upsert one tag on a device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Tag"
+      responses:
+        "200":
+          description: Upserted tag
+        "400":
+          description: Invalid tag
+        "401":
+          description: API token required
+        "503":
+          description: Config unavailable
+    delete:
+      tags: [tags]
+      summary: Delete all tags on a device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Cleared
+        "401":
+          description: API token required
+
   /api/v1/devices/{id}/tags/{tagId}:
+    parameters:
+      - $ref: "#/components/parameters/DeviceID"
+      - name: tagId
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      tags: [tags]
+      summary: Upsert tag by path tagId
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Tag"
+      responses:
+        "200":
+          description: Upserted
+        "400":
+          description: Invalid
+        "401":
+          description: API token required
     patch:
       tags: [tags]
       summary: Partial update of tag flags (simulate, writable, enabled)
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: tagId
-          in: path
-          required: true
-          schema:
-            type: string
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
       requestBody:
         required: true
         content:
@@ -452,19 +705,136 @@ paths:
       responses:
         "200":
           description: Updated tag
+        "401":
+          description: API token required
         "404":
           description: Device or tag not found
+    delete:
+      tags: [tags]
+      summary: Delete one tag
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "204":
+          description: Deleted
+        "401":
+          description: API token required
+        "404":
+          description: Not found
+
+  /api/v1/devices/{id}/tags/bulk:
+    post:
+      tags: [tags]
+      summary: Bulk upsert tags on a device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tags:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Tag"
+      responses:
+        "200":
+          description: Bulk result
+        "401":
+          description: API token required
+
+  /api/v1/devices/{id}/tags/sync:
+    post:
+      tags: [tags]
+      summary: Overwrite datatypes from OPC DataType Attribute
+      description: See docs/opc-datatype-sync.md. Empty tag_ids = all tags on device.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceID"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tag_ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Sync result
+        "401":
+          description: API token required
+
+  /api/v1/devices/{id}/tags/import:
+    post:
+      tags: [tags]
+      summary: Import plant-format Excel tag list
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceID"
+        - name: replace
+          in: query
+          schema:
+            type: string
+            description: "1 to replace existing tags"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Import summary
+        "401":
+          description: API token required
+
+  /api/v1/devices/{id}/tags.xlsx:
+    get:
+      tags: [tags]
+      summary: Export plant-format tag list (.xlsx)
+      parameters:
+        - $ref: "#/components/parameters/DeviceID"
+      responses:
+        "200":
+          description: Excel workbook
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
 
   /api/v1/devices/{id}/tags/simulate:
     post:
       tags: [tags]
       summary: Bulk enable/disable per-tag simulation on a device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/DeviceID"
       requestBody:
         required: true
         content:
@@ -486,17 +856,19 @@ paths:
       responses:
         "200":
           description: "{device_id, simulate, updated, tags_simulated}"
+        "401":
+          description: API token required
 
   /api/v1/devices/{id}/tags/writable:
     post:
       tags: [tags]
       summary: Bulk enable/disable per-tag writable on a device
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/DeviceID"
       requestBody:
         required: true
         content:
@@ -518,11 +890,17 @@ paths:
       responses:
         "200":
           description: "{device_id, writable, updated}"
+        "401":
+          description: API token required
 
   /api/v1/tags/simulate:
     post:
       tags: [tags]
       summary: Bulk enable/disable simulation across devices
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
       requestBody:
         required: true
         content:
@@ -545,6 +923,114 @@ paths:
       responses:
         "200":
           description: "{simulate, updated, tags_simulated}"
+        "401":
+          description: API token required
+
+  /api/v1/project.xlsx:
+    get:
+      tags: [project]
+      summary: Export Project.xlsx (Servers + Tags)
+      responses:
+        "200":
+          description: Excel workbook
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+
+  /api/v1/project/preview:
+    post:
+      tags: [project]
+      summary: Preview project import without applying
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Preview diff summary
+        "401":
+          description: API token required
+
+  /api/v1/project/import:
+    post:
+      tags: [project]
+      summary: Import Project.xlsx (merge or replace)
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Import applied
+        "401":
+          description: API token required
+
+  /api/v1/project/validate:
+    post:
+      tags: [project]
+      summary: Validate project / tags against Address Space
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Validation report
+        "401":
+          description: API token required
+
+  /api/v1/project/compare:
+    post:
+      tags: [project]
+      summary: Compare project config vs live Address Space (JSON)
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Compare result JSON
+        "401":
+          description: API token required
+
+  /api/v1/project/compare.xlsx:
+    post:
+      tags: [project]
+      summary: Compare project → Excel report
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
+      responses:
+        "200":
+          description: Excel report
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: API token required
 
 components:
   securitySchemes:
@@ -569,6 +1055,13 @@ components:
       required: true
       schema:
         type: string
+    DeviceID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Device id
 
   schemas:
     Sample:
@@ -660,6 +1153,27 @@ components:
           type: integer
         connected:
           type: boolean
+
+    DeviceInput:
+      type: object
+      description: Device create/update body (tags optional on create)
+      properties:
+        id:
+          type: string
+        endpoint:
+          type: string
+        security:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        poll_concurrency:
+          type: integer
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/Tag"
 
     WriteValueRequest:
       type: object

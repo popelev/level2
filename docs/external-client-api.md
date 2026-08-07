@@ -55,7 +55,7 @@ Base URL (lab VM): `http://<host>:8080`. Same origin serves the React Admin UI.
 | WebSocket | `GET /api/v1/ws/stream` — Live samples; optional `?tag_id=` / `?tag_ids=` filter |
 | Auth | Optional `LEVEL2_API_TOKEN` — when set, mutating `/api/v1/*` + WS require Bearer / `X-API-Token` / `?token=` |
 | CORS | **No** dedicated CORS middleware. Browser cross-origin calls from another origin will fail unless same-origin or a reverse proxy adds headers. Non-browser clients (curl, Python `requests`, C# `HttpClient`) are unaffected. |
-| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
+| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.2** (full surface); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
 | WS origin | `CheckOrigin: true` (accept all) — fine for lab; revisit with auth. |
 
 Full operator table: [deploy/platform/README.md](../deploy/platform/README.md#api). Highlights: [README.md](../README.md#api-highlights).

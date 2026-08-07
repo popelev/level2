@@ -1,6 +1,8 @@
 # OPC Structure Measure — Grafana template
 
-RU / EN guide for the provisioned dashboard **OPC Structure Measure**.
+RU / EN guide for the provisioned dashboard **OPC Structure Measure** (smoke Grafana on `:3000`).
+
+Historian series for these panels come from Timescale (`collector.samples` when the **platform collector** writes, or Telegraf `opcua` measurement in pure-smoke mode). Prefer the [platform collector](../../platform/README.md) for day-to-day lab use; keep this Grafana stack for plant overview charts.
 
 ## Files / Файлы
 

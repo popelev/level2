@@ -1,7 +1,7 @@
 # Smoke: OPC UA → Telegraf → TimescaleDB → Grafana
 
-Temporary stack to verify connectivity to **S7-1500 OPC UA**.  
-Telegraf will later be replaced by the Go collector; Timescale and Grafana stay.
+**Legacy connectivity stack** to verify the plant path to **S7-1500 OPC UA**.  
+The primary collector is the Go service in [`deploy/platform/`](../platform/README.md) (same Timescale volume/network). Keep Timescale (+ Grafana) from this compose; stop Telegraf when the platform collector is writing (`docker stop level2-telegraf`) to avoid duplicate samples.
 
 ## Services
 

@@ -2,7 +2,9 @@
 
 Jenkins next to the lab stack (same VM / Docker host), configured with **JCasC** so bring-up is one command — no setup wizard.
 
-**Status:** Phase 1 — CI checks + image build via Multibranch Pipeline. Deploy/push stages gated. No production secrets in-repo.
+**Status:** Phase 1 — CI checks (Go tests + coverage HTML, Web build) + collector image build via Multibranch Pipeline. Deploy/push stages gated. No production secrets in-repo. After each build, CI tags `level2-collector:ci-*` are pruned to the newest **5** (+ `ci-latest`); see Pipeline stages below.
+
+UI also links from the Admin app **Jenkins** tab (`:8081`). Collector API / Swagger remain on `:8080` (`/docs`).
 
 ## One-command up
 

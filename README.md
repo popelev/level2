@@ -41,7 +41,7 @@ flowchart LR
 
 1. Driver (OPC UA or SIM) reads enabled tags → samples channel.
 2. `FanIn` updates Live + WS on every sample; forwards to the historian only when **value or quality** changed (Phase 1 suppress — [docs/opc-subscription-mode.md](docs/opc-subscription-mode.md)).
-3. `flushLoop` writes batches to Timescale; on error — spool to disk and later replay.
+3. `flushLoop` writes batches to Timescale; on write/capacity errors — spool to disk and later replay (`drop_oldest` may spool while trimming — [docs/db-capacity-policy.md](docs/db-capacity-policy.md)).
 4. API + UI read live/history/diagnostics/capacity.
 
 ---
@@ -94,9 +94,9 @@ sequenceDiagram
     Fan->>Flush: Sample (only if value/quality changed)
   end
   Flush->>TS: WriteBatch
-  alt write error
+  alt write error or capacity busy (drop_oldest trimming)
     Flush->>Sp: Enqueue
-    Sp-->>TS: replay later
+    Sp-->>TS: replay when under limit / DB healthy
   end
   UI->>API: GET /tags, WS /ws/stream, history
 ```
@@ -134,7 +134,9 @@ Opt-in tag samples only (default **off**, never auto on disconnect): `tag_simula
 | Variable | Purpose |
 |----------|---------|
 | `LEVEL2_SIM_BROWSER` | `1` — demo without PLC; `0` — live OPC UA |
-| `LEVEL2_TAG_SIMULATION` | `true` — synthetic tag samples only (opt-in; default off) |
+| `LEVEL2_TAG_SIMULATION` | Legacy global sim master (prefer per-tag `simulate`; default off) — [docs/tag-simulation.md](docs/tag-simulation.md) |
+| `LEVEL2_OPC_WRITE_ENABLED` | Master kill switch for PLC Write API (default **off** → 403) |
+| `LEVEL2_API_TOKEN` | Optional shared token for mutating `/api/v1/*` + WS |
 | `DATABASE_URL` | PostgreSQL/Timescale DSN (set automatically in compose) |
 | `PLC_OPC_ENDPOINT` | `opc.tcp://…:4840` |
 | `OPC_UA_USERNAME` / `OPC_UA_PASSWORD` | OPC credentials (same as in UaExpert) |
@@ -178,37 +180,37 @@ Legacy connectivity smoke (Telegraf + Grafana): [deploy/smoke/README.md](deploy/
 
 ## API (highlights)
 
-Full table: [deploy/platform/README.md](deploy/platform/README.md#api).
+**Full route table:** [deploy/platform/README.md](deploy/platform/README.md#api) (source of truth for admin/CRUD/project/DB).
 
-| Method | Path | Notes |
-|--------|------|-------|
-| GET | `/healthz`, `/readyz` | liveness / readiness |
-| GET | `/api/v1/status/summary` | summary for UI pills |
-| GET | `/api/v1/tags`, `/api/v1/tags/{id}/value` | live |
-| GET | `/api/v1/tags/{id}/history` | Timescale |
-| GET | `/api/v1/browse`, POST `/api/v1/expand` | Address Space |
-| GET/POST | `/api/v1/devices/…/tags…` | CRUD / import / export / sync |
-| GET | `/api/v1/ws/stream` | live WebSocket |
-| GET | `/api/v1/diagnostics/logs` | ring log (`opc_read` / `opc_write` / `db_write`; ~30s `opc poll ok` summaries) |
-| POST | `/api/v1/diagnostics/reset` | clear ring log + Overview drop counters |
-| GET | `/api/v1/database/status` | DB status / capacity |
-| POST | `/api/v1/database/wipe-samples?confirm=wipe` | wipe historian samples (lab); clears Live + re-seeds from Live snapshot; optional `{"clear_tags":true}` |
-| GET | `/metrics` | Prometheus |
+| Area | Paths (examples) |
+|------|------------------|
+| Health | `GET /healthz`, `GET /readyz`, `GET /metrics` |
+| Live / history | `GET /api/v1/tags`, `…/tags/{id}/value`, `…/history`, `GET /api/v1/ws/stream` |
+| Write | `PUT /api/v1/tags/{id}/value`, `POST /api/v1/tags/values` (gate + `writable` + optional token) |
+| Devices / tags | CRUD devices & tags, import/export xlsx, bulk, sync, simulate/writable bulk |
+| Browse | `GET /api/v1/browse`, `POST /api/v1/expand` |
+| Project | `…/project.xlsx`, preview/import/validate/compare |
+| Diagnostics / DB | logs, reset, capacity, capacity-policy, wipe-samples |
+| Status / sim | `GET /api/v1/status/summary`, `GET|PUT /api/v1/tag-simulation` |
 
-Writing values to the PLC: `PUT /api/v1/tags/{id}/value` (requires `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED`; default off). Optional write-then-verify: `?verify=true` / `"verify": true`. Design: [docs/opc-write-mode.md](docs/opc-write-mode.md). OpenAPI + Swagger: [`api/openapi.yaml`](api/openapi.yaml), `/docs`. Math models as separate containers: [docs/l2-model-integration.md](docs/l2-model-integration.md). On-change historian / subscription: [docs/opc-subscription-mode.md](docs/opc-subscription-mode.md). Datatype expand + Sync: [docs/opc-datatype-sync.md](docs/opc-datatype-sync.md). External programs (Python/C#/JS/…) as HTTP/WS clients: [docs/external-client-api.md](docs/external-client-api.md). Capacity / wipe: [docs/db-capacity-policy.md](docs/db-capacity-policy.md).
+**OpenAPI / Swagger:** [`api/openapi.yaml`](api/openapi.yaml) **v1.2** is served at `GET /api/v1/openapi.yaml` and browsable at **`/docs`** (full collector surface: integration + admin). Route table also in [deploy/platform/README.md](deploy/platform/README.md#api).
+
+Design docs: [opc-write-mode.md](docs/opc-write-mode.md) · [l2-model-integration.md](docs/l2-model-integration.md) · [opc-subscription-mode.md](docs/opc-subscription-mode.md) · [opc-datatype-sync.md](docs/opc-datatype-sync.md) · [external-client-api.md](docs/external-client-api.md) · [db-capacity-policy.md](docs/db-capacity-policy.md) · [tag-simulation.md](docs/tag-simulation.md).
 
 ---
 
 ## Repository layout
 
 ```
-cmd/collector/          # collector entrypoint
-internal/               # drivers, api, historian, spool, store, …
+cmd/collector/          # collector entrypoint (main, flush, wire_http, run_device, …)
+internal/               # drivers, api, historian, spool, store, runtime, …
+api/openapi.yaml        # OpenAPI 3 (embedded; served at /api/v1/openapi.yaml)
 web/                    # React Admin UI
+docs/                   # Feature design notes (write, sim, capacity, …)
 deploy/platform/        # Docker Compose + runbook (primary path)
-deploy/smoke/           # Telegraf smoke (legacy connectivity)
-deploy/ci/              # Jenkins CI/CD skeleton (lab VM, port 8081)
-Jenkinsfile             # Declarative pipeline (Phase 1: test + image build)
+deploy/smoke/           # Telegraf smoke (legacy connectivity) + Grafana
+deploy/ci/              # Jenkins CI/CD (lab VM, port 8081)
+Jenkinsfile             # Declarative pipeline (test + image + CI image prune)
 ```
 
 CI/CD (Jenkins): [deploy/ci/README.md](deploy/ci/README.md).
