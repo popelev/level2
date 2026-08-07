@@ -74,7 +74,7 @@ PUT  /api/v1/tag-simulation
 
 After enabling global master: recreate collector so the process starts with OPC paused and mock for all enabled tags.
 
-Admin Overview keeps a demoted “legacy: simulate all tags” control; primary UX is per-tag on **DB write list**.
+Primary UX is per-tag on **DB write list** (column, bulk, filter). Legacy global master remains via config/API (`tag_simulation` / `LEVEL2_TAG_SIMULATION`), not Overview UI.
 
 ## Writes / safety
 
@@ -83,6 +83,7 @@ Admin Overview keeps a demoted “legacy: simulate all tags” control; primary 
 
 ## Status / UI
 
-- `tags_simulated` — pill on Overview TAGS card and DB write list header
+- `tags_simulated` — colored text on Overview TAGS card and DB write list header (capsules only in the top status strip)
+- Offline + `!simulate`: API/Live reconcile quality to Bad; UI shows **stale** (values may remain, greyed)
 - Filter: “Simulated only” on DB write list
 - Bulk: enable/disable simulation for all or selected tags

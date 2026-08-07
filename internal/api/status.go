@@ -94,9 +94,10 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 	}
 
 	// Global/sim-browser: Live Good is expected. Per-tag simulate skips stale override for those tags only.
-	countStaleAsBad := s.DevHub != nil && !out.TagSimulation && !out.SimBrowser
+	staleBad := s.countStaleAsBad()
 
 	if s.Live != nil && len(devs) > 0 {
+		s.reconcileStaleLiveQuality(devs)
 		tvs := s.Live.SnapshotDevices(devs)
 		var pollSum int64
 		var pollN int64
@@ -110,7 +111,7 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 			}
 			if tv.Sample == nil {
 				if tv.Tag.Enabled {
-					if countStaleAsBad && !conn[tv.DeviceID] && !tv.Tag.Simulate {
+					if staleBad && !conn[tv.DeviceID] && !tv.Tag.Simulate {
 						out.QualityBad++
 					} else {
 						out.QualityUnknown++
@@ -118,11 +119,7 @@ func (s *Server) buildStatusSummary(r *http.Request) statusSummary {
 				}
 				continue
 			}
-			q := tv.Sample.Quality
-			if countStaleAsBad && !conn[tv.DeviceID] && !tv.Tag.Simulate {
-				q = core.QualityBad
-			}
-			switch q {
+			switch s.effectiveQuality(tv, conn) {
 			case core.QualityGood:
 				out.QualityGood++
 			default:

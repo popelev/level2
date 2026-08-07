@@ -151,12 +151,12 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 		}
 		devs = filtered
 	}
-	writeJSON(w, http.StatusOK, s.Live.SnapshotDevices(devs))
+	writeJSON(w, http.StatusOK, s.snapshotDevicesForAPI(devs))
 }
 
 func (s *Server) handleTagValue(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	sample, ok := s.Live.Get(id)
+	sample, ok := s.displaySampleForTag(id)
 	if !ok {
 		http.Error(w, "tag not found or no sample yet", http.StatusNotFound)
 		return
@@ -580,6 +580,7 @@ func sampleDTO(s core.Sample) sampleDTOType {
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(v)
 }

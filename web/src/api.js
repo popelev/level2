@@ -59,6 +59,13 @@ export function formatQuality(sample) {
   return 'bad'
 }
 
+/** Honest UI quality: offline + !simulate → stale (never green good from frozen Live). */
+export function displayQuality(sample, { opcConnected, simulate } = {}) {
+  if (!sample) return '—'
+  if (opcConnected === false && !simulate) return 'stale'
+  return formatQuality(sample)
+}
+
 export function formatSampleTime(sample, updatedAt) {
   const t = sample?.time ?? sample?.Time ?? updatedAt
   if (!t) return '—'

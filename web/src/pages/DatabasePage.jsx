@@ -89,9 +89,9 @@ export default function DatabasePage({ onError }) {
       ) : (
         <>
           <div className="diag-metrics">
-            <span className={`pill ${ok ? 'ok' : 'bad'}`}>{ok ? 'connected' : 'disconnected'}</span>
-            <span className={`pill ${data.ready ? 'ok' : 'bad'}`}>ready {data.ready ? 'yes' : 'no'}</span>
-            {data.ping_error && <span className="pill bad">{data.ping_error}</span>}
+            <span className={`status-text ${ok ? 'ok' : 'bad'}`}>{ok ? 'connected' : 'disconnected'}</span>
+            <span className={`status-text ${data.ready ? 'ok' : 'bad'}`}>ready {data.ready ? 'yes' : 'no'}</span>
+            {data.ping_error && <span className="status-text bad">{data.ping_error}</span>}
           </div>
 
           <section className="panel">

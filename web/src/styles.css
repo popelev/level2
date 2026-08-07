@@ -244,24 +244,28 @@ a.nav-btn {
 }
 .pill.ok { color: var(--accent); border-color: #2f6b55; }
 .pill.bad { color: var(--bad); border-color: #6b3535; }
+/* Capsules only in the top status strip; mid-page uses colored text. */
 .pill.sim-count-pill,
-.sim-count-pill {
+.status-strip .sim-count-pill {
   color: #c9a227;
   border-color: #5a4a1e;
   margin-left: 6px;
   vertical-align: middle;
 }
-.sim-pill {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 0 5px;
-  border: 1px solid #5a4a1e;
-  border-radius: 4px;
-  font-size: 0.7em;
+.sim-text {
   color: #c9a227;
-  vertical-align: middle;
+  font-family: var(--mono);
+  font-weight: 500;
 }
+.status-text {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text);
+}
+.status-text.ok { color: var(--accent); }
+.status-text.bad { color: var(--bad); }
 .tt-row.sim .name { color: var(--text); }
+.tt-row.stale .tt-meta.mono { opacity: 0.75; }
 
 .ua-layout {
   display: grid;

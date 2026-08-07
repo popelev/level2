@@ -91,6 +91,20 @@ func TestLive_MarkQuality(t *testing.T) {
 	}
 }
 
+func TestLive_MarkQualityPreserveTime(t *testing.T) {
+	l := NewLive()
+	n := 3.5
+	ts := time.Unix(10, 0).UTC()
+	l.Update(core.Sample{TagID: "t1", Time: ts, ValueNum: &n, Quality: core.QualityGood})
+	if got := l.MarkQualityPreserveTime([]string{"t1"}, core.QualityBad); len(got) != 1 {
+		t.Fatalf("updated=%d", len(got))
+	}
+	s, ok := l.Get("t1")
+	if !ok || s.Quality != core.QualityBad || !s.Time.Equal(ts) {
+		t.Fatalf("want Bad keeping time: %#v", s)
+	}
+}
+
 func TestAvgIntervals(t *testing.T) {
 	if avgIntervals(nil) != 0 {
 		t.Fatal("empty")

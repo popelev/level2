@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import TagTreeTable from '../components/TagTreeTable.jsx'
 import TagPager from '../components/TagPager.jsx'
-import { formatQuality, getJSON } from '../api.js'
+import { displayQuality, getJSON } from '../api.js'
 
 const PAGE_SIZE = 50
 
-function isBadTag(tv) {
-  return formatQuality(tv.sample) === 'bad'
+function isBadTag(tv, opcConnected) {
+  const q = displayQuality(tv.sample, { opcConnected, simulate: !!tv.tag?.simulate })
+  return q === 'bad' || q === 'stale'
 }
 
 export default function DbWriteListPage({ devices, onError, onDevicesChanged, initialDeviceId }) {
@@ -32,6 +33,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
   }, [devices, deviceId, initialDeviceId])
 
   const currentDevice = devices.find((d) => d.id === deviceId)
+  const opcConnected = currentDevice ? !!currentDevice.connected : undefined
 
   const refreshTags = async (dev = deviceId) => {
     if (!dev) {
@@ -188,14 +190,17 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
     }
   }
 
-  const badTags = useMemo(() => tags.filter(isBadTag), [tags])
+  const badTags = useMemo(
+    () => tags.filter((tv) => isBadTag(tv, opcConnected)),
+    [tags, opcConnected],
+  )
   const simTags = useMemo(() => tags.filter((t) => !!t.tag.simulate), [tags])
   const simCount = simTags.length
 
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase()
     let list = tags
-    if (badOnly) list = list.filter(isBadTag)
+    if (badOnly) list = list.filter((tv) => isBadTag(tv, opcConnected))
     if (simOnly) list = list.filter((t) => !!t.tag.simulate)
     if (!q) return list
     return list.filter(
@@ -204,7 +209,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
         t.tag.node_id.toLowerCase().includes(q) ||
         String(t.tag.path || '').toLowerCase().includes(q),
     )
-  }, [tags, filter, badOnly, simOnly])
+  }, [tags, filter, badOnly, simOnly, opcConnected])
 
   const sortedFiltered = useMemo(() => {
     const list = [...filtered]
@@ -315,8 +320,8 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
             <h3>
               {currentDevice?.tag_count ?? tags.length} tag(s)
               {simCount > 0 && (
-                <span className="pill sim-count-pill" title="Tags with simulate=true">
-                  sim {simCount}
+                <span className="sim-text small" title="Tags with simulate=true">
+                  {' '}· {simCount} sim
                 </span>
               )}
               {badTags.length > 0 && (
@@ -467,6 +472,7 @@ export default function DbWriteListPage({ devices, onError, onDevicesChanged, in
               onSetSimulate={setTagsSimulate}
               onRemove={unmonitorTags}
               onUpdateTag={updateTag}
+              opcConnected={opcConnected}
             />
           </div>
           {sortedFiltered.length > PAGE_SIZE && (

@@ -68,12 +68,12 @@ export default function DiagnosticsPage({ onError }) {
 
       {metrics && (
         <div className="diag-metrics">
-          <span className="pill">written {Math.round(metrics.samples_written_total || 0).toLocaleString()}</span>
-          <span className="pill">spooled {Math.round(metrics.samples_spooled_total || 0).toLocaleString()}</span>
-          <span className={`pill${metrics.write_errors_total > 0 ? ' bad' : ''}`}>
+          <span className="status-text">written {Math.round(metrics.samples_written_total || 0).toLocaleString()}</span>
+          <span className="status-text">spooled {Math.round(metrics.samples_spooled_total || 0).toLocaleString()}</span>
+          <span className={`status-text${metrics.write_errors_total > 0 ? ' bad' : ''}`}>
             write errors {Math.round(metrics.write_errors_total || 0)}
           </span>
-          <span className="pill">spool files {Math.round(metrics.spool_depth || 0)}</span>
+          <span className="status-text">spool files {Math.round(metrics.spool_depth || 0)}</span>
         </div>
       )}
 

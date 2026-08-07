@@ -67,9 +67,19 @@ func (l *Live) All() []core.Sample {
 	return out
 }
 
-// MarkQuality sets quality on existing samples (keeps last values/timestamps payload).
-// Returns the updated samples (for FanIn/WS). Tags with no live entry are skipped.
+// MarkQuality sets quality on existing samples (keeps last values). Timestamps refresh to now
+// (link-loss / explicit mark). Tags with no live entry are skipped.
 func (l *Live) MarkQuality(tagIDs []string, q core.Quality) []core.Sample {
+	return l.markQuality(tagIDs, q, true)
+}
+
+// MarkQualityPreserveTime flips quality without moving sample.Time (stale offline reconcile:
+// value age stays visible; quality becomes Bad).
+func (l *Live) MarkQualityPreserveTime(tagIDs []string, q core.Quality) []core.Sample {
+	return l.markQuality(tagIDs, q, false)
+}
+
+func (l *Live) markQuality(tagIDs []string, q core.Quality, refreshTime bool) []core.Sample {
 	if l == nil || len(tagIDs) == 0 {
 		return nil
 	}
@@ -86,7 +96,9 @@ func (l *Live) MarkQuality(tagIDs []string, q core.Quality) []core.Sample {
 			continue
 		}
 		ent.sample.Quality = q
-		ent.sample.Time = now
+		if refreshTime {
+			ent.sample.Time = now
+		}
 		out = append(out, ent.sample)
 	}
 	return out

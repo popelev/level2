@@ -298,16 +298,16 @@ export default function CapacityPage({ onError }) {
             <section className="panel">
               <h3>Historian counters</h3>
               <div className="diag-metrics">
-                <span className="pill">written {Math.round(data.metrics.samples_written_total || 0).toLocaleString()}</span>
-                <span className="pill">spooled {Math.round(data.metrics.samples_spooled_total || 0).toLocaleString()}</span>
-                <span className={`pill${data.metrics.write_errors_total > 0 ? ' bad' : ''}`}>
+                <span className="status-text">written {Math.round(data.metrics.samples_written_total || 0).toLocaleString()}</span>
+                <span className="status-text">spooled {Math.round(data.metrics.samples_spooled_total || 0).toLocaleString()}</span>
+                <span className={`status-text${data.metrics.write_errors_total > 0 ? ' bad' : ''}`}>
                   write errors {Math.round(data.metrics.write_errors_total || 0)}
                 </span>
-                <span className={`pill${data.metrics.capacity_halts_total > 0 ? ' bad' : ''}`}>
+                <span className={`status-text${data.metrics.capacity_halts_total > 0 ? ' bad' : ''}`}>
                   capacity halts {Math.round(data.metrics.capacity_halts_total || 0)}
                 </span>
-                <span className="pill">capacity drops {Math.round(data.metrics.capacity_drops_total || 0)}</span>
-                <span className="pill">spool files {Math.round(data.metrics.spool_depth || 0)}</span>
+                <span className="status-text">capacity drops {Math.round(data.metrics.capacity_drops_total || 0)}</span>
+                <span className="status-text">spool files {Math.round(data.metrics.spool_depth || 0)}</span>
               </div>
             </section>
           )}

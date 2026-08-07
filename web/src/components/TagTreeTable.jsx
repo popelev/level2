@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildTagTree, collectLeaves } from '../tagTree.js'
-import { formatQuality, formatSampleTime, formatValue } from '../api.js'
+import { displayQuality, formatSampleTime, formatValue } from '../api.js'
 
 const TYPES = ['bool', 'int64', 'uint', 'float64', 'string', 'datetime']
+
+function qualityClass(label) {
+  if (label === 'good') return 'good'
+  if (label === 'bad' || label === 'stale') return 'badq'
+  return 'muted'
+}
 
 function FolderRow({
   node,
@@ -92,12 +98,15 @@ function LeafRow({
   onSetSimulate,
   onRemove,
   onUpdateTag,
+  opcConnected,
 }) {
   const tv = node.tv
   const tag = tv.tag
+  const qLabel = displayQuality(tv.sample, { opcConnected, simulate: !!tag.simulate })
+  const staleOffline = opcConnected === false && !tag.simulate && !!tv.sample
   return (
     <div
-      className={`tt-row leaf${tag.enabled ? '' : ' dim'}${selected.has(tag.id) ? ' selected' : ''}${tag.simulate ? ' sim' : ''}`}
+      className={`tt-row leaf${tag.enabled ? '' : ' dim'}${selected.has(tag.id) ? ' selected' : ''}${tag.simulate ? ' sim' : ''}${staleOffline ? ' stale' : ''}`}
       style={{ ['--depth']: depth }}
     >
       <input
@@ -111,7 +120,7 @@ function LeafRow({
         <div>
           <div className="name">
             {node.name}
-            {tag.simulate ? <span className="sim-pill" title="Per-tag simulation">sim</span> : null}
+            {tag.simulate ? <span className="sim-text" title="Per-tag simulation"> sim</span> : null}
           </div>
           <div className="mono small muted tt-sub">
             {node.name !== tag.id && <span className="tt-id">{tag.id}</span>}
@@ -120,12 +129,18 @@ function LeafRow({
           </div>
         </div>
       </div>
-      <span className="tt-meta mono">{formatValue(tv.sample)}</span>
+      <span className={`tt-meta mono${staleOffline ? ' muted' : ''}`}>{formatValue(tv.sample)}</span>
       <span
-        className={`tt-meta small ${formatQuality(tv.sample) === 'good' ? 'good' : formatQuality(tv.sample) === 'bad' ? 'badq' : 'muted'}`}
-        title={formatQuality(tv.sample) === 'bad' ? 'Often a UDT/structure node — use child rValueOut (e.g. ns=4;i=4901 not 4900)' : undefined}
+        className={`tt-meta small ${qualityClass(qLabel)}`}
+        title={
+          qLabel === 'stale'
+            ? 'OPC disconnected — last Live value is not live PLC quality'
+            : qLabel === 'bad'
+              ? 'Often a UDT/structure node — use child rValueOut (e.g. ns=4;i=4901 not 4900)'
+              : undefined
+        }
       >
-        {formatQuality(tv.sample)}
+        {qLabel}
       </span>
       <span className="tt-meta mono small muted">{formatSampleTime(tv.sample, tv.updated_at)}</span>
       <select
@@ -192,7 +207,7 @@ function pollClass(avg, configured) {
 function TreeBranch(props) {
   const {
     node, depth, openMap, setOpenMap, selected,
-    onToggleSelect, onSetEnabled, onSetSimulate, onRemove, onUpdateTag,
+    onToggleSelect, onSetEnabled, onSetSimulate, onRemove, onUpdateTag, opcConnected,
   } = props
   const open = openMap[node.key] !== false
   if (node.type === 'leaf') {
@@ -206,6 +221,7 @@ function TreeBranch(props) {
         onSetSimulate={onSetSimulate}
         onRemove={onRemove}
         onUpdateTag={onUpdateTag}
+        opcConnected={opcConnected}
       />
     )
   }
@@ -235,6 +251,7 @@ function TreeBranch(props) {
           onSetSimulate={onSetSimulate}
           onRemove={onRemove}
           onUpdateTag={onUpdateTag}
+          opcConnected={opcConnected}
         />
       ))}
     </>
@@ -249,6 +266,7 @@ export default function TagTreeTable({
   onSetSimulate,
   onRemove,
   onUpdateTag,
+  opcConnected,
 }) {
   const [openMap, setOpenMap] = useState({})
   const tree = useMemo(() => buildTagTree(tagValues), [tagValues])
@@ -285,6 +303,7 @@ export default function TagTreeTable({
           onSetSimulate={onSetSimulate}
           onRemove={onRemove}
           onUpdateTag={onUpdateTag}
+          opcConnected={opcConnected}
         />
       ))}
     </div>
