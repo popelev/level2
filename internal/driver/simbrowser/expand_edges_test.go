@@ -37,9 +37,13 @@ func TestExpandStructure_MaxDepthAndWalkErrors(t *testing.T) {
 	ctx := context.Background()
 	b := NewDemo()
 
-	// maxDepth=1: recurse into first-level folders then hit depth>maxDepth early return
-	if _, err := b.ExpandStructure(ctx, "ns=0;i=85", "root", 1); err != nil {
+	// maxDepth=1 from Objects: only Server.ServerStatus is reachable as a leaf
+	shallow, err := b.ExpandStructure(ctx, "ns=0;i=85", "root", 1)
+	if err != nil {
 		t.Fatal(err)
+	}
+	if len(shallow) != 1 || shallow[0].BrowsePath != "Server.ServerStatus" || shallow[0].NodeID != "ns=0;i=2256" {
+		t.Fatalf("maxDepth=1: %#v", shallow)
 	}
 
 	if _, err := b.ExpandStructure(ctx, "ns=9;i=404", "x", 2); err == nil {

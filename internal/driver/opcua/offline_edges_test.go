@@ -2,6 +2,7 @@ package opcua
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"strings"
@@ -71,6 +72,9 @@ func TestExpandFromRefs_OfflineEdges(t *testing.T) {
 	if err := d.expandFromRefs(context.Background(), refs, "p", "root", 0, 4, &out); err != nil {
 		t.Fatal(err)
 	}
+	if len(out) != 0 {
+		t.Fatalf("incomplete refs must yield no tags: %#v", out)
+	}
 }
 
 func TestNamespaceIndex_CacheHit(t *testing.T) {
@@ -102,26 +106,37 @@ func TestBrowseChildren_NotConnectedAndBadNode(t *testing.T) {
 }
 
 func TestPollOnce_MarkDownPathViaSubscribeTick(t *testing.T) {
-	// Short interval + cancel after first failed poll covers pollOnce error branch via Subscribe.
-	d := New(core.Device{ID: "d", Endpoint: "opc.tcp://127.0.0.1:1"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	// Connected mock that fails Read → Subscribe pollOnce error → emitBadSamples.
+	s := &mockSession{readFn: func(context.Context, *ua.ReadRequest) (*ua.ReadResponse, error) {
+		return nil, errors.New("read fail")
+	}}
+	d := driverWithSession(s)
+	d.device.Endpoint = "opc.tcp://127.0.0.1:1" // reconnect will fail fast-ish
+	ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancel()
 	out := make(chan core.Sample, 8)
-	_ = d.Subscribe(ctx, []core.Tag{
-		{ID: "a", NodeID: "ns=4;i=1", DataType: core.ValueFloat64, Enabled: true, IntervalMs: 20},
-	}, out)
-	// Expect Bad samples from emitBadSamples after poll failure.
-	deadline := time.After(500 * time.Millisecond)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- d.Subscribe(ctx, []core.Tag{
+			{ID: "a", NodeID: "ns=4;i=1", DataType: core.ValueFloat64, Enabled: true, IntervalMs: 20},
+		}, out)
+	}()
+	deadline := time.After(800 * time.Millisecond)
+	var bad core.Sample
 	sawBad := false
 	for !sawBad {
 		select {
 		case s := <-out:
 			if s.Quality == core.QualityBad {
+				bad = s
 				sawBad = true
 			}
 		case <-deadline:
-			// reconnect may dominate; coverage of Subscribe loop is still the goal
-			return
+			t.Fatal("expected Bad sample after poll failure")
 		}
 	}
+	if bad.TagID != "a" {
+		t.Fatalf("bad sample %#v", bad)
+	}
+	<-errCh // Subscribe exits on ctx cancel
 }

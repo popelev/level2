@@ -204,8 +204,18 @@ func TestBrowseChildren_MockTree(t *testing.T) {
 			leafN = &nodes[i]
 		}
 	}
-	if leafN == nil || !leafN.IsLeaf || leafN.DataType != string(core.ValueFloat64) {
+	if leafN == nil || !leafN.IsLeaf || leafN.DataType != string(core.ValueFloat64) || leafN.NodeID != "ns=4;i=2" {
 		t.Fatalf("leaf %#v", leafN)
+	}
+	byName := map[string]core.BrowseNode{}
+	for _, n := range nodes {
+		byName[n.BrowseName] = n
+	}
+	if f, ok := byName["Folder"]; !ok || f.IsLeaf || f.NodeClass == "" {
+		t.Fatalf("folder %#v", byName["Folder"])
+	}
+	if u, ok := byName["UDT"]; !ok || u.IsLeaf {
+		t.Fatalf("UDT structure must not be leaf: %#v", byName["UDT"])
 	}
 
 	if _, err := d.BrowseChildren(context.Background(), "bad-node"); err == nil {
@@ -349,19 +359,24 @@ func TestExpandStructure_MockLeaves(t *testing.T) {
 	if byPath["rValueOut"].DataType != core.ValueFloat64 {
 		t.Fatalf("%#v", byPath["rValueOut"])
 	}
-	if byPath["Nested.sUnit"].DataType != core.ValueString {
+	if byPath["Nested.sUnit"].DataType != core.ValueString || byPath["Nested.sUnit"].NodeID != "ns=4;i=13" {
 		t.Fatalf("%#v", byPath["Nested.sUnit"])
+	}
+	if byPath["rValueOut"].NodeID != "ns=4;i=11" {
+		t.Fatalf("%#v", byPath["rValueOut"])
 	}
 	if len(phases) < 2 {
 		t.Fatalf("phases=%v", phases)
 	}
 
-	// depth limit: walk returns nil without error when depth exceeds max
-	out, err := d.ExpandStructure(context.Background(), "ns=4;i=10", "p", 0)
-	if err != nil {
+	// depth already past max → empty, no error (ExpandStructure remaps maxDepth<=0 to 16)
+	var limited []core.ExpandedTag
+	if err := d.expandWalk(context.Background(), "ns=4;i=10", "p", "", 5, 3, &limited); err != nil {
 		t.Fatal(err)
 	}
-	_ = out
+	if len(limited) != 0 {
+		t.Fatalf("depth>maxDepth want empty, got %#v", limited)
+	}
 }
 
 func TestBrowseRefsMulti_BatchesAndNotConnected(t *testing.T) {
@@ -382,6 +397,11 @@ func TestBrowseRefsMulti_BatchesAndNotConnected(t *testing.T) {
 	got, err := d.browseRefsMulti(context.Background(), ids)
 	if err != nil || len(got) != len(ids) || calls != 2 {
 		t.Fatalf("len=%d calls=%d err=%v", len(got), calls, err)
+	}
+	for i, refs := range got {
+		if len(refs) != 0 {
+			t.Fatalf("slot %d want empty refs, got %#v", i, refs)
+		}
 	}
 
 	d2 := New(core.Device{ID: "x"}, nil)
@@ -470,6 +490,13 @@ func TestPollBatch_AndPollOnceWorkers(t *testing.T) {
 	if len(out) != 120 {
 		t.Fatalf("got %d samples", len(out))
 	}
+	sFirst := <-out
+	if sFirst.Quality != core.QualityGood || sFirst.ValueNum == nil || *sFirst.ValueNum < 1 {
+		t.Fatalf("first sample %#v", sFirst)
+	}
+	if sFirst.TagID == "" {
+		t.Fatal("missing TagID")
+	}
 
 	// map error → Bad sample
 	sBad := &mockSession{readFn: func(_ context.Context, req *ua.ReadRequest) (*ua.ReadResponse, error) {
@@ -482,7 +509,7 @@ func TestPollBatch_AndPollOnceWorkers(t *testing.T) {
 		t.Fatal(err)
 	}
 	s0 := <-ch
-	if s0.Quality != core.QualityBad {
+	if s0.Quality != core.QualityBad || s0.TagID != "t0" {
 		t.Fatalf("%#v", s0)
 	}
 
@@ -496,8 +523,10 @@ func TestPollBatch_AndPollOnceWorkers(t *testing.T) {
 }
 
 func TestWriteValue_AndReadValue_Mock(t *testing.T) {
+	var wrote *ua.WriteRequest
 	s := &mockSession{
-		writeFn: func(context.Context, *ua.WriteRequest) (*ua.WriteResponse, error) {
+		writeFn: func(_ context.Context, req *ua.WriteRequest) (*ua.WriteResponse, error) {
+			wrote = req
 			return &ua.WriteResponse{Results: []ua.StatusCode{ua.StatusOK}}, nil
 		},
 		readFn: func(context.Context, *ua.ReadRequest) (*ua.ReadResponse, error) {
@@ -510,17 +539,38 @@ func TestWriteValue_AndReadValue_Mock(t *testing.T) {
 	if err := d.WriteValue(context.Background(), tag, 1.5); err != nil {
 		t.Fatal(err)
 	}
+	if wrote == nil || len(wrote.NodesToWrite) != 1 {
+		t.Fatalf("write req %#v", wrote)
+	}
+	wv := wrote.NodesToWrite[0]
+	if wv.NodeID == nil || wv.NodeID.IntID() != 1 || wv.AttributeID != ua.AttributeIDValue {
+		t.Fatalf("write target %#v", wv)
+	}
+	if wv.Value == nil || wv.Value.Value == nil {
+		t.Fatalf("write value %#v", wv.Value)
+	}
+	if f, ok := wv.Value.Value.Value().(float64); !ok || f != 1.5 {
+		t.Fatalf("write payload %#v", wv.Value.Value.Value())
+	}
 	sample, err := d.ReadValue(context.Background(), tag)
-	if err != nil || sample.Quality != core.QualityGood {
+	if err != nil || sample.Quality != core.QualityGood || sample.TagID != "t" {
 		t.Fatalf("%#v %v", sample, err)
+	}
+	if sample.ValueNum == nil || *sample.ValueNum != 1.5 {
+		t.Fatalf("read value %#v", sample.ValueNum)
 	}
 
 	sRej := &mockSession{writeFn: func(context.Context, *ua.WriteRequest) (*ua.WriteResponse, error) {
 		return &ua.WriteResponse{Results: []ua.StatusCode{ua.StatusBad}}, nil
 	}}
 	dRej := driverWithSession(sRej)
-	if err := dRej.WriteValue(context.Background(), tag, 1.0); err == nil {
-		t.Fatal("reject")
+	err = dRej.WriteValue(context.Background(), tag, 1.0)
+	var wst *WriteStatusError
+	if err == nil || !errors.As(err, &wst) {
+		t.Fatalf("reject: %v", err)
+	}
+	if wst.Status != ua.StatusBad {
+		t.Fatalf("status %#v", wst.Status)
 	}
 
 	sEmpty := &mockSession{writeFn: func(context.Context, *ua.WriteRequest) (*ua.WriteResponse, error) {
@@ -576,6 +626,9 @@ func TestBrowseRefsAt_ParseAndOK(t *testing.T) {
 	refs, err := d.browseRefsAt(context.Background(), "ns=4;i=7")
 	if err != nil || len(refs) != 1 {
 		t.Fatalf("%v %v", refs, err)
+	}
+	if refs[0].BrowseName == nil || refs[0].BrowseName.Name != "a" || refs[0].NodeID.NodeID.IntID() != 1 {
+		t.Fatalf("ref %#v", refs[0])
 	}
 	if _, err := d.browseRefsAt(context.Background(), "bad"); err == nil {
 		t.Fatal("parse")

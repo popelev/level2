@@ -93,6 +93,12 @@ func TestBrowseAllReferences_Continuation(t *testing.T) {
 	if len(refs) != 2 || calls != 1 {
 		t.Fatalf("refs=%d calls=%d", len(refs), calls)
 	}
+	if refs[0].BrowseName == nil || refs[0].BrowseName.Name != "A" {
+		t.Fatalf("first %#v", refs[0])
+	}
+	if refs[1].BrowseName == nil || refs[1].BrowseName.Name != "B" || refs[1].NodeClass != ua.NodeClassObject {
+		t.Fatalf("second %#v", refs[1])
+	}
 }
 
 func TestBrowseAllReferences_BrowseNextErrors(t *testing.T) {
@@ -240,8 +246,9 @@ func TestIsScalarVariableLeaf(t *testing.T) {
 func TestFormatNodeID_GUID(t *testing.T) {
 	g := ua.NewGUIDNodeID(2, "00112233-4455-6677-8899-aabbccddeeff")
 	got := formatNodeID(g)
-	if got == "" || got[:4] != "ns=2" {
-		t.Fatalf("%q", got)
+	want := "ns=2;g=00112233-4455-6677-8899-AABBCCDDEEFF"
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
 	}
 }
 
