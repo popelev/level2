@@ -8,6 +8,7 @@ pipeline {
   options {
     timestamps()
     disableConcurrentBuilds()
+    // Old Jenkins build records (logs/artifacts) — unrelated to Docker image GC, but keeps JENKINS_HOME bounded.
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
@@ -21,6 +22,8 @@ pipeline {
     IMAGE_NAME = 'level2-collector'
     // Override in Jenkins if you use a registry: e.g. registry.local/level2-collector
     IMAGE_REPO = "${IMAGE_NAME}"
+    // How many level2-collector:ci-<sha> tags to keep on the Docker host (ci-latest always kept).
+    CI_IMAGE_KEEP = '5'
   }
 
   stages {
@@ -119,6 +122,34 @@ pipeline {
         reportName: 'Go Coverage HTML',
         reportTitles: 'Go Coverage'
       ])
+      // Host Docker GC: only level2-collector:ci-<sha> tags. Does not touch
+      // platform-collector / level2-jenkins / compose runtime images. Images still
+      // referenced by a running container are skipped by docker rmi.
+      sh '''
+        set -euo pipefail
+        KEEP="${CI_IMAGE_KEEP:-5}"
+        REPO="${IMAGE_REPO:-level2-collector}"
+        echo "Pruning ${REPO}:ci-* tags — keep newest ${KEEP} (plus ci-latest)"
+        mapfile -t LINES < <(
+          docker images --format '{{.CreatedAt}}\t{{.Repository}}:{{.Tag}}\t{{.ID}}' "${REPO}" 2>/dev/null \
+            | awk -F'\t' -v p="${REPO}:ci-" '$2 ~ "^"p && $2 !~ /:ci-latest$/ {print}' \
+            | sort -r
+        )
+        n=0
+        for line in "${LINES[@]:-}"; do
+          [ -n "$line" ] || continue
+          n=$((n + 1))
+          tag=$(printf '%s' "$line" | cut -f2)
+          id=$(printf '%s' "$line" | cut -f3)
+          if [ "$n" -le "$KEEP" ]; then
+            echo "keep  ${tag} (${id})"
+            continue
+          fi
+          echo "rm    ${tag} (${id})"
+          docker rmi "$tag" 2>/dev/null || docker rmi "$id" 2>/dev/null || true
+        done
+        docker image prune -f >/dev/null || true
+      '''
     }
   }
 }
