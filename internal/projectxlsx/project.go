@@ -236,12 +236,12 @@ func mapHeaders(header []string) map[string]int {
 	idx := map[string]int{
 		"id": -1, "endpoint": -1, "username": -1, "security": -1,
 		"device_id": -1, "path": -1, "node_id": -1, "datatype": -1,
-		"enabled": -1, "interval_ms": -1, "writable": -1,
+		"enabled": -1, "interval_ms": -1, "writable": -1, "simulate": -1,
 	}
 	for i, h := range header {
 		key := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(h), " ", "_"))
 		switch key {
-		case "id", "endpoint", "username", "security", "path", "datatype", "enabled", "writable":
+		case "id", "endpoint", "username", "security", "path", "datatype", "enabled", "writable", "simulate":
 			idx[key] = i
 		case "device_id", "deviceid":
 			idx["device_id"] = i
