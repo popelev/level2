@@ -16,6 +16,16 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// uaSession is the subset of *opcua.Client used by Driver (injectable for offline tests).
+type uaSession interface {
+	Browse(context.Context, *ua.BrowseRequest) (*ua.BrowseResponse, error)
+	BrowseNext(context.Context, *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error)
+	Read(context.Context, *ua.ReadRequest) (*ua.ReadResponse, error)
+	Write(context.Context, *ua.WriteRequest) (*ua.WriteResponse, error)
+	Close(context.Context) error
+	NamespaceArray(context.Context) ([]string, error)
+}
+
 // Driver is an OPC UA client that polls leaf nodes (M1).
 // Structure nodes are rejected at value-map time — expand comes in M2.
 type Driver struct {
@@ -23,7 +33,7 @@ type Driver struct {
 	log    *slog.Logger
 
 	mu      sync.Mutex
-	client  *opcua.Client
+	client  uaSession
 	alive   atomic.Bool
 	nsCache map[string]uint16
 }

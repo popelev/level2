@@ -80,7 +80,7 @@ func (d *Driver) isScalarVariableLeaf(ctx context.Context, c opcuaClient, ref *u
 	return false
 }
 
-// opcuaClient is the subset of *opcua.Client used for browsing.
+// opcuaClient is the browse subset of uaSession (kept for helpers/tests).
 type opcuaClient interface {
 	Browse(context.Context, *ua.BrowseRequest) (*ua.BrowseResponse, error)
 	BrowseNext(context.Context, *ua.BrowseNextRequest) (*ua.BrowseNextResponse, error)
