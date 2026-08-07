@@ -22,6 +22,18 @@ import (
 	"github.com/popelev/level2/internal/store"
 )
 
+// dbBackend is the Timescale historian surface used by HTTP handlers.
+// Narrowed from *timescale.Historian so unit tests can inject fakes without a live DB.
+type dbBackend interface {
+	Status(ctx context.Context, databaseURL string) timescale.ConnectionStatus
+	Capacity(ctx context.Context) (timescale.CapacityStats, error)
+	CapacityPolicy() timescale.CapacityPolicySettings
+	SetCapacityPolicy(percent int, policy string)
+	WipeSamples(ctx context.Context) (timescale.WipeResult, error)
+	WriteBatch(ctx context.Context, samples []core.Sample) error
+	Ping(ctx context.Context) error
+}
+
 // Server exposes REST + WS for the collector (M3).
 type Server struct {
 	Log      *slog.Logger
@@ -29,7 +41,7 @@ type Server struct {
 	Tags     func() []core.Tag
 	Devices  func() []core.Device
 	History  core.HistoryQuerier
-	DB       *timescale.Historian
+	DB       dbBackend
 	Browser  core.Browser // fallback when device_id omitted
 	DevHub   *devruntime.Hub
 	Cfg      *config.Store
