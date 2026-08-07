@@ -195,6 +195,29 @@ func coerceDateTime(v any) (time.Time, error) {
 	}
 }
 
+// ReadValue implements core.ValueReader — single-node OPC UA AttributeIDValue read (write-then-verify).
+// Does not hold the client mutex across sleeps; safe to call after WriteValue without nesting locks.
+func (d *Driver) ReadValue(ctx context.Context, tag core.Tag) (core.Sample, error) {
+	if !d.Connected() {
+		return core.Sample{}, fmt.Errorf("not connected")
+	}
+	views, err := PrepareTags([]core.Tag{tag})
+	if err != nil {
+		return core.Sample{}, err
+	}
+	ch := make(chan core.Sample, 1)
+	if err := d.pollBatch(ctx, views, ch); err != nil {
+		diag.OPCWrite(diag.LevelError, d.device.ID, tag.ID, "opc verify read failed", err.Error())
+		return core.Sample{}, err
+	}
+	select {
+	case s := <-ch:
+		return s, nil
+	default:
+		return core.Sample{}, fmt.Errorf("empty read response")
+	}
+}
+
 // WriteValue implements core.ValueWriter — single-node OPC UA AttributeIDValue write.
 func (d *Driver) WriteValue(ctx context.Context, tag core.Tag, value any) error {
 	if !d.Connected() {

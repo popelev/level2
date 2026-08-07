@@ -18,6 +18,19 @@ func (w *writeCapable) WriteValue(_ context.Context, _ core.Tag, value any) erro
 	return nil
 }
 
+type readWriteCapable struct {
+	writeCapable
+	sample core.Sample
+}
+
+func (r *readWriteCapable) ReadValue(_ context.Context, tag core.Tag) (core.Sample, error) {
+	s := r.sample
+	if s.TagID == "" {
+		s.TagID = tag.ID
+	}
+	return s, nil
+}
+
 func TestHub_InjectDriverAndValueWriter(t *testing.T) {
 	h := NewHub(testLog(), true)
 	ctx := context.Background()
@@ -26,8 +39,11 @@ func TestHub_InjectDriverAndValueWriter(t *testing.T) {
 	if _, err := h.ValueWriter("missing"); err == nil {
 		t.Fatal("expected missing driver error")
 	}
+	if _, err := h.ValueReader("missing"); err == nil {
+		t.Fatal("expected missing reader error")
+	}
 
-	drv := &writeCapable{}
+	drv := &readWriteCapable{sample: core.Sample{TagID: "t", Quality: core.QualityGood}}
 	br := simbrowser.NewDemo()
 	h.InjectDriver(dev, drv, br)
 
@@ -41,11 +57,22 @@ func TestHub_InjectDriverAndValueWriter(t *testing.T) {
 	if drv.last != 42 {
 		t.Fatalf("wrote %#v", drv.last)
 	}
+	rd, err := h.ValueReader("w1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := rd.ReadValue(ctx, core.Tag{ID: "t"})
+	if err != nil || s.TagID != "t" {
+		t.Fatalf("read %#v err=%v", s, err)
+	}
 
 	// Non-writer driver.
 	h.InjectDriver(dev, &alwaysOn{}, br)
 	if _, err := h.ValueWriter("w1"); err == nil {
 		t.Fatal("expected no write support")
+	}
+	if _, err := h.ValueReader("w1"); err == nil {
+		t.Fatal("expected no read support")
 	}
 
 	// Nil driver → no driver error.

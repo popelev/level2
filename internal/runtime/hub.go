@@ -125,6 +125,21 @@ func (h *Hub) ValueWriter(deviceID string) (core.ValueWriter, error) {
 	return w, nil
 }
 
+// ValueReader returns a core.ValueReader for the device if the driver supports single-node reads.
+func (h *Hub) ValueReader(deviceID string) (core.ValueReader, error) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	ent, ok := h.entries[deviceID]
+	if !ok || ent.Driver == nil {
+		return nil, fmt.Errorf("no driver for device %q", deviceID)
+	}
+	r, ok := ent.Driver.(core.ValueReader)
+	if !ok {
+		return nil, fmt.Errorf("device %q does not support OPC readback", deviceID)
+	}
+	return r, nil
+}
+
 func (h *Hub) newEntry(ctx context.Context, dev core.Device) (*Entry, error) {
 	if h.useSim {
 		demo := simbrowser.NewDemo()

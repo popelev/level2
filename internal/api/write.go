@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/popelev/level2/internal/core"
@@ -19,33 +21,45 @@ const writeTimeout = 5 * time.Second
 const maxBatchWrites = 100
 
 type writeValueBody struct {
-	Value     any     `json:"value"`
-	ValueNum  *float64 `json:"value_num"`
-	ValueText *string  `json:"value_text"`
-	ValueBool *bool    `json:"value_bool"`
-	DeviceID  string   `json:"device_id"`
+	Value           any      `json:"value"`
+	ValueNum        *float64 `json:"value_num"`
+	ValueText       *string  `json:"value_text"`
+	ValueBool       *bool    `json:"value_bool"`
+	DeviceID        string   `json:"device_id"`
+	Verify          *bool    `json:"verify"`
+	VerifyTimeoutMs *int     `json:"verify_timeout_ms"`
+	Optimistic      *bool    `json:"optimistic"`
 }
 
 type writeValueResponse struct {
-	TagID    string        `json:"tag_id"`
-	DeviceID string        `json:"device_id"`
-	NodeID   string        `json:"node_id"`
-	Status   string        `json:"status"`
-	Written  sampleDTOType `json:"written"`
-	Verified bool          `json:"verified"`
+	TagID    string         `json:"tag_id"`
+	DeviceID string         `json:"device_id"`
+	NodeID   string         `json:"node_id"`
+	Status   string         `json:"status"`
+	Written  sampleDTOType  `json:"written"`
+	Verified bool           `json:"verified"`
+	Observed *sampleDTOType `json:"observed,omitempty"`
+	Error    string         `json:"error,omitempty"`
+	Message  string         `json:"message,omitempty"`
 }
 
 type batchWriteBody struct {
-	Writes []batchWriteItem `json:"writes"`
+	Writes          []batchWriteItem `json:"writes"`
+	Verify          *bool            `json:"verify"`
+	VerifyTimeoutMs *int             `json:"verify_timeout_ms"`
+	Optimistic      *bool            `json:"optimistic"`
 }
 
 type batchWriteItem struct {
-	TagID     string   `json:"tag_id"`
-	DeviceID  string   `json:"device_id"`
-	Value     any      `json:"value"`
-	ValueNum  *float64 `json:"value_num"`
-	ValueText *string  `json:"value_text"`
-	ValueBool *bool    `json:"value_bool"`
+	TagID           string   `json:"tag_id"`
+	DeviceID        string   `json:"device_id"`
+	Value           any      `json:"value"`
+	ValueNum        *float64 `json:"value_num"`
+	ValueText       *string  `json:"value_text"`
+	ValueBool       *bool    `json:"value_bool"`
+	Verify          *bool    `json:"verify"`
+	VerifyTimeoutMs *int     `json:"verify_timeout_ms"`
+	Optimistic      *bool    `json:"optimistic"`
 }
 
 type batchWriteResult struct {
@@ -55,6 +69,8 @@ type batchWriteResult struct {
 	OK       bool           `json:"ok"`
 	Status   string         `json:"status,omitempty"`
 	Written  *sampleDTOType `json:"written,omitempty"`
+	Verified bool           `json:"verified,omitempty"`
+	Observed *sampleDTOType `json:"observed,omitempty"`
 	Error    string         `json:"error,omitempty"`
 	HTTP     int            `json:"http_status"`
 }
@@ -63,6 +79,12 @@ type batchWriteResponse struct {
 	Results   []batchWriteResult `json:"results"`
 	OKCount   int                `json:"ok_count"`
 	FailCount int                `json:"fail_count"`
+}
+
+type writeOptions struct {
+	verify          bool
+	verifyTimeoutMs int
+	optimistic      bool
 }
 
 func (s *Server) opcWriteEnabled() bool {
@@ -110,8 +132,24 @@ func (s *Server) handleWriteTagValue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	res := s.executeWrite(r.Context(), tagID, body.DeviceID, raw)
+	opts := resolveWriteOptions(body.Verify, body.VerifyTimeoutMs, body.Optimistic, r)
+	res := s.executeWrite(r.Context(), tagID, body.DeviceID, raw, opts)
 	if !res.OK {
+		// Verify mismatch / verify read failure: return JSON with written + observed (non-transactional).
+		if res.Written != nil && (res.HTTP == http.StatusConflict || strings.Contains(res.Error, "verify")) {
+			writeJSON(w, res.HTTP, writeValueResponse{
+				TagID:    res.TagID,
+				DeviceID: res.DeviceID,
+				NodeID:   res.NodeID,
+				Status:   res.Status,
+				Written:  *res.Written,
+				Verified: false,
+				Observed: res.Observed,
+				Error:    "verify_failed",
+				Message:  res.Error,
+			})
+			return
+		}
 		http.Error(w, res.Error, res.HTTP)
 		return
 	}
@@ -121,7 +159,8 @@ func (s *Server) handleWriteTagValue(w http.ResponseWriter, r *http.Request) {
 		NodeID:   res.NodeID,
 		Status:   res.Status,
 		Written:  *res.Written,
-		Verified: false,
+		Verified: res.Verified,
+		Observed: res.Observed,
 	})
 }
 
@@ -175,7 +214,20 @@ func (s *Server) handleBatchWriteTagValues(w http.ResponseWriter, r *http.Reques
 			out.FailCount++
 			continue
 		}
-		res := s.executeWrite(r.Context(), item.TagID, item.DeviceID, raw)
+		verify := body.Verify
+		if item.Verify != nil {
+			verify = item.Verify
+		}
+		timeout := body.VerifyTimeoutMs
+		if item.VerifyTimeoutMs != nil {
+			timeout = item.VerifyTimeoutMs
+		}
+		optimistic := body.Optimistic
+		if item.Optimistic != nil {
+			optimistic = item.Optimistic
+		}
+		opts := resolveWriteOptions(verify, timeout, optimistic, r)
+		res := s.executeWrite(r.Context(), item.TagID, item.DeviceID, raw, opts)
 		out.Results = append(out.Results, res)
 		if res.OK {
 			out.OKCount++
@@ -187,7 +239,41 @@ func (s *Server) handleBatchWriteTagValues(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) executeWrite(parent context.Context, tagID, deviceIDHint string, raw any) batchWriteResult {
+func resolveWriteOptions(verify *bool, timeoutMs *int, optimistic *bool, r *http.Request) writeOptions {
+	opts := writeOptions{optimistic: true}
+	if verify != nil {
+		opts.verify = *verify
+	}
+	if q := r.URL.Query().Get("verify"); q != "" {
+		opts.verify = parseBoolQuery(q)
+	}
+	if timeoutMs != nil {
+		opts.verifyTimeoutMs = *timeoutMs
+	}
+	if q := r.URL.Query().Get("verify_timeout_ms"); q != "" {
+		if n, err := strconv.Atoi(q); err == nil {
+			opts.verifyTimeoutMs = n
+		}
+	}
+	if optimistic != nil {
+		opts.optimistic = *optimistic
+	}
+	if q := r.URL.Query().Get("optimistic"); q != "" {
+		opts.optimistic = parseBoolQuery(q)
+	}
+	return opts
+}
+
+func parseBoolQuery(q string) bool {
+	switch strings.ToLower(strings.TrimSpace(q)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) executeWrite(parent context.Context, tagID, deviceIDHint string, raw any, opts writeOptions) batchWriteResult {
 	deviceID, tag, err := s.resolveWritableTag(tagID, deviceIDHint)
 	if err != nil {
 		code := http.StatusNotFound
@@ -264,16 +350,124 @@ func (s *Server) executeWrite(parent context.Context, tagID, deviceIDHint string
 	}
 
 	written := sampleFromCoerced(tag.ID, tag.DataType, coerced)
-	if s.Live != nil {
-		s.Live.Update(written)
-	}
-	if s.Hub != nil {
-		s.Hub.Broadcast(written)
-	}
 	dto := sampleDTO(written)
+
+	publishLive := func(sample core.Sample) {
+		if s.Live != nil {
+			s.Live.Update(sample)
+		}
+		if s.Hub != nil {
+			s.Hub.Broadcast(sample)
+		}
+	}
+
+	if opts.optimistic {
+		publishLive(written)
+	}
+
+	if !opts.verify {
+		if !opts.optimistic {
+			publishLive(written)
+		}
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: true, Status: "Good", Written: &dto, Verified: false, HTTP: http.StatusOK,
+		}
+	}
+
+	reader, err := s.DevHub.ValueReader(deviceID)
+	if err != nil {
+		diag.OPCWrite(diag.LevelWarn, deviceID, tag.ID, "opc verify unavailable", err.Error())
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: false, Status: "Good", Written: &dto,
+			Error: fmt.Sprintf("write ok but verify unavailable: %v (non-transactional)", err),
+			HTTP:  http.StatusConflict,
+		}
+	}
+
+	verifyTimeout := normalizeVerifyTimeoutMs(opts.verifyTimeoutMs)
+	vctx, vcancel := context.WithTimeout(parent, verifyTimeout)
+	defer vcancel()
+
+	observed, match, verr := s.verifyWriteReadback(vctx, reader, tag, written)
+	var obsDTO *sampleDTOType
+	if observed != nil {
+		d := sampleDTO(*observed)
+		obsDTO = &d
+	}
+	if verr != nil {
+		diag.OPCWrite(diag.LevelError, deviceID, tag.ID, "opc verify read failed", verr.Error())
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: false, Status: "Good", Written: &dto, Observed: obsDTO,
+			Error: fmt.Sprintf("write ok but verify read failed: %v (non-transactional)", verr),
+			HTTP:  http.StatusBadGateway,
+		}
+	}
+	if !match {
+		msg := "write ok but readback mismatch (non-transactional)"
+		diag.OPCWrite(diag.LevelWarn, deviceID, tag.ID, "opc verify mismatch", msg)
+		return batchWriteResult{
+			TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
+			OK: false, Status: "Good", Written: &dto, Observed: obsDTO, Verified: false,
+			Error: msg, HTTP: http.StatusConflict,
+		}
+	}
+
+	if observed != nil {
+		if !opts.optimistic {
+			publishLive(*observed)
+		} else {
+			// Refresh Live with authoritative readback timestamps/values.
+			publishLive(*observed)
+		}
+	} else if !opts.optimistic {
+		publishLive(written)
+	}
+
+	diag.OPCWrite(diag.LevelInfo, deviceID, tag.ID, "opc write verified", fmt.Sprintf("node=%s", tag.NodeID))
 	return batchWriteResult{
 		TagID: tag.ID, DeviceID: deviceID, NodeID: tag.NodeID,
-		OK: true, Status: "Good", Written: &dto, HTTP: http.StatusOK,
+		OK: true, Status: "Good", Written: &dto, Observed: obsDTO, Verified: true, HTTP: http.StatusOK,
+	}
+}
+
+func (s *Server) verifyWriteReadback(ctx context.Context, reader core.ValueReader, tag core.Tag, expected core.Sample) (*core.Sample, bool, error) {
+	var last *core.Sample
+	var lastErr error
+	for {
+		sample, err := reader.ReadValue(ctx, tag)
+		if err != nil {
+			lastErr = err
+			if ctx.Err() != nil {
+				if last != nil {
+					return last, false, nil
+				}
+				return nil, false, lastErr
+			}
+		} else {
+			cp := sample
+			last = &cp
+			if writeVerifyMatch(expected, sample, tag.DataType) {
+				return last, true, nil
+			}
+		}
+
+		// Wait briefly then retry until verify timeout (context). Do not hold OPC client locks across sleep.
+		timer := time.NewTimer(verifyPollInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			if last != nil {
+				return last, false, nil
+			}
+			if lastErr != nil {
+				return nil, false, lastErr
+			}
+			return nil, false, ctx.Err()
+		case <-timer.C:
+		}
 	}
 }
 

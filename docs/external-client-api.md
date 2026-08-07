@@ -2,7 +2,7 @@
 
 Design for **third-party programs** (any language) that read or write process variables through Level2’s REST/WebSocket API. Level2 stays the **OPC UA gateway**: clients never embed an OPC stack; they call `:8080`, and the collector talks to the PLC.
 
-**Status:** reads, discovery, PLC write (single + batch), optional API token, tag `writable`, WS tag filter. Write is gated by `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default **off** → **403**). Design detail: [opc-write-mode.md](opc-write-mode.md).
+**Status:** reads, discovery, PLC write (single + batch), optional API token, tag `writable`, WS tag filter, **write-then-verify**. Write is gated by `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default **off** → **403**). Design detail: [opc-write-mode.md](opc-write-mode.md).
 
 **Canonical machine-readable contract:** [`api/openapi.yaml`](../api/openapi.yaml) — also `GET /api/v1/openapi.yaml` and Swagger UI at **`/docs`**. This markdown remains a narrative guide; when they disagree, **OpenAPI wins**.
 
@@ -191,8 +191,18 @@ HTTP **200** when the request parses (max 100 items). Response includes per-item
 
 - OPC Write is **not** automatically idempotent across retries: a second PUT after a lost HTTP response may write again (usually harmless for setpoints; dangerous for edge-triggered commands).
 - Clients should treat success as “accepted by Level2/OPC”, not a distributed transaction.
-- **Recommendation:** avoid silent client retries on timeout without checking live/readback; prefer `verify` (write-doc Phase 3) when it exists.
+- **Recommendation:** avoid silent client retries on timeout without checking live/readback; prefer `"verify": true` / `?verify=true` (optional `verify_timeout_ms`, default 2000).
+- On verify mismatch Level2 returns **409** JSON with `written` + `observed` (write already applied).
 - No `Idempotency-Key` header today; optional later if command-style tags appear.
+
+### 4.4. Write-then-verify
+
+```http
+PUT /api/v1/tags/{tag_id}/value?verify=true&verify_timeout_ms=2000
+{ "value": 42.5, "device_id": "s7_1500", "verify": true }
+```
+
+`verified: true` only when OPC readback matches (float epsilon). Batch supports the same flags at request or item level.
 
 ---
 

@@ -40,7 +40,7 @@ curl -s 'http://127.0.0.1:8080/api/v1/browse?node_id=ns%3D4%3Bi%3D4207'
 | POST | `/api/v1/devices/{id}/tags` | upsert one tag |
 | POST | `/api/v1/devices/{id}/tags/sync` | **overwrite** datatypes from OPC DataType Attribute (batched); `{"tag_ids":[]}` = all — see [docs/opc-datatype-sync.md](../../docs/opc-datatype-sync.md) |
 | DELETE | `/api/v1/devices/{id}/tags` | remove all tags on device |
-| PUT | `/api/v1/tags/{id}/value` | OPC Write; requires write gate + `writable` (+ token if set) — [docs/opc-write-mode.md](../../docs/opc-write-mode.md) |
+| PUT | `/api/v1/tags/{id}/value` | OPC Write; optional `?verify=true` / body `verify`; requires write gate + `writable` (+ token if set) — [docs/opc-write-mode.md](../../docs/opc-write-mode.md) |
 | POST | `/api/v1/tags/values` | Batch OPC Write (partial success, max 100); same gates |
 | GET | `/api/v1/openapi.yaml` | OpenAPI 3 contract (canonical) |
 | GET | `/docs` | Swagger UI |

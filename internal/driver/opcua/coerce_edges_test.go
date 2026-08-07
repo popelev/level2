@@ -159,3 +159,11 @@ func TestWriteValue_NotConnected(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestReadValue_NotConnected(t *testing.T) {
+	d := New(core.Device{ID: "x"}, nil)
+	_, err := d.ReadValue(context.Background(), core.Tag{ID: "t", NodeID: "ns=4;i=1", DataType: core.ValueBool})
+	if err == nil || !strings.Contains(err.Error(), "not connected") {
+		t.Fatalf("got %v", err)
+	}
+}

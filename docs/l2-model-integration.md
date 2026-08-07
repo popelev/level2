@@ -48,8 +48,8 @@ flowchart TB
 1. `GET /readyz` (and optionally `GET /api/v1/devices`) until connected.
 2. Inputs: `GET /api/v1/ws/stream?tag_id=…` (server-side filter) and/or `GET /api/v1/tags`.
 3. Compute setpoints / commands from technology rules.
-4. Outputs: `PUT /api/v1/tags/{tag_id}/value` or batch `POST /api/v1/tags/values` (tags must be `writable: true`).
-5. Confirm via next Live/WS sample; **no silent retry** of writes after ambiguous timeouts.
+4. Outputs: `PUT /api/v1/tags/{tag_id}/value` or batch `POST /api/v1/tags/values` (tags must be `writable: true`). Prefer `"verify": true` (or `?verify=true`) when setpoints must be confirmed.
+5. Confirm via verify readback and/or next Live/WS sample; **no silent retry** of writes after ambiguous timeouts.
 
 Bind only on stable **`tag_id`** (+ `device_id` when needed). Level2 owns the DB write list / project; the model keeps its own Inputs/Outputs → `tag_id` mapping (versioned with the technology).
 
@@ -77,9 +77,9 @@ Enable write only on intentional lab/plant setups. Diagnostics category: `opc_wr
 |-------|----------|--------|
 | **0** | Reads, WS, history, OpenAPI/Swagger | Dry-run: mapping + HTTP/WS client; log intended writes without PUT |
 | **1** | OPC write MVP + OpenAPI + `/docs` | PUT outputs when gate on |
-| **2–3** (this delivery) | Batch write, tag `writable`, WS filter, API token | Production-minded model container on lab network |
+| **2–3** (this delivery) | Batch write, tag `writable`, WS filter, API token, **write-then-verify** | Production-minded model container on lab network |
 
-Still deferred: write-then-verify, split read/write roles, Admin UI writable toggle.
+Still deferred: split read/write roles, math model skeleton repo, TypeMismatch auto-retry.
 
 ---
 

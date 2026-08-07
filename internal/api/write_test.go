@@ -26,6 +26,13 @@ type mockWriter struct {
 	lastVal   any
 	err       error
 	calls     int
+
+	readSample core.Sample
+	readErr    error
+	readCalls  int
+	// readDelay simulates PLC lag before readback matches written value.
+	readDelayMatches int
+	readMismatch     core.Sample
 }
 
 func (m *mockWriter) Connect(context.Context) error    { return nil }
@@ -39,6 +46,39 @@ func (m *mockWriter) WriteValue(_ context.Context, tag core.Tag, value any) erro
 	m.lastTag = tag
 	m.lastVal = value
 	return m.err
+}
+func (m *mockWriter) ReadValue(_ context.Context, tag core.Tag) (core.Sample, error) {
+	m.readCalls++
+	if m.readErr != nil {
+		return core.Sample{}, m.readErr
+	}
+	if m.readDelayMatches > 0 && m.readCalls <= m.readDelayMatches {
+		if m.readMismatch.TagID != "" {
+			return m.readMismatch, nil
+		}
+		n := 0.0
+		return core.Sample{TagID: tag.ID, Quality: core.QualityGood, ValueNum: &n}, nil
+	}
+	if m.readSample.TagID != "" {
+		return m.readSample, nil
+	}
+	// Default: echo last written float/bool as Good sample.
+	s := core.Sample{TagID: tag.ID, Quality: core.QualityGood, Time: time.Now().UTC()}
+	switch v := m.lastVal.(type) {
+	case float64:
+		s.ValueNum = &v
+	case bool:
+		s.ValueBool = &v
+	case int64:
+		n := float64(v)
+		s.ValueNum = &n
+	case uint32:
+		n := float64(v)
+		s.ValueNum = &n
+	case string:
+		s.ValueText = &v
+	}
+	return s, nil
 }
 
 func writeTestServer(t *testing.T, enabled bool, w *mockWriter) (*Server, *http.ServeMux) {
@@ -430,6 +470,127 @@ func TestSampleFromCoerced(t *testing.T) {
 	s = sampleFromCoerced("t", core.ValueDateTime, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
 	if s.ValueText == nil || !strings.HasPrefix(*s.ValueText, "2026-01-02") {
 		t.Fatalf("%#v", s)
+	}
+}
+
+func TestHandleWriteTagValue_VerifyOK(t *testing.T) {
+	w := &mockWriter{connected: true}
+	_, mux := writeTestServer(t, true, w)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tags/Motor1.SpeedSP/value?verify=true",
+		bytes.NewReader([]byte(`{"value":42.5,"device_id":"s7_1500"}`)))
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d body %s", rr.Code, rr.Body.String())
+	}
+	var resp writeValueResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Verified || resp.Observed == nil || resp.Observed.ValueNum == nil || *resp.Observed.ValueNum != 42.5 {
+		t.Fatalf("%#v", resp)
+	}
+	if w.readCalls < 1 {
+		t.Fatalf("expected verify read, calls=%d", w.readCalls)
+	}
+}
+
+func TestHandleWriteTagValue_VerifyMismatch(t *testing.T) {
+	bad := 99.0
+	w := &mockWriter{
+		connected: true,
+		readSample: core.Sample{
+			TagID: "Motor1.SpeedSP", Quality: core.QualityGood, ValueNum: &bad,
+		},
+	}
+	_, mux := writeTestServer(t, true, w)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tags/Motor1.SpeedSP/value",
+		bytes.NewReader([]byte(`{"value":42.5,"device_id":"s7_1500","verify":true,"verify_timeout_ms":80}`)))
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("want 409 got %d body %s", rr.Code, rr.Body.String())
+	}
+	var resp writeValueResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Verified || resp.Written.ValueNum == nil || *resp.Written.ValueNum != 42.5 {
+		t.Fatalf("written %#v", resp)
+	}
+	if resp.Observed == nil || resp.Observed.ValueNum == nil || *resp.Observed.ValueNum != 99 {
+		t.Fatalf("observed %#v", resp)
+	}
+	if resp.Error != "verify_failed" {
+		t.Fatalf("error %#v", resp)
+	}
+}
+
+func TestHandleWriteTagValue_VerifyBodyFlag(t *testing.T) {
+	w := &mockWriter{connected: true}
+	_, mux := writeTestServer(t, true, w)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tags/Motor1.SpeedSP/value",
+		bytes.NewReader([]byte(`{"value":1.25,"device_id":"s7_1500","verify":true}`)))
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d body %s", rr.Code, rr.Body.String())
+	}
+	var resp writeValueResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Verified {
+		t.Fatalf("%#v", resp)
+	}
+}
+
+func TestHandleWriteTagValue_OptimisticFalse(t *testing.T) {
+	w := &mockWriter{connected: true}
+	s, mux := writeTestServer(t, true, w)
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/tags/Motor1.SpeedSP/value",
+		bytes.NewReader([]byte(`{"value":7,"device_id":"s7_1500","optimistic":false}`)))
+	mux.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("want 200 got %d body %s", rr.Code, rr.Body.String())
+	}
+	sample, ok := s.Live.Get("Motor1.SpeedSP")
+	if !ok || sample.ValueNum == nil || *sample.ValueNum != 7 {
+		t.Fatalf("live should update after write even when optimistic=false without verify: %#v ok=%v", sample, ok)
+	}
+}
+
+func TestWriteVerifyMatch(t *testing.T) {
+	n := 42.5
+	exp := core.Sample{Quality: core.QualityGood, ValueNum: &n}
+	obs := core.Sample{Quality: core.QualityGood, ValueNum: floatPtr(42.5 + 1e-9)}
+	if !writeVerifyMatch(exp, obs, core.ValueFloat64) {
+		t.Fatal("expected float epsilon match")
+	}
+	obs2 := core.Sample{Quality: core.QualityGood, ValueNum: floatPtr(43)}
+	if writeVerifyMatch(exp, obs2, core.ValueFloat64) {
+		t.Fatal("expected mismatch")
+	}
+	b := true
+	if !writeVerifyMatch(
+		core.Sample{Quality: core.QualityGood, ValueBool: &b},
+		core.Sample{Quality: core.QualityGood, ValueBool: &b},
+		core.ValueBool,
+	) {
+		t.Fatal("bool match")
+	}
+}
+
+func TestNormalizeVerifyTimeoutMs(t *testing.T) {
+	if normalizeVerifyTimeoutMs(0) != 2000*time.Millisecond {
+		t.Fatal("default")
+	}
+	if normalizeVerifyTimeoutMs(100) != 100*time.Millisecond {
+		t.Fatal("custom")
+	}
+	if normalizeVerifyTimeoutMs(999999) != 30000*time.Millisecond {
+		t.Fatal("cap")
 	}
 }
 

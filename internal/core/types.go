@@ -147,6 +147,12 @@ type ValueWriter interface {
 	WriteValue(ctx context.Context, tag Tag, value any) error
 }
 
+// ValueReader reads a scalar value from a configured tag's OPC node (optional driver capability).
+// Used for write-then-verify readback; returns a Sample mapped like the poll path.
+type ValueReader interface {
+	ReadValue(ctx context.Context, tag Tag) (Sample, error)
+}
+
 // Historian stores time series.
 type Historian interface {
 	EnsureSchema(ctx context.Context) error

@@ -4,7 +4,7 @@ Design for **writing process values** from Level2 into OPC UA nodes (Siemens S7-
 
 External programs (any language) should call the same REST write once it exists — gateway role, read paths, and client contract: [external-client-api.md](external-client-api.md).
 
-**Status:** Phase 2–3 hardening implemented (batch write, API token, tag `writable`, WS filter). REST write when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` is true (default **off** → **403**). OpenAPI: [`api/openapi.yaml`](../api/openapi.yaml), Swagger `/docs`.
+**Status:** Phase 2–3 hardening implemented (batch write, API token, tag `writable`, WS filter, **write-then-verify**). REST write when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` is true (default **off** → **403**). OpenAPI: [`api/openapi.yaml`](../api/openapi.yaml), Swagger `/docs`.
 
 ---
 
@@ -34,9 +34,10 @@ sequenceDiagram
     PLC-->>Drv: DataValues → FanIn / Live / historian
   end
 
-  Note over UI,API: Write path (stub)
+  Note over UI,API: Write path
   UI->>API: PUT /api/v1/tags/{id}/value
-  API-->>UI: 501 Not Implemented
+  API->>Drv: WriteValue (+ optional verify Read)
+  API-->>UI: 200 + written / verified
 ```
 
 ---
@@ -209,6 +210,20 @@ Prefer a single `value` field for UI simplicity; typed fields are optional alias
 }
 ```
 
+With `"verify": true` (or `?verify=true`) and matching OPC readback:
+
+```json
+{
+  "tag_id": "Motor1.SpeedSP",
+  "device_id": "s7_1500",
+  "node_id": "ns=4;i=4209",
+  "status": "Good",
+  "written": { "value_num": 42.5 },
+  "verified": true,
+  "observed": { "value_num": 42.5, "quality": 0 }
+}
+```
+
 **Errors:**
 
 | HTTP | When |
@@ -217,8 +232,8 @@ Prefer a single `value` field for UI simplicity; typed fields are optional alias
 | 403 | Global write disabled or tag `writable=false` |
 | 401 | API token configured and missing/wrong |
 | 404 | Unknown tag_id (or ambiguous without `device_id`) |
-| 409 | Device not connected |
-| 502 | OPC transport / StatusCode not Good (body includes status string, e.g. `BadUserAccessDenied`) |
+| 409 | Device not connected; or write-then-verify mismatch / verify unavailable (JSON body with `written` + `observed`) |
+| 502 | OPC transport / StatusCode not Good; or verify Read failed after successful Write (body includes status / detail) |
 | 501 | Removed once MVP ships (tests updated) |
 
 ### 4.2. Write by node_id (optional Phase 2)
@@ -246,15 +261,19 @@ POST /api/v1/tags/values
 - **Partial success:** HTTP **200** when the batch body parses; each item has `ok`, optional `error` / `http_status`, and `written` on success.
 - Same gates as single PUT: global enable, API token (if configured), per-tag `writable`, coerce, OPC Write, diag.
 
-### 4.4. Write-then-verify (Phase 3)
+### 4.4. Write-then-verify (Phase 3) — implemented
 
-Query param or body flag: `"verify": true`, optional `"verify_timeout_ms": 2000`.
+Query param or body flag: `"verify": true`, optional `"verify_timeout_ms": 2000` (default **2000**, cap **30000**).
+Also accepted on batch request / per-item. Optional `"optimistic": false` (default **true**) skips Live+WS until after write (and after successful verify when requested).
 
 After StatusOK Write:
 
-1. OPC **Read** same NodeId (or wait for next Live sample matching expected value within timeout).
-2. Set `"verified": true` only if readback matches (with float epsilon policy).
-3. On mismatch → **409** or **502** with both written and observed values (Write already applied — document as non-transactional).
+1. OPC **Read** same NodeId (retries every ~50 ms until match or timeout). Does **not** hold the OPC client lock across sleeps.
+2. Set `"verified": true` only if readback matches (floats: relative+absolute epsilon ≈ 1e-6; other types exact `SamePayload` with Good quality).
+3. On mismatch → **409** JSON with `error: verify_failed`, both `written` and `observed` (Write already applied — **non-transactional**).
+4. On verify Read transport failure after a successful Write → **502** with the same non-transactional note.
+
+Batch: request-level or per-item `verify`; failures set `ok=false` on that item while the batch HTTP status stays **200**.
 
 ---
 
@@ -339,10 +358,10 @@ Disable Set controls when:
 
 ### Phase 3 — write-then-verify & productization
 
-1. Verify Read / wait-for-Live match + epsilon.
-2. HTTP auth / role for writes.
-3. Audit persistence beyond ring buffer (if required).
-4. Sim driver Writer for CI without PLC.
+1. [x] Verify Read / wait-for-Live match + epsilon (`verify` / `verify_timeout_ms` / `optimistic`).
+2. [ ] HTTP auth / role for writes (shared API token exists; split read/write roles deferred).
+3. [ ] Audit persistence beyond ring buffer (if required).
+4. [ ] Sim driver Writer for CI without PLC (API tests use mock Writer/Reader).
 
 ---
 
@@ -375,9 +394,9 @@ Disable Set controls when:
 
 **Phase 2+**
 
-- [ ] Batch partial failure.
+- [x] Batch partial failure.
 - [ ] TypeMismatch retry.
-- [ ] Verify timeout / mismatch response.
+- [x] Verify timeout / mismatch response.
 
 ---
 
@@ -389,7 +408,7 @@ Disable Set controls when:
 4. **Exact Variant widths for Siemens:** rely on `tags/sync` DataType vs hardcode float32 for `float64` tags — may need one lab spike before Phase 1 merge.
 5. **Rename UI “Write to DB”** to reduce confusion — separate copy pass vs ship Set-value beside old labels.
 6. **Write without being in the tag list** (raw node_id) — defer or allow for power users?
-7. **Float equality** for verify / FanIn after write — reuse exact SamePayload or introduce epsilon for analogs?
+7. **Float equality** for verify / FanIn after write — verify uses relative+absolute epsilon (1e-6); FanIn suppress still uses exact `SamePayload`.
 
 ---
 
@@ -397,8 +416,9 @@ Disable Set controls when:
 
 | Component | Path |
 |-----------|------|
-| Write handler | `internal/api/write.go` (`handleWriteTagValue`) |
-| Write coerce / driver | `internal/driver/opcua/write_value.go` |
+| Write handler | `internal/api/write.go` (`handleWriteTagValue`, verify in `executeWrite`) |
+| Write verify match | `internal/api/write_verify.go` |
+| Write coerce / driver | `internal/driver/opcua/write_value.go` (`WriteValue`, `ReadValue`) |
 | Poll / client lock | `internal/driver/opcua/driver.go` |
 | Read value mapping | `internal/driver/opcua/value.go` |
 | OPC DataType resolve | `internal/driver/opcua/datatype.go` |

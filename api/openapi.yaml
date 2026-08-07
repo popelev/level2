@@ -123,12 +123,37 @@ paths:
         Requires `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED`, tag `writable=true`,
         and API token when `LEVEL2_API_TOKEN` is set.
         Coerces JSON to the tag's configured datatype, then OPC Write.
+        Optional write-then-verify: body `verify` / query `?verify=true` performs OPC Read
+        after StatusOK Write and sets `verified` when readback matches (float epsilon).
+        Mismatch returns **409** JSON with `written` + `observed` (write already applied — non-transactional).
+        `optimistic` (default true) updates Live+WS immediately; `false` waits until after write (and verify if requested).
       security:
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
       parameters:
         - $ref: "#/components/parameters/TagID"
+        - name: verify
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: When true, OPC Read after Write and require matching readback
+        - name: verify_timeout_ms
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 2000
+            maximum: 30000
+          description: Max time to retry readback until match (default 2000)
+        - name: optimistic
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Update Live+WS immediately on Write StatusOK (default true)
       requestBody:
         required: true
         content:
@@ -144,9 +169,15 @@ paths:
                 value:
                   value: true
                   device_id: s7_1500
+              verify:
+                value:
+                  value: 42.5
+                  device_id: s7_1500
+                  verify: true
+                  verify_timeout_ms: 2000
       responses:
         "200":
-          description: Write accepted by OPC (Status Good)
+          description: Write accepted by OPC (Status Good); verified=true when verify requested and readback matched
           content:
             application/json:
               schema:
@@ -160,9 +191,11 @@ paths:
         "404":
           description: Unknown tag
         "409":
-          description: Device not connected / no writer
+          description: |
+            Device not connected / no writer, or write-then-verify mismatch / verify unavailable.
+            Verify failures return JSON WriteValueResponse with error=verify_failed, written, and observed.
         "502":
-          description: OPC transport or StatusCode not Good
+          description: OPC transport / StatusCode not Good, or verify Read failed after successful Write
 
   /api/v1/tags/values:
     post:
@@ -172,6 +205,8 @@ paths:
         Partial-failure semantics: HTTP **200** when the batch body parses and size ≤ 100.
         Each item has independent `ok` / `error` / `http_status`. Master write gate and
         API token apply to the whole request; per-item writable/coercion/OPC errors appear in `results`.
+        Request-level or per-item `verify` / `verify_timeout_ms` / `optimistic` mirror single-write semantics;
+        verify failures set `ok=false` with `written` + `observed` on that item (still HTTP 200 for the batch).
       security:
         - BearerAuth: []
         - ApiTokenHeader: []
@@ -644,6 +679,18 @@ components:
         device_id:
           type: string
           description: Required when tag_id exists on multiple devices
+        verify:
+          type: boolean
+          description: When true, OPC Read after Write; verified only if readback matches
+        verify_timeout_ms:
+          type: integer
+          default: 2000
+          maximum: 30000
+          description: Retry window for readback match (default 2000 ms)
+        optimistic:
+          type: boolean
+          default: true
+          description: Update Live+WS immediately on Write StatusOK (default true)
       description: Provide exactly one of value | value_num | value_text | value_bool
 
     WriteValueResponse:
@@ -662,12 +709,32 @@ components:
           $ref: "#/components/schemas/Sample"
         verified:
           type: boolean
-          description: Always false until write-then-verify lands
+          description: True only when verify was requested and OPC readback matched written value
+        observed:
+          allOf:
+            - $ref: "#/components/schemas/Sample"
+          description: Present when verify ran (success or mismatch)
+        error:
+          type: string
+          description: On verify failure responses (e.g. verify_failed)
+        message:
+          type: string
+          description: Human-readable verify failure detail
 
     BatchWriteRequest:
       type: object
       required: [writes]
       properties:
+        verify:
+          type: boolean
+          description: Default verify for all items (overridable per item)
+        verify_timeout_ms:
+          type: integer
+          default: 2000
+          maximum: 30000
+        optimistic:
+          type: boolean
+          default: true
         writes:
           type: array
           minItems: 1
@@ -690,6 +757,12 @@ components:
               value_text:
                 type: string
               value_bool:
+                type: boolean
+              verify:
+                type: boolean
+              verify_timeout_ms:
+                type: integer
+              optimistic:
                 type: boolean
 
     BatchWriteResponse:
@@ -718,6 +791,10 @@ components:
         status:
           type: string
         written:
+          $ref: "#/components/schemas/Sample"
+        verified:
+          type: boolean
+        observed:
           $ref: "#/components/schemas/Sample"
         error:
           type: string
