@@ -25,13 +25,13 @@ func TestStatus_NilHistorian(t *testing.T) {
 func TestCapacity_NilHistorian(t *testing.T) {
 	var h *Historian
 	_, err := h.Capacity(context.Background())
-	if err == nil {
-		t.Fatal("expected error")
+	if err == nil || err.Error() != "historian not configured" {
+		t.Fatalf("%v", err)
 	}
 	h2 := &Historian{}
 	_, err = h2.Capacity(context.Background())
-	if err == nil {
-		t.Fatal("nil pool")
+	if err == nil || err.Error() != "historian not configured" {
+		t.Fatalf("nil pool: %v", err)
 	}
 }
 

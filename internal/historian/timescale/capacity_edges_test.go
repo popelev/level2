@@ -3,6 +3,7 @@ package timescale
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/popelev/level2/internal/config"
@@ -52,8 +53,15 @@ func TestPoolNil(t *testing.T) {
 }
 
 func TestErrCapacityHaltWrapped(t *testing.T) {
-	err := errors.New("x")
-	if errors.Is(err, ErrCapacityHalt) {
-		t.Fatal("plain error")
+	plain := errors.New("x")
+	if errors.Is(plain, ErrCapacityHalt) {
+		t.Fatal("plain error must not match")
+	}
+	wrapped := fmt.Errorf("%w: stop policy", ErrCapacityHalt)
+	if !errors.Is(wrapped, ErrCapacityHalt) {
+		t.Fatalf("wrapped halt: %v", wrapped)
+	}
+	if !errors.Is(fmt.Errorf("%w: still over limit after drop_oldest", ErrCapacityHalt), ErrCapacityHalt) {
+		t.Fatal("drop_oldest wrap")
 	}
 }

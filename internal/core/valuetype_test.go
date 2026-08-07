@@ -3,8 +3,13 @@ package core
 import "testing"
 
 func TestNormalizeValueType_DateTime(t *testing.T) {
-	if got := NormalizeValueType("date_time"); got != ValueDateTime {
-		t.Fatalf("got %q", got)
+	for _, in := range []string{"date_time", "DateTime", "datetime", "TIMESTAMP", "datetim"} {
+		if got := NormalizeValueType(ValueType(in)); got != ValueDateTime {
+			t.Fatalf("%q → %q", in, got)
+		}
+	}
+	if !ValidValueType(ValueDateTime) {
+		t.Fatal("datetime should be valid")
 	}
 }
 

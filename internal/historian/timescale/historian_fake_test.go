@@ -732,9 +732,9 @@ func TestMaskDatabaseURL_UserOnlyAndInlineFallback(t *testing.T) {
 		t.Fatalf("%q", got)
 	}
 	// Weird parse that still has scheme+user:pass@host should mask via inline helper path.
-	got = MaskDatabaseURL("postgres://u:p@")
-	if got == "" {
-		t.Fatal("empty")
+	got = MaskDatabaseURL("postgres://u:secret@")
+	if got == "" || strings.Contains(got, "secret") || !strings.Contains(got, "***") {
+		t.Fatalf("expected password redacted, got %q", got)
 	}
 }
 

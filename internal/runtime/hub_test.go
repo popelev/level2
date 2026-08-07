@@ -90,4 +90,8 @@ func TestAlwaysOnStub(t *testing.T) {
 	if !a.Connected() {
 		t.Fatal("connected")
 	}
+	err := a.Subscribe(ctx, nil, nil)
+	if err == nil || err.Error() != "sim stub has no subscribe" {
+		t.Fatalf("subscribe: %v", err)
+	}
 }

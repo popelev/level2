@@ -30,9 +30,22 @@ func TestDefaultIncidents_Accessor(t *testing.T) {
 	}
 }
 
-func TestRecord_NilDefaultNoPanic(t *testing.T) {
+func TestRecord_NilDefaultDropsEvents(t *testing.T) {
+	b := NewBuffer(10)
+	SetDefault(b)
+	OPCRead(LevelInfo, "d", "t", "before", "")
+	if got := b.Query("all", false, 10); len(got) != 1 || got[0].Message != "before" {
+		t.Fatalf("setup %#v", got)
+	}
+
 	SetDefault(nil)
-	t.Cleanup(func() {})
-	OPCRead(LevelInfo, "d", "t", "msg", "")
-	DBWrite(LevelInfo, "msg", "", 1)
+	t.Cleanup(func() { SetDefault(nil) })
+	OPCRead(LevelInfo, "d", "t", "dropped", "x")
+	DBWrite(LevelInfo, "dropped", "", 9)
+	OPCWrite(LevelWarn, "d", "t", "dropped", "")
+
+	got := b.Query("all", false, 10)
+	if len(got) != 1 || got[0].Message != "before" {
+		t.Fatalf("nil default must not append: %#v", got)
+	}
 }

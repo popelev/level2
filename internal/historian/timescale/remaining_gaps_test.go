@@ -145,13 +145,15 @@ func TestMaskDatabaseURL_TrimAndNoSchemeInline(t *testing.T) {
 	if !strings.Contains(got, ":***") || strings.Contains(got, "secret") {
 		t.Fatalf("%q", got)
 	}
-	// Scheme-less credential form still redacts via inline helper.
 	got = MaskDatabaseURL("postgres://alice:pw@")
-	if got == "" || strings.Contains(got, "pw") && !strings.Contains(got, "***") {
-		// Accept either masked inline or parse-normalized form without leaking pw.
-		if strings.Contains(got, ":pw@") || strings.Contains(got, ":pw") {
-			t.Fatalf("password leaked: %q", got)
-		}
+	if got == "" {
+		t.Fatal("empty mask result")
+	}
+	if strings.Contains(got, ":pw@") || strings.Contains(got, ":pw") && !strings.Contains(got, "***") {
+		t.Fatalf("password leaked: %q", got)
+	}
+	if !strings.Contains(got, "***") && strings.Contains(got, "pw") {
+		t.Fatalf("expected redaction marker: %q", got)
 	}
 }
 

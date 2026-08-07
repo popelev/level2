@@ -9,7 +9,16 @@ import (
 )
 
 func TestApplyDeviceEnvOverlay(t *testing.T) {
-	ApplyDeviceEnvOverlay(nil) // no panic
+	ApplyDeviceEnvOverlay(nil) // must tolerate nil
+
+	t.Setenv("PLC_OPC_ENDPOINT", "")
+	t.Setenv("OPC_UA_USERNAME", "")
+	t.Setenv("OPC_UA_PASSWORD", "")
+	keep := &core.Device{ID: "x", Endpoint: "opc.tcp://old", Username: "keep-u", Password: "keep-p"}
+	ApplyDeviceEnvOverlay(keep)
+	if keep.Endpoint != "opc.tcp://old" || keep.Username != "keep-u" || keep.Password != "keep-p" {
+		t.Fatalf("empty env must not overwrite: %#v", keep)
+	}
 
 	t.Setenv("PLC_OPC_ENDPOINT", "opc.tcp://from-env:4840")
 	t.Setenv("OPC_UA_USERNAME", "u1")

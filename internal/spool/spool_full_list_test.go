@@ -34,7 +34,7 @@ func TestEnqueue_FullAndListOrder(t *testing.T) {
 		t.Fatalf("files=%d len=%d", len(files), s.Len())
 	}
 	loaded, err := s.Load(files[0])
-	if err != nil || len(loaded) != 1 || loaded[0].TagID == "" {
+	if err != nil || len(loaded) != 1 || loaded[0].TagID != "a" {
 		t.Fatalf("load %#v err=%v", loaded, err)
 	}
 	if err := s.Remove(files[0]); err != nil {

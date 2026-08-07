@@ -51,6 +51,13 @@ func TestLive_UpdateGetAndSnapshot(t *testing.T) {
 	if out[1].Sample != nil || out[1].PollAvgMs != nil {
 		t.Fatalf("cold tag should have no sample: %#v", out[1])
 	}
+	devs := l.SnapshotDevices([]core.Device{{
+		ID:   "plc1",
+		Tags: []core.Tag{{ID: "t1", NodeID: "ns=4;i=1", DataType: core.ValueFloat64}},
+	}})
+	if len(devs) != 1 || devs[0].DeviceID != "plc1" || devs[0].Sample == nil || *devs[0].Sample.ValueNum != 42 {
+		t.Fatalf("device snapshot: %#v", devs)
+	}
 	if len(l.All()) != 1 {
 		t.Fatalf("All=%d", len(l.All()))
 	}
@@ -102,6 +109,15 @@ func TestLive_MarkQualityPreserveTime(t *testing.T) {
 	s, ok := l.Get("t1")
 	if !ok || s.Quality != core.QualityBad || !s.Time.Equal(ts) {
 		t.Fatalf("want Bad keeping time: %#v", s)
+	}
+	if got := l.MarkQualityPreserveTime([]string{"t1"}, core.QualityBad); len(got) != 0 {
+		t.Fatalf("idempotent want 0 got %d", len(got))
+	}
+	if got := (*Live)(nil).MarkQualityPreserveTime([]string{"t1"}, core.QualityBad); got != nil {
+		t.Fatalf("nil live: %#v", got)
+	}
+	if got := l.MarkQualityPreserveTime(nil, core.QualityGood); got != nil {
+		t.Fatalf("empty ids: %#v", got)
 	}
 }
 

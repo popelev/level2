@@ -94,10 +94,14 @@ func TestWatchConfig_StopsOnParentCancel(t *testing.T) {
 }
 
 func TestWatchReady_NilAndTransition(t *testing.T) {
-	watchReady(context.Background(), nil) // no-op
-
 	inc := diag.NewIncidentTracker(64, time.Hour)
 	diag.SetDefaultIncidents(inc)
+	t.Cleanup(func() { diag.SetDefaultIncidents(diag.NewIncidentTracker(100, 0)) })
+
+	watchReady(context.Background(), nil) // no-op
+	if inc.Count(diag.IncidentCollectorDown, time.Hour) != 0 {
+		t.Fatal("nil ready must not record incidents")
+	}
 
 	var ready atomic.Bool
 	ready.Store(true)

@@ -273,7 +273,11 @@ func TestFindSheetAndSplitKey(t *testing.T) {
 
 func TestMapHeaders_Aliases(t *testing.T) {
 	m := mapHeaders([]string{"DeviceId", "Node Id", "IntervalMs", "Simulate", "Writable"})
-	if m["device_id"] < 0 || m["node_id"] < 0 || m["interval_ms"] < 0 || m["simulate"] < 0 || m["writable"] < 0 {
+	if m["device_id"] != 0 || m["node_id"] != 1 || m["interval_ms"] != 2 || m["simulate"] != 3 || m["writable"] != 4 {
 		t.Fatalf("%#v", m)
+	}
+	unknown := mapHeaders([]string{"Nope"})
+	if unknown["device_id"] != -1 || unknown["node_id"] != -1 || unknown["id"] != -1 {
+		t.Fatalf("unmapped headers should stay -1: %#v", unknown)
 	}
 }

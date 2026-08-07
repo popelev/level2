@@ -110,8 +110,11 @@ func TestMapDataType_MoreAliasesAndFallback(t *testing.T) {
 			t.Fatalf("mapDataType(%q,%q)=%q want %q", tc.name, tc.code, got, tc.want)
 		}
 	}
-	if got := mapDataType("totally_unknown", "zzz"); got == "" {
-		t.Fatal("NormalizeValueType fallback should return non-empty weird type or normalized")
+	if got := mapDataType("totally_unknown", "zzz"); got != "totally_unknown" {
+		t.Fatalf("unknown fallback: got %q want totally_unknown", got)
+	}
+	if got := mapDataType("", ""); got != "" {
+		t.Fatalf("empty name+code should stay empty, got %q", got)
 	}
 }
 
