@@ -48,6 +48,7 @@ Complete route list as registered by `internal/api.Server.Mount` (+ collector `w
 | GET | `/api/v1/tags/{id}/history?from=&to=&limit=` | Timescale history |
 | PUT | `/api/v1/tags/{id}/value` | OPC Write; optional verify; gate + `writable` (+ token) — [opc-write-mode.md](../../docs/opc-write-mode.md) |
 | POST | `/api/v1/tags/values` | Batch OPC Write (partial success, max 100) |
+| GET | `/api/v1/integration/tag-catalog` | Flat read-only catalog for math-model / integrations |
 | GET | `/api/v1/ws/stream` | Live WebSocket (`?tag_id=` / `?tag_ids=`; `?token=` if auth) |
 | GET | `/api/v1/devices` | Device list |
 | POST | `/api/v1/devices` | Create device |

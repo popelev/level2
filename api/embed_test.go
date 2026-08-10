@@ -14,10 +14,11 @@ func TestOpenAPIYAMLEmbedded(t *testing.T) {
 		t.Fatalf("embed missing openapi marker, prefix=%q", s[:min(64, len(s))])
 	}
 	for _, must := range []string{
-		"version: 1.3.1",
+		"version: 1.4.0",
 		"/api/v1/database/wipe-samples",
 		"/api/v1/project.xlsx",
 		"/api/v1/devices/{id}/tags/sync",
+		"/api/v1/integration/tag-catalog",
 		"/metrics",
 		"BearerAuthWrite",
 		"BearerAuthAdmin",

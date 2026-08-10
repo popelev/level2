@@ -49,13 +49,14 @@ Base URL (lab VM): `http://<host>:8080`. Same origin serves the React Admin UI.
 |------|--------|
 | REST | `/api/v1/...` mounted in `internal/api` (`Mount`, project, diagnostics, database, status, tag bulk). |
 | Live read | `GET /api/v1/tags`, `GET /api/v1/tags/{id}/value`, batch `GET /api/v1/tags/values?id=` — in-memory Live store. |
+| Catalog export | `GET /api/v1/integration/tag-catalog` — flat read-only devices+tags (no live samples); prefer for math-model import. |
 | History | `GET /api/v1/tags/{id}/history?from=&to=&limit=` — Timescale. |
 | Discovery | `GET /api/v1/devices`, tags list, `GET /api/v1/browse`, `POST /api/v1/expand`, project/xlsx import-export. |
 | Write | `PUT /api/v1/tags/{id}/value`, batch `POST /api/v1/tags/values` — requires write gate + tag `writable` |
 | WebSocket | `GET /api/v1/ws/stream` — Live samples; optional `?tag_id=` / `?tag_ids=` filter |
 | Auth | Optional role tokens: `LEVEL2_API_TOKEN_WRITE` (value writes + WS), `LEVEL2_API_TOKEN_ADMIN` (wipe/config/import); legacy shared `LEVEL2_API_TOKEN` = both. Empty = auth off. Write token on admin route → **403** |
 | CORS | **No** dedicated CORS middleware. Browser cross-origin calls from another origin will fail unless same-origin or a reverse proxy adds headers. Non-browser clients (curl, Python `requests`, C# `HttpClient`) are unaffected. |
-| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.3.1** (full surface); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
+| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.4.0** (full surface); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
 | Capacity | `drop_oldest` may spool while trimming (`ErrCapacityBusy`) — [db-capacity-policy.md](db-capacity-policy.md) |
 | WS origin | `CheckOrigin: true` (accept all) — fine for lab; revisit with auth. |
 
@@ -141,6 +142,14 @@ GET /api/v1/tags/values?ids=a,b
 ```
 
 Returns an array of Sample DTOs only (max 100 ids). Unknown / no-sample ids are omitted. Prefer when the client already has a tag list and does not need full config inventory.
+
+### 3.2.2. Integration tag catalog (math-model)
+
+```http
+GET /api/v1/integration/tag-catalog
+```
+
+Flat read-only export: `{ exported_at, level2_api_version, devices[{id,connected}], tags[{tag_id,device_id,path,datatype,enabled,writable,interval_ms,node_id}] }`. Prefer this for catalog import in external math-model clients (instead of normalizing nested `GET /api/v1/tags`).
 
 ### 3.3. Streaming
 
@@ -377,7 +386,7 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 
 1. JSON error envelope on write + hot reads — **done** (SCRUM-27); many admin routes still plain text.
 2. WS tag filter — **done** (`?tag_id=` / `?tag_ids=` / subscribe message).
-3. Keep OpenAPI in sync with every endpoint change (canonical **v1.3.1**).
+3. Keep OpenAPI in sync with every endpoint change (canonical **v1.4.0**).
 4. Light rate limit or max body size for write batch if needed.
 
 ### Phase 3 — productization
@@ -408,6 +417,6 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 ## 13. Open questions
 
 1. **Should config-mutating routes** get auth earlier than read-only value GET? (Today: all mutating + WS when token set.)
-2. ~~**Batch live GET** (`GET /api/v1/tags/values?id=a&id=b`)~~ — **delivered** (SCRUM-29).
+2. ~~**Batch live GET** (`GET /api/v1/tags/values?id=a&id=b`)~~ — **delivered** (SCRUM-29); also `GET /api/v1/integration/tag-catalog` (SCRUM-30).
 3. **CORS:** add explicit allowlist for a remote browser HMI, or require same-host / proxy?
 4. **Idempotency-Key** for writes — **done** (SCRUM-28, in-memory TTL); use for pulses.

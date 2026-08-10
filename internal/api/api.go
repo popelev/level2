@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/popelev/level2/internal/config"
@@ -63,6 +64,9 @@ type Server struct {
 	APITokenAdmin func() string
 	// OnDeviceChanged is called after device create/update/delete (optional).
 	OnDeviceChanged func(deviceID string, removed bool)
+
+	idemOnce    sync.Once
+	idempotency *idempotencyCache
 }
 
 func (s *Server) Mount(mux *http.ServeMux) {
@@ -83,6 +87,7 @@ func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/devices/{id}/tags/{tagId}", s.handleDeleteTag)
 	mux.HandleFunc("PUT /api/v1/tags/{id}/value", s.handleWriteTagValue)
 	mux.HandleFunc("POST /api/v1/tags/values", s.handleBatchWriteTagValues)
+	mux.HandleFunc("GET /api/v1/integration/tag-catalog", s.handleIntegrationTagCatalog)
 	mux.HandleFunc("GET /api/v1/ws/stream", s.handleWS)
 	s.mountProject(mux)
 	s.mountDiagnostics(mux)
@@ -113,7 +118,7 @@ func (s *Server) handleTagValue(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	sample, ok := s.displaySampleForTag(id)
 	if !ok {
-		http.Error(w, "tag not found or no sample yet", http.StatusNotFound)
+		writeAPIError(w, http.StatusNotFound, "tag_not_found", "tag not found or no sample yet")
 		return
 	}
 	writeJSON(w, http.StatusOK, sampleDTO(sample))
@@ -121,7 +126,7 @@ func (s *Server) handleTagValue(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if s.History == nil {
-		http.Error(w, "history unavailable", http.StatusServiceUnavailable)
+		writeAPIError(w, http.StatusServiceUnavailable, "history_unavailable", "history unavailable")
 		return
 	}
 	id := r.PathValue("id")
@@ -131,7 +136,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(q.Get("limit"))
 	rows, err := s.History.QueryHistory(r.Context(), id, from, to, limit)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		writeAPIError(w, http.StatusInternalServerError, "history_query_failed", err.Error())
 		return
 	}
 	out := make([]sampleDTOType, 0, len(rows))

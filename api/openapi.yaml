@@ -35,12 +35,15 @@ info:
     Batch live read: `GET /api/v1/tags/values?id=a&id=b` (also `ids` / `tag_ids`) — Sample
     DTOs only; unknown / no-sample ids omitted. Max 100 ids.
 
+    Integration catalog: `GET /api/v1/integration/tag-catalog` — flat read-only export
+    for external math-model (no live samples).
+
     **Capacity:** `full_policy=drop_oldest` trims Timescale chunks and may return busy
     (`ErrCapacityBusy`) so the collector **spools** while trimming (no in-flight loss).
 
     This document enumerates the **full** collector HTTP surface (integration + admin):
     devices/tags CRUD, project xlsx, diagnostics, database capacity/wipe, health/metrics.
-  version: 1.3.1
+  version: 1.4.0
   contact:
     name: popelev / Level2
 
@@ -54,6 +57,7 @@ tags:
   - name: health
   - name: tags
   - name: devices
+  - name: integration
   - name: browse
   - name: project
   - name: diagnostics
@@ -375,6 +379,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /api/v1/integration/tag-catalog:
+    get:
+      tags: [integration]
+      summary: Read-only tag catalog export for external consumers
+      description: |
+        Stable flat catalog for math-model / other integrations. No nested `tag` /
+        live `sample` — prefer this over parsing `GET /api/v1/tags` for catalog import.
+        Auth: same as other read GETs (open when tokens empty; any configured token
+        may be sent but is not required for GET).
+      responses:
+        "200":
+          description: Catalog snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TagCatalog"
+              example:
+                exported_at: "2026-08-10T12:00:00Z"
+                level2_api_version: "1.4.0"
+                devices:
+                  - id: s7_1500
+                    connected: true
+                tags:
+                  - tag_id: cell_12_current
+                    device_id: s7_1500
+                    path: Cell/12
+                    datatype: float64
+                    enabled: true
+                    writable: false
+                    interval_ms: 1000
+                    node_id: "ns=4;i=4208"
 
   /api/v1/tags/{id}/history:
     get:
@@ -1367,6 +1403,57 @@ components:
           format: date-time
         poll_avg_ms:
           type: number
+
+    TagCatalog:
+      type: object
+      required: [exported_at, level2_api_version, devices, tags]
+      properties:
+        exported_at:
+          type: string
+          format: date-time
+        level2_api_version:
+          type: string
+          description: OpenAPI info.version of this Level2 build
+          example: "1.4.0"
+        devices:
+          type: array
+          items:
+            $ref: "#/components/schemas/TagCatalogDevice"
+        tags:
+          type: array
+          items:
+            $ref: "#/components/schemas/TagCatalogTag"
+
+    TagCatalogDevice:
+      type: object
+      required: [id, connected]
+      properties:
+        id:
+          type: string
+        connected:
+          type: boolean
+
+    TagCatalogTag:
+      type: object
+      required: [tag_id, device_id, datatype, enabled, writable, interval_ms, node_id]
+      properties:
+        tag_id:
+          type: string
+        device_id:
+          type: string
+        path:
+          type: string
+        datatype:
+          type: string
+          enum: [bool, int64, uint, float64, string, datetime]
+        enabled:
+          type: boolean
+        writable:
+          type: boolean
+        interval_ms:
+          type: integer
+        node_id:
+          type: string
 
     Device:
       type: object
