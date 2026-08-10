@@ -236,6 +236,9 @@ With `"verify": true` (or `?verify=true`) and matching OPC readback:
 | 404 | Unknown tag_id (or ambiguous without `device_id`) |
 | 409 | Device not connected; or write-then-verify mismatch / verify unavailable (JSON body with `written` + `observed`) |
 | 502 | OPC transport / StatusCode not Good; or verify Read failed after successful Write (body includes status / detail) |
+
+**Idempotency-Key** (optional, SCRUM-28): on PUT/POST write; same key+body within ~10m returns cached response (Idempotent-Replayed: true) without a second OPC Write. Different body → 409 idempotency_key_reuse. Pulse/edge tags should always send a unique key per logical command.
+
 | 501 | Removed once MVP ships (tests updated) |
 
 ### 4.2. Write by node_id (optional Phase 2)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -98,44 +99,54 @@ func (s *Server) opcWriteEnabled() bool {
 }
 
 func (s *Server) handleWriteTagValue(w http.ResponseWriter, r *http.Request) {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_body", "failed to read request body")
+		return
+	}
+	s.withIdempotency(w, r, bodyBytes, func(w http.ResponseWriter) {
+		s.handleWriteTagValueInner(w, r, bodyBytes)
+	})
+}
+
+func (s *Server) handleWriteTagValueInner(w http.ResponseWriter, r *http.Request, bodyBytes []byte) {
 	if !s.opcWriteEnabled() {
 		diag.OPCWrite(diag.LevelWarn, "", r.PathValue("id"), "opc write denied", "opc_write_enabled=false")
-		http.Error(w, "OPC write is disabled (opc_write_enabled=false)", http.StatusForbidden)
+		writeAPIError(w, http.StatusForbidden, "opc_write_disabled", "OPC write is disabled (opc_write_enabled=false)")
 		return
 	}
 	if s.simBrowserActive() {
 		diag.OPCWrite(diag.LevelWarn, "", r.PathValue("id"), "opc write denied", "sim_browser active")
-		http.Error(w, "OPC write blocked while sim browser is active (no writes to real PLC)", http.StatusConflict)
+		writeAPIError(w, http.StatusConflict, "opc_write_blocked_sim_browser", "OPC write blocked while sim browser is active (no writes to real PLC)")
 		return
 	}
 	if s.tagSimulationActive() {
 		diag.OPCWrite(diag.LevelWarn, "", r.PathValue("id"), "opc write denied", "tag_simulation active")
-		http.Error(w, "OPC write blocked while legacy global tag_simulation is active (no writes to real PLC)", http.StatusConflict)
+		writeAPIError(w, http.StatusConflict, "opc_write_blocked_tag_simulation", "OPC write blocked while legacy global tag_simulation is active (no writes to real PLC)")
 		return
 	}
 
 	tagID := r.PathValue("id")
 	if tagID == "" {
-		http.Error(w, "tag id required", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "tag_id_required", "tag id required")
 		return
 	}
 
 	var body writeValueBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_json", "invalid json")
 		return
 	}
 
 	raw, err := pickWriteRawValue(body)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "bad_request", err.Error())
 		return
 	}
 
 	opts := resolveWriteOptions(body.Verify, body.VerifyTimeoutMs, body.Optimistic, r)
 	res := s.executeWrite(r.Context(), tagID, body.DeviceID, raw, opts)
 	if !res.OK {
-		// Verify mismatch / verify read failure: return JSON with written + observed (non-transactional).
 		if res.Written != nil && (res.HTTP == http.StatusConflict || strings.Contains(res.Error, "verify")) {
 			writeJSON(w, res.HTTP, writeValueResponse{
 				TagID:    res.TagID,
@@ -150,7 +161,7 @@ func (s *Server) handleWriteTagValue(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		http.Error(w, res.Error, res.HTTP)
+		writeFailureAPIError(w, res)
 		return
 	}
 	writeJSON(w, http.StatusOK, writeValueResponse{
@@ -165,33 +176,44 @@ func (s *Server) handleWriteTagValue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleBatchWriteTagValues(w http.ResponseWriter, r *http.Request) {
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_body", "failed to read request body")
+		return
+	}
+	s.withIdempotency(w, r, bodyBytes, func(w http.ResponseWriter) {
+		s.handleBatchWriteTagValuesInner(w, r, bodyBytes)
+	})
+}
+
+func (s *Server) handleBatchWriteTagValuesInner(w http.ResponseWriter, r *http.Request, bodyBytes []byte) {
 	if !s.opcWriteEnabled() {
 		diag.OPCWrite(diag.LevelWarn, "", "", "opc batch write denied", "opc_write_enabled=false")
-		http.Error(w, "OPC write is disabled (opc_write_enabled=false)", http.StatusForbidden)
+		writeAPIError(w, http.StatusForbidden, "opc_write_disabled", "OPC write is disabled (opc_write_enabled=false)")
 		return
 	}
 	if s.simBrowserActive() {
 		diag.OPCWrite(diag.LevelWarn, "", "", "opc batch write denied", "sim_browser active")
-		http.Error(w, "OPC write blocked while sim browser is active (no writes to real PLC)", http.StatusConflict)
+		writeAPIError(w, http.StatusConflict, "opc_write_blocked_sim_browser", "OPC write blocked while sim browser is active (no writes to real PLC)")
 		return
 	}
 	if s.tagSimulationActive() {
 		diag.OPCWrite(diag.LevelWarn, "", "", "opc batch write denied", "tag_simulation active")
-		http.Error(w, "OPC write blocked while legacy global tag_simulation is active (no writes to real PLC)", http.StatusConflict)
+		writeAPIError(w, http.StatusConflict, "opc_write_blocked_tag_simulation", "OPC write blocked while legacy global tag_simulation is active (no writes to real PLC)")
 		return
 	}
 
 	var body batchWriteBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "invalid_json", "invalid json")
 		return
 	}
 	if len(body.Writes) == 0 {
-		http.Error(w, "writes array is required and must be non-empty", http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "writes_required", "writes array is required and must be non-empty")
 		return
 	}
 	if len(body.Writes) > maxBatchWrites {
-		http.Error(w, fmt.Sprintf("writes exceeds max %d items", maxBatchWrites), http.StatusBadRequest)
+		writeAPIError(w, http.StatusBadRequest, "writes_too_many", fmt.Sprintf("writes exceeds max %d items", maxBatchWrites))
 		return
 	}
 
@@ -235,10 +257,8 @@ func (s *Server) handleBatchWriteTagValues(w http.ResponseWriter, r *http.Reques
 			out.FailCount++
 		}
 	}
-	// HTTP 200 when the batch request itself was parsed; per-item ok/error in results.
 	writeJSON(w, http.StatusOK, out)
 }
-
 func resolveWriteOptions(verify *bool, timeoutMs *int, optimistic *bool, r *http.Request) writeOptions {
 	opts := writeOptions{optimistic: true}
 	if verify != nil {

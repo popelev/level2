@@ -161,7 +161,7 @@ func (s *Server) APIAuth(next http.Handler) http.Handler {
 		}
 		got := extractAPIToken(r)
 		if got == "" {
-			http.Error(w, "unauthorized: missing or invalid API token", http.StatusUnauthorized)
+			writeAPIError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid API token")
 			return
 		}
 		allowed := s.tokensForRole(role)
@@ -171,10 +171,10 @@ func (s *Server) APIAuth(next http.Handler) http.Handler {
 		}
 		// Valid write token on an admin route → 403 (not 401).
 		if role == roleAdmin && tokenMatchesAny(got, s.tokensForRole(roleWrite)) {
-			http.Error(w, "forbidden: write token cannot perform admin actions", http.StatusForbidden)
+			writeAPIError(w, http.StatusForbidden, "forbidden_write_token", "write token cannot perform admin actions")
 			return
 		}
-		http.Error(w, "unauthorized: missing or invalid API token", http.StatusUnauthorized)
+		writeAPIError(w, http.StatusUnauthorized, "unauthorized", "missing or invalid API token")
 	})
 }
 
