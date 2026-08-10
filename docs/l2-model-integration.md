@@ -68,13 +68,9 @@ Sample contract: `time`, `tag_id`, `value_num` | `value_text` | `value_bool`, `q
 |---------|---------|--------|
 | `opc_write_enabled` / **`LEVEL2_OPC_WRITE_ENABLED`** | **`false`** | Master kill switch; when off, write APIs return **403** |
 | Tag **`writable`** | **`false`** | Per-tag allow-list; write returns **403** when false. Set via tag CRUD / project.xlsx column / YAML |
-| **`LEVEL2_API_TOKEN_WRITE`** | empty | When set (or legacy shared set): `PUT/POST …/value(s)` + WS require write/admin/legacy token → **401** if missing/wrong |
-| **`LEVEL2_API_TOKEN_ADMIN`** | empty | Wipe, capacity-policy, project import, device/tag config. Write token on these → **403** |
-| **`LEVEL2_API_TOKEN`** / `api_token` | empty (auth off) | Legacy shared: both write and admin roles. Prefer Write + Admin for the model vs ops split |
+| **`LEVEL2_API_TOKEN`** / `api_token` | empty (auth off) | When set, mutating `/api/v1/*` + WS require Bearer / `X-API-Token` / `?token=` → **401** if missing/wrong |
 
-Prefer env for tokens (`LEVEL2_API_TOKEN_WRITE` / `_ADMIN` / legacy); rewritten `config.yaml` does not persist token fields. Existing tags without `writable` load as **false** — set `writable: true` on outputs (or backfill via project import / API).
-
-Give the external math-model only **`LEVEL2_API_TOKEN_WRITE`** so it cannot wipe samples or change collector config.
+Prefer env for the token (`LEVEL2_API_TOKEN`); rewritten `config.yaml` does not persist `api_token`. Existing tags without `writable` load as **false** — set `writable: true` on outputs (or backfill via project import / API).
 
 Enable write only on intentional lab/plant setups. Diagnostics category: `opc_write`.
 
