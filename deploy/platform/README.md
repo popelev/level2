@@ -4,7 +4,7 @@ Go service: OPC UA leaf tags → TimescaleDB (`collector.samples`) + REST/WS API
 
 Capacity / free disk: collector mounts the smoke Timescale volume (`smoke_timeseries`) read-only at `/var/lib/level2/dbdisk` and uses **one Statfs** on that path for both `disk_total_bytes` and `disk_avail_bytes`. Soft limit: `database.capacity_percent` (byte limit = disk_total × percent / 100). `free_bytes` is room under that limit (capped by volume free). Full-disk policy: `database.full_policy` (`stop` | `drop_oldest` | `rotate` | `expand_limit`). Env overrides: `LEVEL2_DB_CAPACITY_PERCENT`, `LEVEL2_DB_FULL_POLICY`, absolute `LEVEL2_DB_CAPACITY_BYTES`.
 
-With **`drop_oldest`**, the historian drops multiple oldest Timescale chunks toward the limit (proactive trim near 90%). While still over the hard limit but trim can progress, flush returns busy and the collector **spools** batches (no halt / no drop of in-flight samples); halt only when nothing left to drop. Details: [docs/db-capacity-policy.md](../../docs/db-capacity-policy.md).
+With **`drop_oldest`**, the historian drops multiple oldest Timescale chunks toward the limit (proactive trim near 90%). While still over the hard limit but trim can progress, flush returns busy and the collector **spools** batches (no halt / no drop of in-flight samples); halt only when nothing left to drop. Details and **lab runbook** (percent / wipe / spool clear): [docs/db-capacity-policy.md](../../docs/db-capacity-policy.md).
 
 ## PLC off
 

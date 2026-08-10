@@ -67,6 +67,64 @@ database:
 
 See also [deploy/platform/README.md](../deploy/platform/README.md).
 
+## Lab runbook (capacity hygiene)
+
+Lab VM (`level2-vm`, `~/level2/deploy/platform`) often runs a large tag set. A tiny `capacity_percent` (e.g. **2%**) makes `used_over_limit=true`, flush returns `ErrCapacityBusy`, and **spool grows** while `samples_written_total` stalls — even with `drop_oldest` trimming.
+
+### Healthy lab defaults
+
+| Setting | Lab recommendation | Why |
+|---------|-------------------|-----|
+| `capacity_percent` | **40–90** (not 1–5) | Soft ceiling with headroom for on-change + reseed; 2% of a ~40 GiB volume ≈ 800 MiB and fills quickly |
+| `full_policy` | **`drop_oldest`** | Trim + spool while busy; prefer over `stop` so iterations are not blocked |
+| Wipe | occasional reset | Clears historian backlog; **not** the only long-term control |
+
+Check pressure:
+
+```bash
+curl -s http://127.0.0.1:8080/api/v1/diagnostics/capacity
+# watch: used_over_limit, free_bytes, spool_depth, samples_written_total, capacity_halts_total
+curl -s http://127.0.0.1:8080/api/v1/status/summary   # spool_depth, samples_per_sec
+```
+
+### When lab is blocked (`used_over_limit` + growing spool)
+
+1. **Raise percent** (preferred first step — policy should keep up without perpetual wipe):
+
+   ```bash
+   curl -sS -X PUT http://127.0.0.1:8080/api/v1/database/capacity-policy \
+     -H 'Content-Type: application/json' \
+     -d '{"capacity_percent":40,"full_policy":"drop_oldest"}'
+   ```
+
+   Persists into `config.yaml` via the config store.
+
+2. **Wipe + reseed** if Timescale is already far over a sensible limit or you need a clean historian for the next iteration (see below).
+
+3. **Clear spool** only after an intentional wipe when you do **not** need replay of deferred pre-wipe batches (otherwise replay re-inflates the DB for hours):
+
+   ```bash
+   cd ~/level2/deploy/platform
+   docker compose stop collector
+   docker volume rm "$(docker volume ls -q | grep -i collector_spool | head -1)"
+   docker compose up -d collector
+   ```
+
+4. **Deploy fresh main** if the collector image predates multi-chunk `drop_oldest` / spool-on-busy:
+
+   ```bash
+   cd ~/level2 && git pull --ff-only
+   cd deploy/platform && docker compose build collector && docker compose up -d collector
+   ```
+
+5. Optional host hygiene (not Timescale policy): prune unused Docker images after large CI/lab rebuilds — `docker image prune -f` (do not remove the running Timescale volume).
+
+### Success signals
+
+- `used_over_limit=false`, `free_bytes > 0`
+- `samples_written_total` / `samples_per_sec` increasing
+- `spool_depth` stable or falling; `capacity_halts_total` not climbing under `drop_oldest`
+
 ## Lab wipe samples
 
 `POST /api/v1/database/wipe-samples?confirm=wipe` truncates `collector.samples`.

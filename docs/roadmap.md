@@ -45,7 +45,7 @@ Level2 — **стабильный plant gateway**: OPC UA collector → Live / T
 | CI | Jenkins Test Result + Coverage | [SCRUM-13](https://popelevfedor.atlassian.net/browse/SCRUM-13) |
 | Tests | Coverage ~90% + усиление assert’ов | [SCRUM-14](https://popelevfedor.atlassian.net/browse/SCRUM-14) |
 | Historian on-change | Phase 1 suppress в FanIn | [opc-subscription-mode.md](opc-subscription-mode.md) |
-| Capacity | `stop` / `drop_oldest` / `expand_limit`; spool при trim; wipe+reseed | [db-capacity-policy.md](db-capacity-policy.md) |
+| Capacity | `stop` / `drop_oldest` / `expand_limit`; spool при trim; wipe+reseed; lab runbook | [db-capacity-policy.md](db-capacity-policy.md), [SCRUM-19](https://popelevfedor.atlassian.net/browse/SCRUM-19) |
 | Refactor waves 1–4 | api/cmd/core splits; Jenkins green | [SCRUM-18](https://popelevfedor.atlassian.net/browse/SCRUM-18) |
 
 ### Явно вне roadmap
@@ -62,7 +62,7 @@ Level2 — **стабильный plant gateway**: OPC UA collector → Live / T
 
 | # | Тема | Pri | Jira | Done-критерии |
 |---|------|-----|------|---------------|
-| A1 | **Lab capacity hygiene** | P0 | [SCRUM-19](https://popelevfedor.atlassian.net/browse/SCRUM-19) | Lab VM не забивается без нужды: понятный runbook (wipe / policy / prune), метрики/диаг показывают риск переполнения, нет «сюрпризов» после длинного poll |
+| A1 | **Lab capacity hygiene** | P0 | [SCRUM-19](https://popelevfedor.atlassian.net/browse/SCRUM-19) | ✅ Lab: `drop_oldest` + разумный `capacity_percent` (не 2%), wipe/reseed при backlog, spool clear после wipe; runbook в [db-capacity-policy.md](db-capacity-policy.md) |
 | A2 | **TypeMismatch retry** на OPC write | P0 | [SCRUM-16](https://popelevfedor.atlassian.net/browse/SCRUM-16) | Один авто-retry с alternate width (float64→float32 и аналоги) при `BadTypeMismatch`; лог в diag; тесты + запись в [opc-write-mode.md](opc-write-mode.md) |
 | A3 | **Split tokens/roles** (минимум write vs admin) | P0 | [SCRUM-15](https://popelevfedor.atlassian.net/browse/SCRUM-15) | Отдельные токены (или роли): mutating write ≠ admin (wipe/policy/import); docs + OpenAPI; lab backward-compat при пустых токенах |
 
