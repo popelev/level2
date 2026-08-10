@@ -8,7 +8,7 @@ A **math / control model** is a **separate GitHub project** (and usually a separ
 | **Level2** (this repo) | Platform + **API contract** ([`api/openapi.yaml`](../api/openapi.yaml)) + Admin UI |
 | **Math model** (other repo) | Process/control logic; HTTP/WS client against Level2 |
 
-**Canonical API contract:** OpenAPI **v1.2.1** — [`api/openapi.yaml`](../api/openapi.yaml), also `GET /api/v1/openapi.yaml` and Swagger UI at **`http://<host>:8080/docs`**. The spec covers the **full** collector surface (integration + admin). When narrative docs disagree with OpenAPI, **OpenAPI wins**.
+**Canonical API contract:** OpenAPI **v1.4.0** — [`api/openapi.yaml`](../api/openapi.yaml), also `GET /api/v1/openapi.yaml` and Swagger UI at **`http://<host>:8080/docs`**. The spec covers the **full** collector surface (integration + admin). When narrative docs disagree with OpenAPI, **OpenAPI wins**.
 
 Related: [external-client-api.md](external-client-api.md), [opc-write-mode.md](opc-write-mode.md).
 
@@ -51,10 +51,10 @@ flowchart TB
 ## Closed loop via API
 
 1. `GET /readyz` (and optionally `GET /api/v1/devices`) until connected.
-2. Inputs: `GET /api/v1/ws/stream?tag_id=…` (server-side filter) and/or `GET /api/v1/tags`.
+2. Inputs: `GET /api/v1/ws/stream?tag_id=…` (server-side filter) and/or batch `GET /api/v1/tags/values?id=…` / full `GET /api/v1/tags`.
 3. Compute setpoints / commands from technology rules.
 4. Outputs: `PUT /api/v1/tags/{tag_id}/value` or batch `POST /api/v1/tags/values` (tags must be `writable: true`). Prefer `"verify": true` (or `?verify=true`) when setpoints must be confirmed.
-5. Confirm via verify readback and/or next Live/WS sample; **no silent retry** of writes after ambiguous timeouts.
+5. Confirm via verify readback and/or next Live/WS sample. On timeout retries use a stable `Idempotency-Key` (especially pulses); prefer `"verify": true` for setpoints. Errors are JSON `{error,message}` on write/hot-read paths.
 
 Bind only on stable **`tag_id`** (+ `device_id` when needed). Level2 owns the DB write list / project; the model keeps its own Inputs/Outputs → `tag_id` mapping (versioned with the technology).
 
@@ -107,6 +107,6 @@ Still deferred (not in Level2 platform scope here): math-model implementation st
 | Resource | URL / path |
 |----------|------------|
 | Swagger UI | `http://<host>:8080/docs` |
-| OpenAPI YAML | `http://<host>:8080/api/v1/openapi.yaml` or [`api/openapi.yaml`](../api/openapi.yaml) **v1.3.0** |
+| OpenAPI YAML | `http://<host>:8080/api/v1/openapi.yaml` or [`api/openapi.yaml`](../api/openapi.yaml) **v1.3.1** |
 | External client guide | [external-client-api.md](external-client-api.md) |
 | OPC write design | [opc-write-mode.md](opc-write-mode.md) |

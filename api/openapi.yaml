@@ -25,12 +25,22 @@ info:
     Batch write: `POST /api/v1/tags/values` — HTTP 200 when the request parses; per-item
     `ok`/`error` in `results` (partial success allowed). Max 100 items.
 
+    **JSON errors (hot paths):** write + live/history read failures return
+    `{ "error": "<code>", "message": "..." }` (optional `code`). Auth 401/403 use the same envelope.
+
+    **Idempotency-Key (writes):** optional header on `PUT …/value` and `POST …/values`.
+    Same key + same body within ~10m returns the cached response (`Idempotent-Replayed: true`)
+    without a second OPC Write — pulse-safe client retries. Same key + different body → 409.
+
+    Batch live read: `GET /api/v1/tags/values?id=a&id=b` (also `ids` / `tag_ids`) — Sample
+    DTOs only; unknown / no-sample ids omitted. Max 100 ids.
+
     **Capacity:** `full_policy=drop_oldest` trims Timescale chunks and may return busy
     (`ErrCapacityBusy`) so the collector **spools** while trimming (no in-flight loss).
 
     This document enumerates the **full** collector HTTP surface (integration + admin):
     devices/tags CRUD, project xlsx, diagnostics, database capacity/wipe, health/metrics.
-  version: 1.3.0
+  version: 1.3.1
   contact:
     name: popelev / Level2
 
@@ -136,6 +146,10 @@ paths:
                 $ref: "#/components/schemas/Sample"
         "404":
           description: Unknown tag or no sample yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     put:
       tags: [tags]
       summary: Write scalar value to PLC (OPC UA)
@@ -149,6 +163,7 @@ paths:
         after StatusOK Write and sets `verified` when readback matches (float epsilon).
         Mismatch returns **409** JSON with `written` + `observed` (write already applied — non-transactional).
         `optimistic` (default true) updates Live+WS immediately; `false` waits until after write (and verify if requested).
+        Optional `Idempotency-Key` header: retry-safe replay within TTL (see parameter).
       security:
         - BearerAuthWrite: []
         - BearerAuthAdmin: []
@@ -157,6 +172,7 @@ paths:
         - ApiKeyHeader: []
       parameters:
         - $ref: "#/components/parameters/TagID"
+        - $ref: "#/components/parameters/IdempotencyKey"
         - name: verify
           in: query
           required: false
@@ -208,22 +224,95 @@ paths:
                 $ref: "#/components/schemas/WriteValueResponse"
         "400":
           description: Bad JSON / coercion / ambiguous tag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: API token configured and missing/wrong
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "403":
           description: |
             Write disabled (opc_write_enabled=false), tag writable=false,
             or write-scoped token used where admin is required (other mutating routes).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "404":
           description: Unknown tag
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: |
-            Device not connected / no writer, or write-then-verify mismatch / verify unavailable.
+            Device not connected / no writer, write-then-verify mismatch / verify unavailable,
+            or Idempotency-Key reused with a different body.
             Verify failures return JSON WriteValueResponse with error=verify_failed, written, and observed.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/WriteValueResponse"
+                  - $ref: "#/components/schemas/Error"
         "502":
           description: OPC transport / StatusCode not Good, or verify Read failed after successful Write
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/v1/tags/values:
+    get:
+      tags: [tags]
+      summary: Batch live samples for selected tag ids
+      description: |
+        Returns Sample DTOs only (no tag config inventory). Prefer this over full
+        `GET /api/v1/tags` when the client already knows the id list (e.g. math-model).
+        Query: repeated `id` / `tag_id`, and/or comma-separated `ids` / `tag_ids`.
+        Unknown tags and tags with no live sample yet are **omitted** (partial success).
+        Max **100** unique ids. Same auth as other read GETs (open when tokens empty).
+      parameters:
+        - name: id
+          in: query
+          description: Tag id (repeatable)
+          schema:
+            type: string
+          style: form
+          explode: true
+        - name: tag_id
+          in: query
+          description: Alias of id (repeatable; same as WS filter)
+          schema:
+            type: string
+          style: form
+          explode: true
+        - name: ids
+          in: query
+          description: Comma-separated tag ids
+          schema:
+            type: string
+            example: a,b,c
+        - name: tag_ids
+          in: query
+          description: Alias of ids
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Sample DTOs for ids that have a live sample (may be empty array)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Sample"
+        "400":
+          description: No ids provided, or more than 100 unique ids
     post:
       tags: [tags]
       summary: Batch write tag values to PLC
@@ -240,6 +329,8 @@ paths:
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
         required: true
         content:
@@ -262,10 +353,28 @@ paths:
                 $ref: "#/components/schemas/BatchWriteResponse"
         "400":
           description: Invalid JSON / empty writes / exceeds max 100
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "401":
           description: API token configured and missing/wrong
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "403":
           description: opc_write_enabled=false
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Idempotency-Key reused with a different body / sim blocked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
 
   /api/v1/tags/{id}/history:
     get:
@@ -1158,8 +1267,35 @@ components:
       schema:
         type: string
       description: Device id
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema:
+        type: string
+        maxLength: 128
+      description: |
+        Optional. Deduplicate PUT/POST write retries within an in-memory TTL (~10 minutes, lab).
+        Replay returns the original status/body and sets `Idempotent-Replayed: true`.
+        Reusing the same key with a different body returns 409 `idempotency_key_reuse`.
+        Critical for pulse/edge command tags; setpoints are usually safe to retry even without it.
 
   schemas:
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: Stable machine-readable code (e.g. opc_write_disabled, tag_not_found)
+          example: opc_write_disabled
+        message:
+          type: string
+          description: Human-readable detail
+        code:
+          type: string
+          description: Optional secondary code (reserved)
+          nullable: true
     Sample:
       type: object
       required: [time, tag_id, quality]

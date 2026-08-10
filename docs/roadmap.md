@@ -18,7 +18,7 @@ Level2 — **стабильный plant gateway**: OPC UA collector → Live / T
 | Math / control model | Отдельный GitHub-репо и контейнер; только HTTP/WS к `LEVEL2_API_URL` |
 | PLC | Авторитетные значения и AccessLevel |
 
-Контракт API: [`api/openapi.yaml`](../api/openapi.yaml) (сейчас **v1.3.0**), `GET /api/v1/openapi.yaml`, UI `/docs`. Подробнее: [l2-model-integration.md](l2-model-integration.md), [external-client-api.md](external-client-api.md).
+Контракт API: [`api/openapi.yaml`](../api/openapi.yaml) (сейчас **v1.3.1**), `GET /api/v1/openapi.yaml`, UI `/docs`. Подробнее: [l2-model-integration.md](l2-model-integration.md), [external-client-api.md](external-client-api.md).
 
 ---
 

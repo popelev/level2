@@ -67,6 +67,7 @@ type Server struct {
 
 func (s *Server) Mount(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/tags", s.handleTags)
+	mux.HandleFunc("GET /api/v1/tags/values", s.handleBatchTagValues)
 	mux.HandleFunc("GET /api/v1/tags/{id}/value", s.handleTagValue)
 	mux.HandleFunc("GET /api/v1/tags/{id}/history", s.handleHistory)
 	mux.HandleFunc("GET /api/v1/devices", s.handleDevices)

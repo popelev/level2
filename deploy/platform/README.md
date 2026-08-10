@@ -43,6 +43,7 @@ Complete route list as registered by `internal/api.Server.Mount` (+ collector `w
 | GET | `/docs` | Swagger UI (loads `/api/v1/openapi.yaml`) |
 | GET | `/api/v1/status/summary` | Overview pills / counters |
 | GET | `/api/v1/tags` | Configured tags + live sample (`?device_id=`) |
+| GET | `/api/v1/tags/values?id=` | Batch live samples (Sample DTOs only; also `ids` / `tag_ids`) |
 | GET | `/api/v1/tags/{id}/value` | Last live sample |
 | GET | `/api/v1/tags/{id}/history?from=&to=&limit=` | Timescale history |
 | PUT | `/api/v1/tags/{id}/value` | OPC Write; optional verify; gate + `writable` (+ token) — [opc-write-mode.md](../../docs/opc-write-mode.md) |

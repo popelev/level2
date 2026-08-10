@@ -48,14 +48,14 @@ Base URL (lab VM): `http://<host>:8080`. Same origin serves the React Admin UI.
 | Area | Today |
 |------|--------|
 | REST | `/api/v1/...` mounted in `internal/api` (`Mount`, project, diagnostics, database, status, tag bulk). |
-| Live read | `GET /api/v1/tags`, `GET /api/v1/tags/{id}/value` — in-memory Live store. |
+| Live read | `GET /api/v1/tags`, `GET /api/v1/tags/{id}/value`, batch `GET /api/v1/tags/values?id=` — in-memory Live store. |
 | History | `GET /api/v1/tags/{id}/history?from=&to=&limit=` — Timescale. |
 | Discovery | `GET /api/v1/devices`, tags list, `GET /api/v1/browse`, `POST /api/v1/expand`, project/xlsx import-export. |
 | Write | `PUT /api/v1/tags/{id}/value`, batch `POST /api/v1/tags/values` — requires write gate + tag `writable` |
 | WebSocket | `GET /api/v1/ws/stream` — Live samples; optional `?tag_id=` / `?tag_ids=` filter |
 | Auth | Optional role tokens: `LEVEL2_API_TOKEN_WRITE` (value writes + WS), `LEVEL2_API_TOKEN_ADMIN` (wipe/config/import); legacy shared `LEVEL2_API_TOKEN` = both. Empty = auth off. Write token on admin route → **403** |
 | CORS | **No** dedicated CORS middleware. Browser cross-origin calls from another origin will fail unless same-origin or a reverse proxy adds headers. Non-browser clients (curl, Python `requests`, C# `HttpClient`) are unaffected. |
-| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.3.0** (full surface); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
+| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.3.1** (full surface); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
 | Capacity | `drop_oldest` may spool while trimming (`ErrCapacityBusy`) — [db-capacity-policy.md](db-capacity-policy.md) |
 | WS origin | `CheckOrigin: true` (accept all) — fine for lab; revisit with auth. |
 
@@ -133,6 +133,15 @@ GET /api/v1/tags?device_id=s7_1500
 
 Use for binding UIs and multi-tag dashboards. Prefer this over N parallel GETs for small/medium lists.
 
+### 3.2.1. Batch live values (selected ids)
+
+```http
+GET /api/v1/tags/values?id=a&id=b
+GET /api/v1/tags/values?ids=a,b
+```
+
+Returns an array of Sample DTOs only (max 100 ids). Unknown / no-sample ids are omitted. Prefer when the client already has a tag list and does not need full config inventory.
+
 ### 3.3. Streaming
 
 ```http
@@ -188,11 +197,12 @@ HTTP **200** when the request parses (max 100 items). Response includes per-item
 
 ### 4.3. Idempotency notes
 
-- OPC Write is **not** automatically idempotent across retries: a second PUT after a lost HTTP response may write again (usually harmless for setpoints; dangerous for edge-triggered commands).
-- Clients should treat success as “accepted by Level2/OPC”, not a distributed transaction.
-- **Recommendation:** avoid silent client retries on timeout without checking live/readback; prefer `"verify": true` / `?verify=true` (optional `verify_timeout_ms`, default 2000).
+- Optional header **`Idempotency-Key`** on `PUT …/tags/{id}/value` and `POST …/tags/values` (SCRUM-28).
+- Same key + same body within an in-memory TTL (~10 minutes, lab) returns the **cached** response and sets `Idempotent-Replayed: true` — **no second OPC Write** (pulse/edge-safe retries).
+- Same key + **different** body → **409** `{ "error": "idempotency_key_reuse", "message": "..." }`.
+- Without the header, OPC Write is **not** automatically idempotent: a second PUT after a lost HTTP response may write again (usually harmless for setpoints; dangerous for pulses).
+- Prefer `"verify": true` for setpoints; always send a fresh UUID `Idempotency-Key` per logical command for pulses.
 - On verify mismatch Level2 returns **409** JSON with `written` + `observed` (write already applied).
-- No `Idempotency-Key` header today; optional later if command-style tags appear.
 
 ### 4.4. Write-then-verify
 
@@ -228,13 +238,13 @@ Config-mutating endpoints are for engineering tools and the Admin UI — externa
 
 - Keep `/api/v1` JSON field names backward compatible; add fields with omitempty rather than renames.
 - Breaking changes → `/api/v2` or documented migration.
-- Errors today are mostly **plain text** bodies (`http.Error`). Prefer evolving write/read failures toward a small JSON error object when touching those handlers:
+- **JSON error envelope** on hot read/write paths (SCRUM-27): `PUT/POST …/value(s)`, `GET …/value`, `GET …/history`, and auth 401/403:
 
 ```json
 { "error": "opc_write_disabled", "message": "OPC write is disabled (opc_write_enabled=false)" }
 ```
 
-Until then, clients should branch on **HTTP status** first, then parse body as text or JSON.
+Optional `code` is reserved. Branch on **HTTP status**, then `error` (machine code). Some admin routes may still return plain text.
 
 ### 6.2. Suggested status meanings (reads + future writes)
 
@@ -365,9 +375,9 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 
 ### Phase 2 — stabilize & describe (largely delivered)
 
-1. JSON error envelope on write (and gradually on hot read paths) — partial; many errors still plain text.
+1. JSON error envelope on write + hot reads — **done** (SCRUM-27); many admin routes still plain text.
 2. WS tag filter — **done** (`?tag_id=` / `?tag_ids=` / subscribe message).
-3. Keep OpenAPI in sync with every endpoint change (canonical **v1.3.0**).
+3. Keep OpenAPI in sync with every endpoint change (canonical **v1.3.1**).
 4. Light rate limit or max body size for write batch if needed.
 
 ### Phase 3 — productization
@@ -398,6 +408,6 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 ## 13. Open questions
 
 1. **Should config-mutating routes** get auth earlier than read-only value GET? (Today: all mutating + WS when token set.)
-2. **Batch live GET** (`GET /api/v1/tags/values?id=a&id=b`) vs always using full `GET /api/v1/tags`?
+2. ~~**Batch live GET** (`GET /api/v1/tags/values?id=a&id=b`)~~ — **delivered** (SCRUM-29).
 3. **CORS:** add explicit allowlist for a remote browser HMI, or require same-host / proxy?
-4. **Idempotency-Key** for writes — needed for command pulses, or setpoint-only is enough?
+4. **Idempotency-Key** for writes — **done** (SCRUM-28, in-memory TTL); use for pulses.
