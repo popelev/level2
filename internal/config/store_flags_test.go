@@ -8,7 +8,8 @@ import (
 
 func TestStoreFlags_NilAndRoundTrip(t *testing.T) {
 	var nilStore *Store
-	if nilStore.OPCWriteEnabled() || nilStore.TagSimulation() || nilStore.APIToken() != "" {
+	if nilStore.OPCWriteEnabled() || nilStore.TagSimulation() || nilStore.APIToken() != "" ||
+		nilStore.APITokenWrite() != "" || nilStore.APITokenAdmin() != "" {
 		t.Fatal("nil store should return zero values")
 	}
 	if err := nilStore.SetTagSimulation(true); err == nil {
@@ -16,7 +17,8 @@ func TestStoreFlags_NilAndRoundTrip(t *testing.T) {
 	}
 
 	empty := NewStore(t.TempDir()+"/x.yaml", nil)
-	if empty.OPCWriteEnabled() || empty.TagSimulation() || empty.APIToken() != "" {
+	if empty.OPCWriteEnabled() || empty.TagSimulation() || empty.APIToken() != "" ||
+		empty.APITokenWrite() != "" || empty.APITokenAdmin() != "" {
 		t.Fatal("nil file should return zero values")
 	}
 	if err := empty.SetTagSimulation(true); err == nil {
@@ -31,9 +33,14 @@ func TestStoreFlags_NilAndRoundTrip(t *testing.T) {
 	s.mu.Lock()
 	s.file.OPCWriteEnabled = true
 	s.file.APIToken = "secret"
+	s.file.APITokenWrite = "write-tok"
+	s.file.APITokenAdmin = "admin-tok"
 	s.mu.Unlock()
 	if !s.OPCWriteEnabled() || s.APIToken() != "secret" {
 		t.Fatalf("write=%v token=%q", s.OPCWriteEnabled(), s.APIToken())
+	}
+	if s.APITokenWrite() != "write-tok" || s.APITokenAdmin() != "admin-tok" {
+		t.Fatalf("role tokens write=%q admin=%q", s.APITokenWrite(), s.APITokenAdmin())
 	}
 
 	if err := s.SetTagSimulation(true); err != nil {

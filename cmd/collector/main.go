@@ -130,6 +130,8 @@ func main() {
 		TagSimulationActive: func() bool { return fullSamplesSim },
 		SimBrowserActive:    func() bool { return useSim },
 		APIToken:            cfgStore.APIToken,
+		APITokenWrite:       cfgStore.APITokenWrite,
+		APITokenAdmin:       cfgStore.APITokenAdmin,
 		OnDeviceChanged: func(deviceID string, removed bool) {
 			if removed {
 				devHub.Remove(ctx, deviceID)

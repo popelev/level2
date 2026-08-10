@@ -84,7 +84,7 @@ func (s *Store) SetTagSimulation(enabled bool) error {
 	return s.saveLocked()
 }
 
-// APIToken returns the shared API token (empty = auth disabled).
+// APIToken returns the legacy shared API token (empty when unset).
 func (s *Store) APIToken() string {
 	if s == nil {
 		return ""
@@ -95,6 +95,32 @@ func (s *Store) APIToken() string {
 		return ""
 	}
 	return s.file.APIToken
+}
+
+// APITokenWrite returns the write-scoped token (tag values + WS).
+func (s *Store) APITokenWrite() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.file == nil {
+		return ""
+	}
+	return s.file.APITokenWrite
+}
+
+// APITokenAdmin returns the admin-scoped token (wipe/config/import).
+func (s *Store) APITokenAdmin() string {
+	if s == nil {
+		return ""
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.file == nil {
+		return ""
+	}
+	return s.file.APITokenAdmin
 }
 
 func (s *Store) AllTags() []core.Tag {
@@ -467,8 +493,10 @@ func (s *Store) saveLocked() error {
 		// Keep secrets in env (.env); do not rewrite passwords into YAML on import.
 		out.Devices[i].Password = ""
 	}
-	// Prefer LEVEL2_API_TOKEN env; do not persist token into rewritten YAML.
+	// Prefer env for tokens; do not persist secrets into rewritten YAML.
 	out.APIToken = ""
+	out.APITokenWrite = ""
+	out.APITokenAdmin = ""
 	b, err := yaml.Marshal(&out)
 	if err != nil {
 		return err

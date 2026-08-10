@@ -6,7 +6,9 @@
 # Legacy global master (simulates ALL tags, pauses OPC): tag_simulation / LEVEL2_TAG_SIMULATION
 # NEVER auto on disconnect. See docs/tag-simulation.md.
 # PLC write API: opc_write_enabled / LEVEL2_OPC_WRITE_ENABLED (default false)
-# Optional API token: api_token / LEVEL2_API_TOKEN (empty = auth disabled; prefer env)
+# Optional API tokens: api_token / LEVEL2_API_TOKEN (legacy shared), or
+# api_token_write / LEVEL2_API_TOKEN_WRITE and api_token_admin / LEVEL2_API_TOKEN_ADMIN.
+# Empty = auth disabled; prefer env — rewritten config strips token fields.
 
 listen: ":8080"
 spool_dir: "/var/lib/level2/spool"

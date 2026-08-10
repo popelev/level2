@@ -18,6 +18,8 @@ services:
       LEVEL2_SIM_BROWSER: ${LEVEL2_SIM_BROWSER:-1}
       LEVEL2_OPC_WRITE_ENABLED: ${LEVEL2_OPC_WRITE_ENABLED:-false}
       LEVEL2_API_TOKEN: ${LEVEL2_API_TOKEN:-}
+      LEVEL2_API_TOKEN_WRITE: ${LEVEL2_API_TOKEN_WRITE:-}
+      LEVEL2_API_TOKEN_ADMIN: ${LEVEL2_API_TOKEN_ADMIN:-}
       SPOOL_DIR: /var/lib/level2/spool
       UI_DIR: /usr/share/level2/ui
       # Same Docker volume as smoke Timescale (/var/lib/postgresql/data) so Statfs

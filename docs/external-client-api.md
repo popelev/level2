@@ -53,9 +53,9 @@ Base URL (lab VM): `http://<host>:8080`. Same origin serves the React Admin UI.
 | Discovery | `GET /api/v1/devices`, tags list, `GET /api/v1/browse`, `POST /api/v1/expand`, project/xlsx import-export. |
 | Write | `PUT /api/v1/tags/{id}/value`, batch `POST /api/v1/tags/values` — requires write gate + tag `writable` |
 | WebSocket | `GET /api/v1/ws/stream` — Live samples; optional `?tag_id=` / `?tag_ids=` filter |
-| Auth | Optional `LEVEL2_API_TOKEN` — when set, mutating `/api/v1/*` + WS require Bearer / `X-API-Token` / `?token=` |
+| Auth | Optional role tokens: `LEVEL2_API_TOKEN_WRITE` (value writes + WS), `LEVEL2_API_TOKEN_ADMIN` (wipe/config/import); legacy shared `LEVEL2_API_TOKEN` = both. Empty = auth off. Write token on admin route → **403** |
 | CORS | **No** dedicated CORS middleware. Browser cross-origin calls from another origin will fail unless same-origin or a reverse proxy adds headers. Non-browser clients (curl, Python `requests`, C# `HttpClient`) are unaffected. |
-| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.2.1** (full surface); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
+| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.3.0** (full surface); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
 | Capacity | `drop_oldest` may spool while trimming (`ErrCapacityBusy`) — [db-capacity-policy.md](db-capacity-policy.md) |
 | WS origin | `CheckOrigin: true` (accept all) — fine for lab; revisit with auth. |
 
@@ -108,7 +108,7 @@ Upgrade: websocket
 
 - Server pushes **one JSON sample object per message** (same DTO as above) whenever FanIn updates Live (every poll/subscribe sample, including unchanged values).
 - **Filter:** omit query → all tags. With `tag_id` / `tag_ids` → only matching `tag_id`s. Client may also send `{"subscribe":["a","b"]}` to replace the filter.
-- When `LEVEL2_API_TOKEN` is set: Bearer / `X-API-Token` / `?token=` required before upgrade.
+- When API tokens are set: write (or admin/legacy) Bearer / `X-API-Token` / `?token=` required before upgrade.
 - Client → server: any non-subscribe message keeps the connection alive; disconnect ends the session.
 
 ---
@@ -259,14 +259,15 @@ Request bodies: `application/json` (except multipart Excel import). Responses: `
 
 | Phase | Behavior |
 |-------|----------|
-| **Lab default** | Token empty → open. Network isolation / firewall is the boundary. |
-| **Phase A (implemented)** | Optional shared **API token** (`LEVEL2_API_TOKEN`): `Authorization: Bearer …`, `X-API-Token`, or `X-API-Key` for all `/api/v1/*` **mutating** routes + WS. Reads stay open. Empty token = disabled. |
-| **Phase B** | Split **read** vs **write** (and config) roles — not yet. |
+| **Lab default** | All tokens empty → open. Network isolation / firewall is the boundary. |
+| **Phase A (implemented)** | Role tokens (or legacy shared): Bearer / `X-API-Token` / `X-API-Key` / WS `?token=`. Reads stay open. |
+| **Write vs admin (SCRUM-15)** | `LEVEL2_API_TOKEN_WRITE` — `PUT/POST …/value(s)` + WS. `LEVEL2_API_TOKEN_ADMIN` — wipe, capacity-policy, project import, device/tag config. Write token on admin route → **403**. Missing/wrong → **401**. |
+| **Legacy** | `LEVEL2_API_TOKEN` / `api_token` alone still authorizes both roles (lab backward compatible). |
 | **Later** | TLS termination at reverse proxy; Basic or OIDC if the plant requires it. |
 
-Document clearly: with write enabled and no auth, **anyone on the lab network can change PLC values** (subject to `writable` flags).
+Document clearly: with write enabled and no auth, **anyone on the lab network can change PLC values** (subject to `writable` flags). Give the math-model only the **write** token so it cannot wipe or rewrite config.
 
-WebSocket auth: same headers, or query `?token=`.
+WebSocket auth: same headers, or query `?token=` (write or admin/legacy).
 
 ---
 
@@ -366,7 +367,7 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 
 1. JSON error envelope on write (and gradually on hot read paths) — partial; many errors still plain text.
 2. WS tag filter — **done** (`?tag_id=` / `?tag_ids=` / subscribe message).
-3. Keep OpenAPI in sync with every endpoint change (canonical **v1.2.1**).
+3. Keep OpenAPI in sync with every endpoint change (canonical **v1.3.0**).
 4. Light rate limit or max body size for write batch if needed.
 
 ### Phase 3 — productization

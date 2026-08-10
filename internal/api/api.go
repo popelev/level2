@@ -54,8 +54,13 @@ type Server struct {
 	TagSimulationActive func() bool
 	// SimBrowserActive is true when LEVEL2_SIM_BROWSER replaced OPC browse with simbrowser.
 	SimBrowserActive func() bool
-	// APIToken returns the shared API token; empty disables auth (optional; falls back to Cfg.APIToken).
+	// APIToken returns the legacy shared API token; empty disables auth when role tokens also empty
+	// (optional; falls back to Cfg.APIToken). Prefer APITokenWrite / APITokenAdmin.
 	APIToken func() string
+	// APITokenWrite returns the write-scoped token (tag values + WS).
+	APITokenWrite func() string
+	// APITokenAdmin returns the admin-scoped token (wipe/config/import).
+	APITokenAdmin func() string
 	// OnDeviceChanged is called after device create/update/delete (optional).
 	OnDeviceChanged func(deviceID string, removed bool)
 }

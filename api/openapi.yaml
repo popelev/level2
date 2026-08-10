@@ -14,8 +14,12 @@ info:
 
     **Write gates (all layers apply):**
     1. `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default off → HTTP 403) — master kill switch
-    2. Optional `LEVEL2_API_TOKEN` / `api_token` — when set, mutating `/api/v1/*` and WS require
-       `Authorization: Bearer <token>`, `X-API-Token`, or `X-API-Key` (WS also accepts `?token=`)
+    2. Optional API tokens — when any is set, mutating `/api/v1/*` and WS require
+       `Authorization: Bearer <token>`, `X-API-Token`, or `X-API-Key` (WS also accepts `?token=`):
+       - **Write:** `LEVEL2_API_TOKEN_WRITE` — `PUT …/tags/{id}/value`, `POST …/tags/values`, WS
+       - **Admin:** `LEVEL2_API_TOKEN_ADMIN` — wipe, capacity-policy, project import, device/tag config
+       - **Legacy shared:** `LEVEL2_API_TOKEN` / `api_token` — both roles (lab backward compatible)
+       Write token on an admin route → **403**. Missing/wrong → **401**. Empty tokens = auth off.
     3. Per-tag `writable` (default **false**) — Write API returns 403 when false
 
     Batch write: `POST /api/v1/tags/values` — HTTP 200 when the request parses; per-item
@@ -26,7 +30,7 @@ info:
 
     This document enumerates the **full** collector HTTP surface (integration + admin):
     devices/tags CRUD, project xlsx, diagnostics, database capacity/wipe, health/metrics.
-  version: 1.2.1
+  version: 1.3.0
   contact:
     name: popelev / Level2
 
@@ -137,7 +141,7 @@ paths:
       summary: Write scalar value to PLC (OPC UA)
       description: |
         Requires `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED`, tag `writable=true`,
-        and API token when `LEVEL2_API_TOKEN` is set.
+        and a **write** (or admin/legacy) API token when tokens are configured.
         Coerces JSON to the tag's configured datatype, then OPC Write.
         On OPC `BadTypeMismatch`, the driver performs one auto-retry with alternate width
         (float64↔float32 / int64↔int32(+int16)) using the node's DataType Attribute.
@@ -146,6 +150,8 @@ paths:
         Mismatch returns **409** JSON with `written` + `observed` (write already applied — non-transactional).
         `optimistic` (default true) updates Live+WS immediately; `false` waits until after write (and verify if requested).
       security:
+        - BearerAuthWrite: []
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -205,7 +211,9 @@ paths:
         "401":
           description: API token configured and missing/wrong
         "403":
-          description: Write disabled (opc_write_enabled=false) or tag writable=false
+          description: |
+            Write disabled (opc_write_enabled=false), tag writable=false,
+            or write-scoped token used where admin is required (other mutating routes).
         "404":
           description: Unknown tag
         "409":
@@ -222,11 +230,13 @@ paths:
       description: |
         Partial-failure semantics: HTTP **200** when the batch body parses and size ≤ 100.
         Each item has independent `ok` / `error` / `http_status`. Master write gate and
-        API token apply to the whole request; per-item writable/coercion/OPC errors appear in `results`.
+        **write** (or admin/legacy) API token apply to the whole request; per-item writable/coercion/OPC errors appear in `results`.
         Per-item OPC Write uses the same BadTypeMismatch auto-retry as single PUT.
         Request-level or per-item `verify` / `verify_timeout_ms` / `optimistic` mirror single-write semantics;
         verify failures set `ok=false` with `written` + `observed` on that item (still HTTP 200 for the batch).
       security:
+        - BearerAuthWrite: []
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -306,6 +316,7 @@ paths:
       tags: [devices]
       summary: Create device
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -334,6 +345,7 @@ paths:
       tags: [devices]
       summary: Update device (id from path)
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -356,6 +368,7 @@ paths:
       tags: [devices]
       summary: Delete device and its tags
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -392,8 +405,9 @@ paths:
       summary: Expand structure to leaf tags (SSE or JSON)
       description: |
         Walks the OPC (or sim) address space under `node_id` and returns leaf Variable tags.
-        Mutating method — requires API token when `LEVEL2_API_TOKEN` is set.
+        Mutating method — requires **admin** (or legacy) API token when tokens are configured.
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -426,8 +440,10 @@ paths:
         Optional filter: repeated `tag_id` query and/or comma-separated `tag_ids`.
         Without a filter, all Live samples are broadcast (backward compatible).
         Client may send `{"subscribe":["a","b"]}` (or `tag_ids`) to replace the filter.
-        When `LEVEL2_API_TOKEN` is set, pass Bearer / X-API-Token / `?token=`.
+        When API tokens are set, pass write (or admin/legacy) Bearer / X-API-Token / `?token=`.
       security:
+        - BearerAuthWrite: []
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -484,6 +500,7 @@ paths:
       tags: [diagnostics]
       summary: Clear diagnostics ring buffer
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -498,6 +515,7 @@ paths:
       tags: [diagnostics]
       summary: Clear ring log and Overview drop counters
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -544,6 +562,7 @@ paths:
         `drop_oldest`: proactive trim near 90% of limit; while still over hard limit but trim
         can progress, flush returns busy and the collector spools (no halt / no in-flight loss).
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -582,6 +601,7 @@ paths:
         Requires `?confirm=wipe`. Truncates Timescale samples, clears Live, re-seeds from Live snapshot.
         Optional body `{"clear_tags":true}` also clears monitored tags on every device.
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -638,6 +658,7 @@ paths:
         Prefer per-tag `simulate` (PATCH / bulk simulate). This legacy master pauses OPC collect
         for all enabled tags. Requires collector recreate to apply. Auth when token set.
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -666,6 +687,7 @@ paths:
       tags: [tags]
       summary: Upsert one tag on a device
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -688,6 +710,7 @@ paths:
       tags: [tags]
       summary: Delete all tags on a device
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -709,6 +732,7 @@ paths:
       tags: [tags]
       summary: Upsert tag by path tagId
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -729,6 +753,7 @@ paths:
       tags: [tags]
       summary: Partial update of tag flags (simulate, writable, enabled)
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -756,6 +781,7 @@ paths:
       tags: [tags]
       summary: Delete one tag
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -772,6 +798,7 @@ paths:
       tags: [tags]
       summary: Bulk upsert tags on a device
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -800,6 +827,7 @@ paths:
       summary: Overwrite datatypes from OPC DataType Attribute
       description: See docs/opc-datatype-sync.md. Empty tag_ids = all tags on device.
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -826,6 +854,7 @@ paths:
       tags: [tags]
       summary: Import plant-format Excel tag list
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -873,6 +902,7 @@ paths:
       tags: [tags]
       summary: Bulk enable/disable per-tag simulation on a device
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -907,6 +937,7 @@ paths:
       tags: [tags]
       summary: Bulk enable/disable per-tag writable on a device
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -941,6 +972,7 @@ paths:
       tags: [tags]
       summary: Bulk enable/disable simulation across devices
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -987,6 +1019,7 @@ paths:
       tags: [project]
       summary: Preview project import without applying
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -1010,6 +1043,7 @@ paths:
       tags: [project]
       summary: Import Project.xlsx (merge or replace)
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -1033,6 +1067,7 @@ paths:
       tags: [project]
       summary: Validate project / tags against Address Space
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -1047,6 +1082,7 @@ paths:
       tags: [project]
       summary: Compare project config vs live Address Space (JSON)
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -1061,6 +1097,7 @@ paths:
       tags: [project]
       summary: Compare project → Excel report
       security:
+        - BearerAuthAdmin: []
         - BearerAuth: []
         - ApiTokenHeader: []
         - ApiKeyHeader: []
@@ -1077,14 +1114,30 @@ paths:
 
 components:
   securitySchemes:
+    BearerAuthWrite:
+      type: http
+      scheme: bearer
+      description: |
+        Write-scoped LEVEL2_API_TOKEN_WRITE — authorizes tag value writes and WS only.
+        Does not authorize wipe / capacity-policy / config / import (those need Admin).
+    BearerAuthAdmin:
+      type: http
+      scheme: bearer
+      description: |
+        Admin-scoped LEVEL2_API_TOKEN_ADMIN — wipe, capacity-policy, project import,
+        device/tag config and other mutating admin routes. Also accepted on write routes.
     BearerAuth:
       type: http
       scheme: bearer
-      description: Shared LEVEL2_API_TOKEN (empty env = auth disabled)
+      description: |
+        Legacy shared LEVEL2_API_TOKEN / api_token — both write and admin roles
+        (lab backward compatible). Prefer Write + Admin when splitting model vs ops.
+        Empty tokens = auth disabled.
     ApiTokenHeader:
       type: apiKey
       in: header
       name: X-API-Token
+      description: Same secret as Bearer (write, admin, or legacy shared)
     ApiKeyHeader:
       type: apiKey
       in: header

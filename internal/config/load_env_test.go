@@ -77,6 +77,8 @@ devices:
 	t.Setenv("LEVEL2_OPC_WRITE_ENABLED", "true")
 	t.Setenv("LEVEL2_TAG_SIMULATION", "true")
 	t.Setenv("LEVEL2_API_TOKEN", "lab-secret")
+	t.Setenv("LEVEL2_API_TOKEN_WRITE", "write-secret")
+	t.Setenv("LEVEL2_API_TOKEN_ADMIN", "admin-secret")
 	f2, err := Load(path)
 	if err != nil {
 		t.Fatal(err)
@@ -98,6 +100,9 @@ devices:
 	}
 	if f2.APIToken != "lab-secret" {
 		t.Fatalf("token=%q", f2.APIToken)
+	}
+	if f2.APITokenWrite != "write-secret" || f2.APITokenAdmin != "admin-secret" {
+		t.Fatalf("role tokens write=%q admin=%q", f2.APITokenWrite, f2.APITokenAdmin)
 	}
 }
 

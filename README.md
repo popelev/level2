@@ -136,7 +136,9 @@ Opt-in tag samples only (default **off**, never auto on disconnect): `tag_simula
 | `LEVEL2_SIM_BROWSER` | `1` — demo without PLC; `0` — live OPC UA |
 | `LEVEL2_TAG_SIMULATION` | Legacy global sim master (prefer per-tag `simulate`; default off) — [docs/tag-simulation.md](docs/tag-simulation.md) |
 | `LEVEL2_OPC_WRITE_ENABLED` | Master kill switch for PLC Write API (default **off** → 403) |
-| `LEVEL2_API_TOKEN` | Optional shared token for mutating `/api/v1/*` + WS |
+| `LEVEL2_API_TOKEN_WRITE` | Write-scoped token: tag value writes + WS (not wipe/config) |
+| `LEVEL2_API_TOKEN_ADMIN` | Admin-scoped token: wipe, capacity-policy, import, device/tag config |
+| `LEVEL2_API_TOKEN` | Legacy shared token for both write + admin (empty = auth off) |
 | `DATABASE_URL` | PostgreSQL/Timescale DSN (set automatically in compose) |
 | `PLC_OPC_ENDPOINT` | `opc.tcp://…:4840` |
 | `OPC_UA_USERNAME` / `OPC_UA_PASSWORD` | OPC credentials (same as in UaExpert) |

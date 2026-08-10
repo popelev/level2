@@ -17,7 +17,7 @@ External programs (any language) should call the same REST write — gateway rol
 | REST | `PUT /api/v1/tags/{id}/value` and batch `POST /api/v1/tags/values` — gated by `opc_write_enabled` (default off → **403**). |
 | Tag model | `id`, `node_id`, `path`, `datatype`, `enabled`, `interval_ms`, **`writable`** (default **false**), optional `mode` (`poll` \| `subscribe`). |
 | Live / FanIn | Poll → Live + WS always; Timescale only on value/quality change ([Phase 1 suppress](opc-subscription-mode.md)). |
-| Auth | Optional shared **`LEVEL2_API_TOKEN`** on mutating `/api/v1/*` + WS (empty = open lab). |
+| Auth | Optional role tokens: **`LEVEL2_API_TOKEN_WRITE`** (value writes + WS), **`LEVEL2_API_TOKEN_ADMIN`** (wipe/config/import); legacy shared **`LEVEL2_API_TOKEN`** = both (empty = open lab). |
 | Diagnostics | Categories `opc_read`, `opc_write`, `db_write`. |
 | UI | **DB write list** shows live value as read-only text. Writable toggle in Admin UI is a follow-up. |
 
@@ -164,7 +164,9 @@ Device-level kill switch (env / YAML):
 | Setting | Meaning |
 |---------|---------|
 | `LEVEL2_OPC_WRITE_ENABLED` / `opc_write_enabled` | Global gate. Default **`false`**. When false → API returns **403** (not 501). |
-| `LEVEL2_API_TOKEN` / `api_token` | Optional shared token. Empty = auth disabled. When set → mutating `/api/v1/*` + WS require Bearer / `X-API-Token` / `X-API-Key` / `?token=` → **401**. Prefer env; rewritten config strips `api_token` from YAML. |
+| `LEVEL2_API_TOKEN_WRITE` | Write-scoped: `PUT/POST …/value(s)` + WS. Does **not** authorize wipe/config. |
+| `LEVEL2_API_TOKEN_ADMIN` | Admin-scoped: wipe, capacity-policy, project import, device/tag config. Also accepted on write routes. |
+| `LEVEL2_API_TOKEN` / `api_token` | Legacy shared token (both roles). Empty = auth disabled. Prefer Write + Admin. When set → missing/wrong → **401**; write token on admin route → **403**. Prefer env; rewritten config strips token fields from YAML. |
 
 ---
 

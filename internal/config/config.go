@@ -23,10 +23,14 @@ type File struct {
 	// Default false — NEVER auto-enabled on OPC disconnect. Override with LEVEL2_TAG_SIMULATION.
 	// Distinct from LEVEL2_SIM_BROWSER (full in-memory browse). See docs/tag-simulation.md.
 	TagSimulation bool `yaml:"tag_simulation"`
-	// APIToken, when non-empty, requires Bearer / X-API-Token on mutating /api/v1 routes (and WS).
-	// Empty = auth disabled (lab backward compatible). Override with LEVEL2_API_TOKEN.
-	APIToken string        `yaml:"api_token,omitempty"`
-	Devices  []core.Device `yaml:"devices"`
+	// APIToken is the legacy shared token (write+admin). Empty + empty role tokens = auth off.
+	// Prefer LEVEL2_API_TOKEN_WRITE / LEVEL2_API_TOKEN_ADMIN. Override with LEVEL2_API_TOKEN.
+	APIToken string `yaml:"api_token,omitempty"`
+	// APITokenWrite authorizes tag value writes + WS only (not wipe/config). LEVEL2_API_TOKEN_WRITE.
+	APITokenWrite string `yaml:"api_token_write,omitempty"`
+	// APITokenAdmin authorizes wipe, capacity-policy, import, device/tag config. LEVEL2_API_TOKEN_ADMIN.
+	APITokenAdmin string `yaml:"api_token_admin,omitempty"`
+	Devices       []core.Device `yaml:"devices"`
 }
 
 // Full-disk policies when used bytes reach the capacity percent limit.
@@ -109,6 +113,12 @@ func Load(path string) (*File, error) {
 	}
 	if v, ok := os.LookupEnv("LEVEL2_API_TOKEN"); ok {
 		f.APIToken = strings.TrimSpace(v)
+	}
+	if v, ok := os.LookupEnv("LEVEL2_API_TOKEN_WRITE"); ok {
+		f.APITokenWrite = strings.TrimSpace(v)
+	}
+	if v, ok := os.LookupEnv("LEVEL2_API_TOKEN_ADMIN"); ok {
+		f.APITokenAdmin = strings.TrimSpace(v)
 	}
 	for i := range f.Devices {
 		d := &f.Devices[i]

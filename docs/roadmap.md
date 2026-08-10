@@ -64,7 +64,7 @@ Level2 — **стабильный plant gateway**: OPC UA collector → Live / T
 |---|------|-----|------|---------------|
 | A1 | **Lab capacity hygiene** | P0 | [SCRUM-19](https://popelevfedor.atlassian.net/browse/SCRUM-19) | ✅ Lab: `drop_oldest` + разумный `capacity_percent` (не 2%), wipe/reseed при backlog, spool clear после wipe; runbook в [db-capacity-policy.md](db-capacity-policy.md) |
 | A2 | **TypeMismatch retry** на OPC write | P0 | [SCRUM-16](https://popelevfedor.atlassian.net/browse/SCRUM-16) | Один авто-retry с alternate width (float64→float32 и аналоги) при `BadTypeMismatch`; лог в diag; тесты + запись в [opc-write-mode.md](opc-write-mode.md) |
-| A3 | **Split tokens/roles** (минимум write vs admin) | P0 | [SCRUM-15](https://popelevfedor.atlassian.net/browse/SCRUM-15) | Отдельные токены (или роли): mutating write ≠ admin (wipe/policy/import); docs + OpenAPI; lab backward-compat при пустых токенах |
+| A3 | **Split tokens/roles** (минимум write vs admin) | P0 | [SCRUM-15](https://popelevfedor.atlassian.net/browse/SCRUM-15) | ✅ `LEVEL2_API_TOKEN_WRITE` / `_ADMIN` (+ legacy shared); write≠admin; docs + OpenAPI v1.3.0; lab open при пустых токенах |
 
 **Выход волны A:** безопасный write для внешней модели + контролируемый lab disk + минимальное разделение прав.
 
