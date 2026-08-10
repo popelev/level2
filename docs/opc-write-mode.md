@@ -4,7 +4,7 @@ Design for **writing process values** from Level2 into OPC UA nodes (Siemens S7-
 
 External programs (any language) should call the same REST write — gateway role, read paths, and client contract: [external-client-api.md](external-client-api.md).
 
-**Status:** Phase 2–3 hardening implemented (batch write, API token, tag `writable`, WS filter, **write-then-verify**). REST write when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` is true (default **off** → **403**). OpenAPI: [`api/openapi.yaml`](../api/openapi.yaml) **v1.2.1**, Swagger `/docs`.
+**Status:** Phase 2–3 hardening implemented (batch write, API token, tag `writable`, WS filter, **write-then-verify**, **TypeMismatch auto-retry**). REST write when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` is true (default **off** → **403**). OpenAPI: [`api/openapi.yaml`](../api/openapi.yaml) **v1.2.1**, Swagger `/docs`.
 
 ---
 
@@ -138,7 +138,7 @@ Rules:
 
 - Reject wrong JSON shape with **400** before touching OPC.
 - Prefer reading OPC `DataType` attribute (already have `readOPCDataType`) for **Variant wire type** when available; fall back to platform `datatype` mapping.
-- Phase 2: on `BadTypeMismatch`, one automatic retry with alternate width (e.g. float64→float32, int64→int32) logged in diag.
+- **Implemented:** on `BadTypeMismatch`, one automatic retry: read OPC `DataType` Attribute and coerce float64↔float32 / int64↔int32(+int16); if the attribute is unavailable, fall back to heuristic float64↔float32 / int64↔int32. Logged in `diag` (`opc write typemismatch retry` / `opc write ok after typemismatch retry`).
 
 Inverse of `mapDataValue` / `asFloat64` helpers should live in something like `internal/driver/opcua/write_value.go` with unit tests mirroring `value_test.go`.
 
@@ -286,7 +286,7 @@ Even while the lab API stays open:
 3. **Diagnostics**: new category `opc_write` — log every attempt (info on success with tag/value summary; warn/error on deny/mismatch). Mirror pattern of `diag.OPCRead`.
 4. **Metrics** (optional MVP, recommended Phase 2):
    - `level2_opc_writes_total{result="ok|denied|error"}`
-5. **Do not** invent silent retries that rewrite after success.
+5. **Do not** invent silent retries that rewrite after success. (Exception: one `BadTypeMismatch` width coerce — see §3.2.)
 6. **Permissions (later):** when HTTP auth lands, map role → write; until then document that anyone who can reach `:8080` can write if the flag is on.
 7. Siemens **UserAccessLevel** remains the hard gate — Level2 `writable` is advisory / UX only.
 
@@ -351,7 +351,7 @@ Disable Set controls when:
 ### Phase 2 — hardening
 
 1. Tag `writable` + XLSX column; UI respects it.
-2. OPC DataType-aware Variant + TypeMismatch retry.
+2. [x] OPC DataType-aware Variant + TypeMismatch retry (`WriteValue` auto-retry).
 3. Batch `POST /api/v1/tags/values` with chunking (`maxNodesPerWrite`).
 4. Metrics counters; Diagnostics page filter for `opc_write`.
 5. Optional Address Space write for monitored leaves only.
@@ -395,7 +395,7 @@ Disable Set controls when:
 **Phase 2+**
 
 - [x] Batch partial failure.
-- [ ] TypeMismatch retry.
+- [x] TypeMismatch retry.
 - [x] Verify timeout / mismatch response.
 
 ---
@@ -418,7 +418,7 @@ Disable Set controls when:
 |-----------|------|
 | Write handler | `internal/api/write.go` (`handleWriteTagValue`, verify in `executeWrite`) |
 | Write verify match | `internal/api/write_verify.go` |
-| Write coerce / driver | `internal/driver/opcua/write_value.go` (`WriteValue`, `ReadValue`) |
+| Write coerce / driver | `internal/driver/opcua/write_value.go` (`WriteValue`, TypeMismatch retry, `ReadValue`) |
 | Poll / client lock | `internal/driver/opcua/driver.go` |
 | Read value mapping | `internal/driver/opcua/value.go` |
 | OPC DataType resolve | `internal/driver/opcua/datatype.go` |

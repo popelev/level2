@@ -139,6 +139,8 @@ paths:
         Requires `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED`, tag `writable=true`,
         and API token when `LEVEL2_API_TOKEN` is set.
         Coerces JSON to the tag's configured datatype, then OPC Write.
+        On OPC `BadTypeMismatch`, the driver performs one auto-retry with alternate width
+        (float64↔float32 / int64↔int32(+int16)) using the node's DataType Attribute.
         Optional write-then-verify: body `verify` / query `?verify=true` performs OPC Read
         after StatusOK Write and sets `verified` when readback matches (float epsilon).
         Mismatch returns **409** JSON with `written` + `observed` (write already applied — non-transactional).
@@ -221,6 +223,7 @@ paths:
         Partial-failure semantics: HTTP **200** when the batch body parses and size ≤ 100.
         Each item has independent `ok` / `error` / `http_status`. Master write gate and
         API token apply to the whole request; per-item writable/coercion/OPC errors appear in `results`.
+        Per-item OPC Write uses the same BadTypeMismatch auto-retry as single PUT.
         Request-level or per-item `verify` / `verify_timeout_ms` / `optimistic` mirror single-write semantics;
         verify failures set `ok=false` with `written` + `observed` on that item (still HTTP 200 for the batch).
       security:
