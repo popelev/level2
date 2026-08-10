@@ -18,7 +18,7 @@ Level2 — **стабильный plant gateway**: OPC UA collector → Live / T
 | Math / control model | Отдельный GitHub-репо и контейнер; только HTTP/WS к `LEVEL2_API_URL` |
 | PLC | Авторитетные значения и AccessLevel |
 
-Контракт API: [`api/openapi.yaml`](../api/openapi.yaml) (сейчас **v1.2.1**), `GET /api/v1/openapi.yaml`, UI `/docs`. Подробнее: [l2-model-integration.md](l2-model-integration.md), [external-client-api.md](external-client-api.md).
+Контракт API: [`api/openapi.yaml`](../api/openapi.yaml) (сейчас **v1.3.0**), `GET /api/v1/openapi.yaml`, UI `/docs`. Подробнее: [l2-model-integration.md](l2-model-integration.md), [external-client-api.md](external-client-api.md).
 
 ---
 
@@ -36,7 +36,7 @@ Level2 — **стабильный plant gateway**: OPC UA collector → Live / T
 | Область | Что готово | Jira / docs |
 |---------|------------|-------------|
 | OPC Write MVP | `PUT` value + `enable_write` gate | [SCRUM-6](https://popelevfedor.atlassian.net/browse/SCRUM-6), [opc-write-mode.md](opc-write-mode.md) |
-| OpenAPI / Swagger | Spec + `/docs`; расширение до full surface v1.2.1 | [SCRUM-7](https://popelevfedor.atlassian.net/browse/SCRUM-7) |
+| OpenAPI / Swagger | Spec + `/docs`; full surface; roles в **v1.3.0** | [SCRUM-7](https://popelevfedor.atlassian.net/browse/SCRUM-7), [SCRUM-15](https://popelevfedor.atlassian.net/browse/SCRUM-15) |
 | Write Phase 2–3 | Batch write, `LEVEL2_API_TOKEN`, `writable`, WS filter | [SCRUM-8](https://popelevfedor.atlassian.net/browse/SCRUM-8) |
 | Simulation | Per-tag sim + UI | [SCRUM-9](https://popelevfedor.atlassian.net/browse/SCRUM-9), [tag-simulation.md](tag-simulation.md) |
 | Writable UI | Колонка + bulk | [SCRUM-10](https://popelevfedor.atlassian.net/browse/SCRUM-10) |
@@ -58,15 +58,15 @@ Level2 — **стабильный plant gateway**: OPC UA collector → Live / T
 
 ---
 
-## Волна A — ближайшая (P0)
+## Волна A — ✅ закрыта (P0)
 
 | # | Тема | Pri | Jira | Done-критерии |
 |---|------|-----|------|---------------|
 | A1 | **Lab capacity hygiene** | P0 | [SCRUM-19](https://popelevfedor.atlassian.net/browse/SCRUM-19) | ✅ Lab: `drop_oldest` + разумный `capacity_percent` (не 2%), wipe/reseed при backlog, spool clear после wipe; runbook в [db-capacity-policy.md](db-capacity-policy.md) |
-| A2 | **TypeMismatch retry** на OPC write | P0 | [SCRUM-16](https://popelevfedor.atlassian.net/browse/SCRUM-16) | Один авто-retry с alternate width (float64→float32 и аналоги) при `BadTypeMismatch`; лог в diag; тесты + запись в [opc-write-mode.md](opc-write-mode.md) |
+| A2 | **TypeMismatch retry** на OPC write | P0 | [SCRUM-16](https://popelevfedor.atlassian.net/browse/SCRUM-16) | ✅ Один авто-retry с alternate width (float64→float32 и аналоги) при `BadTypeMismatch`; лог в diag; тесты + запись в [opc-write-mode.md](opc-write-mode.md) |
 | A3 | **Split tokens/roles** (минимум write vs admin) | P0 | [SCRUM-15](https://popelevfedor.atlassian.net/browse/SCRUM-15) | ✅ `LEVEL2_API_TOKEN_WRITE` / `_ADMIN` (+ legacy shared); write≠admin; docs + OpenAPI v1.3.0; lab open при пустых токенах |
 
-**Выход волны A:** безопасный write для внешней модели + контролируемый lab disk + минимальное разделение прав.
+**Выход волны A:** безопасный write для внешней модели + контролируемый lab disk + минимальное разделение прав. Commits: `c9ed5ed` (A1), `8b5f92a` (A2), `798e05f` (A3).
 
 ---
 
