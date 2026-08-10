@@ -54,6 +54,8 @@ limit_bytes = disk_total × capacity_percent / 100
 | GET | `/api/v1/database/capacity-policy` | current policy + limit |
 | PUT | `/api/v1/database/capacity-policy` | `{"capacity_percent":90,"full_policy":"stop"}` |
 
+OpenAPI documents the same routes (v1.2.1+); see `/docs`.
+
 ## Example YAML
 
 ```yaml

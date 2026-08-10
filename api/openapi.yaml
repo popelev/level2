@@ -2,14 +2,15 @@ openapi: 3.0.3
 info:
   title: Level2 Collector API
   description: |
-    REST and WebSocket API for the Level2 OPC UA collector.
-    Math models and external clients talk only to this API (`LEVEL2_API_URL`);
-    they never embed an OPC stack.
+    REST and WebSocket API for the Level2 OPC UA collector (this repository).
+    A **math / control model** is a **separate GitHub project** — it uses only this
+    HTTP/WS API (`LEVEL2_API_URL`); it never embeds an OPC stack or lives inside Level2.
 
     **Canonical contract** for integrations. See also:
     - docs/external-client-api.md
     - docs/l2-model-integration.md
     - docs/opc-write-mode.md
+    - docs/db-capacity-policy.md
 
     **Write gates (all layers apply):**
     1. `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` (default off → HTTP 403) — master kill switch
@@ -20,9 +21,12 @@ info:
     Batch write: `POST /api/v1/tags/values` — HTTP 200 when the request parses; per-item
     `ok`/`error` in `results` (partial success allowed). Max 100 items.
 
+    **Capacity:** `full_policy=drop_oldest` trims Timescale chunks and may return busy
+    (`ErrCapacityBusy`) so the collector **spools** while trimming (no in-flight loss).
+
     This document enumerates the **full** collector HTTP surface (integration + admin):
     devices/tags CRUD, project xlsx, diagnostics, database capacity/wipe, health/metrics.
-  version: 1.2.0
+  version: 1.2.1
   contact:
     name: popelev / Level2
 
@@ -383,6 +387,13 @@ paths:
     post:
       tags: [browse]
       summary: Expand structure to leaf tags (SSE or JSON)
+      description: |
+        Walks the OPC (or sim) address space under `node_id` and returns leaf Variable tags.
+        Mutating method — requires API token when `LEVEL2_API_TOKEN` is set.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
       requestBody:
         content:
           application/json:
@@ -400,6 +411,8 @@ paths:
       responses:
         "200":
           description: Expanded tags / event stream
+        "401":
+          description: API token required
 
   /api/v1/ws/stream:
     get:
@@ -447,9 +460,12 @@ paths:
       parameters:
         - name: category
           in: query
+          description: |
+            Primary: `all` | `opc_read` | `opc_write` | `db_write`.
+            Aliases accepted by the server: `opc`→opc_read, `write`→opc_write, `db`→db_write.
           schema:
             type: string
-            enum: [all, opc_read, db_write, opc_write]
+            enum: [all, opc_read, db_write, opc_write, opc, write, db]
         - name: errors_only
           in: query
           schema:
@@ -492,6 +508,9 @@ paths:
     get:
       tags: [diagnostics]
       summary: DB size, growth ETA, capacity policy fields, spool metrics
+      description: |
+        Includes `capacity_percent`, `full_policy`, `limit_bytes`, `used_over_limit`, and spool metrics.
+        See docs/db-capacity-policy.md — `drop_oldest` may spool while trimming (`ErrCapacityBusy`).
       responses:
         "200":
           description: Capacity JSON (database_size_bytes, free_bytes, used_over_limit, metrics, …)
@@ -508,12 +527,19 @@ paths:
     get:
       tags: [database]
       summary: Capacity percent and full-disk policy
+      description: |
+        `full_policy`: `stop` (no spool), `drop_oldest` (trim + spool while busy),
+        `rotate` (stub=stop), `expand_limit` (user raises percent; until then like stop).
       responses:
         "200":
           description: capacity_percent, full_policy, limit/disk fields when DB present
     put:
       tags: [database]
       summary: Persist capacity policy to YAML (+ live historian)
+      description: |
+        Persists `database.capacity_percent` / `database.full_policy` via the config store.
+        `drop_oldest`: proactive trim near 90% of limit; while still over hard limit but trim
+        can progress, flush returns busy and the collector spools (no halt / no in-flight loss).
       security:
         - BearerAuth: []
         - ApiTokenHeader: []
@@ -532,6 +558,9 @@ paths:
                 full_policy:
                   type: string
                   enum: [stop, drop_oldest, rotate, expand_limit]
+                  description: |
+                    stop = skip WriteBatch, no spool; drop_oldest = trim chunks, spool on busy;
+                    rotate = Phase 2 stub (same as stop); expand_limit = raise slider (else stop).
       responses:
         "200":
           description: Saved policy
@@ -602,6 +631,13 @@ paths:
     put:
       tags: [diagnostics]
       summary: Persist legacy global tag_simulation (recreate collector to apply)
+      description: |
+        Prefer per-tag `simulate` (PATCH / bulk simulate). This legacy master pauses OPC collect
+        for all enabled tags. Requires collector recreate to apply. Auth when token set.
+      security:
+        - BearerAuth: []
+        - ApiTokenHeader: []
+        - ApiKeyHeader: []
       requestBody:
         required: true
         content:
@@ -615,6 +651,10 @@ paths:
       responses:
         "200":
           description: Updated preference; restart_required when process not yet matching
+        "401":
+          description: API token required
+        "503":
+          description: Config store unavailable
 
   /api/v1/devices/{id}/tags:
     parameters:

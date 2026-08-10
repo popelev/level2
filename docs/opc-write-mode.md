@@ -2,9 +2,9 @@
 
 Design for **writing process values** from Level2 into OPC UA nodes (Siemens S7-1500 and similar). Distinct from [historian on-change / subscription mode](opc-subscription-mode.md) (“DB write”) and from UI labels such as “Write to DB”, which mean *add tag to the poll/historian list*. Datatype Sync / expand: [opc-datatype-sync.md](opc-datatype-sync.md).
 
-External programs (any language) should call the same REST write once it exists — gateway role, read paths, and client contract: [external-client-api.md](external-client-api.md).
+External programs (any language) should call the same REST write — gateway role, read paths, and client contract: [external-client-api.md](external-client-api.md).
 
-**Status:** Phase 2–3 hardening implemented (batch write, API token, tag `writable`, WS filter, **write-then-verify**). REST write when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` is true (default **off** → **403**). OpenAPI: [`api/openapi.yaml`](../api/openapi.yaml), Swagger `/docs`.
+**Status:** Phase 2–3 hardening implemented (batch write, API token, tag `writable`, WS filter, **write-then-verify**). REST write when `opc_write_enabled` / `LEVEL2_OPC_WRITE_ENABLED` is true (default **off** → **403**). OpenAPI: [`api/openapi.yaml`](../api/openapi.yaml) **v1.2.1**, Swagger `/docs`.
 
 ---
 

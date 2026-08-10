@@ -83,8 +83,8 @@ Complete route list as registered by `internal/api.Server.Mount` (+ collector `w
 
 ### OpenAPI / Swagger
 
-- **`/docs` + [`api/openapi.yaml`](../../api/openapi.yaml) v1.2** — full collector HTTP surface (integration + admin), embedded in the binary.
-- Narrative clients guide: [docs/external-client-api.md](../../docs/external-client-api.md). Models: [docs/l2-model-integration.md](../../docs/l2-model-integration.md). Capacity: [docs/db-capacity-policy.md](../../docs/db-capacity-policy.md).
+- **`/docs` + [`api/openapi.yaml`](../../api/openapi.yaml) v1.2.1** — full collector HTTP surface (integration + admin), embedded in the binary.
+- Narrative clients guide: [docs/external-client-api.md](../../docs/external-client-api.md). Math models (separate repo, HTTP/WS only): [docs/l2-model-integration.md](../../docs/l2-model-integration.md). Capacity (`drop_oldest` + spool while busy): [docs/db-capacity-policy.md](../../docs/db-capacity-policy.md).
 
 ## PLC on
 

@@ -1,9 +1,14 @@
 # Level2 + math model integration
 
 Level2 is the **stable plant platform** (OPC UA gateway, Timescale historian, Admin UI, REST/WS API).  
-A **math / control model** is a **separate project and container** that talks to Level2 **only** over HTTP/WebSocket. It never opens OPC UA and never mounts the Timescale volume.
+A **math / control model** is a **separate GitHub project** (and usually a separate container). It talks to Level2 **only** over HTTP/WebSocket (`LEVEL2_API_URL`). It never opens OPC UA, never mounts the Timescale volume, and **must not** live as source under this Level2 repository.
 
-**Canonical API contract:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.2** — served at `GET /api/v1/openapi.yaml` and browsable at **`http://<host>:8080/docs`** (Swagger UI; full collector surface).
+| Repo | Role |
+|------|------|
+| **Level2** (this repo) | Platform + **API contract** ([`api/openapi.yaml`](../api/openapi.yaml)) + Admin UI |
+| **Math model** (other repo) | Process/control logic; HTTP/WS client against Level2 |
+
+**Canonical API contract:** OpenAPI **v1.2.1** — [`api/openapi.yaml`](../api/openapi.yaml), also `GET /api/v1/openapi.yaml` and Swagger UI at **`http://<host>:8080/docs`**. The spec covers the **full** collector surface (integration + admin). When narrative docs disagree with OpenAPI, **OpenAPI wins**.
 
 Related: [external-client-api.md](external-client-api.md), [opc-write-mode.md](opc-write-mode.md).
 
@@ -38,8 +43,8 @@ flowchart TB
 **Rules**
 
 - Model env: `LEVEL2_API_URL` (e.g. `http://level2-collector:8080` on the lab Docker network).
-- Model implements against **OpenAPI** (this repo’s `api/openapi.yaml` or live `/api/v1/openapi.yaml`).
-- Do **not** put model source under this Level2 repo; do **not** bake the model into the collector image.
+- Model implements against **OpenAPI** (this repo’s `api/openapi.yaml` or live `/api/v1/openapi.yaml` / `/docs`).
+- Do **not** put model source under this Level2 repo; do **not** bake the model into the collector image; do **not** expect a model skeleton here — only the platform contract.
 
 ---
 
@@ -77,9 +82,9 @@ Enable write only on intentional lab/plant setups. Diagnostics category: `opc_wr
 |-------|----------|--------|
 | **0** | Reads, WS, history, OpenAPI/Swagger | Dry-run: mapping + HTTP/WS client; log intended writes without PUT |
 | **1** | OPC write MVP + OpenAPI + `/docs` | PUT outputs when gate on |
-| **2–3** (this delivery) | Batch write, tag `writable`, WS filter, API token, **write-then-verify** | Production-minded model container on lab network |
+| **2–3** (delivered) | Batch write, tag `writable`, WS filter, API token, **write-then-verify**, full OpenAPI surface | Production-minded model container on lab network |
 
-Still deferred: split read/write roles, math model skeleton repo, TypeMismatch auto-retry.
+Still deferred (not in Level2): split read/write roles, TypeMismatch auto-retry. Math-model implementation stays in its own repo.
 
 ---
 
@@ -98,6 +103,6 @@ Still deferred: split read/write roles, math model skeleton repo, TypeMismatch a
 | Resource | URL / path |
 |----------|------------|
 | Swagger UI | `http://<host>:8080/docs` |
-| OpenAPI YAML | `http://<host>:8080/api/v1/openapi.yaml` or [`api/openapi.yaml`](../api/openapi.yaml) |
+| OpenAPI YAML | `http://<host>:8080/api/v1/openapi.yaml` or [`api/openapi.yaml`](../api/openapi.yaml) **v1.2.1** |
 | External client guide | [external-client-api.md](external-client-api.md) |
 | OPC write design | [opc-write-mode.md](opc-write-mode.md) |

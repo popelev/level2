@@ -32,9 +32,9 @@ flowchart LR
 
 | Layer | Responsibility |
 |-------|----------------|
-| External client | Bind to `tag_id` (or discover devices/tags), GET live / history / WS, later PUT write |
+| External client | Bind to `tag_id` (or discover devices/tags), GET live / history / WS, PUT/POST write when gated |
 | Level2 API | Stable JSON over HTTP; resolve tags; gate writes; diagnostics |
-| OPC driver | Batch Read; Write (MVP) to Siemens / OPC UA |
+| OPC driver | Batch Read; Write to Siemens / OPC UA |
 | PLC | Authoritative process values and AccessLevel |
 
 **Why not OPC in every client?** One place for credentials, NodeIds, coercion, reconnect, and audit. Clients stay thin HTTP callers on the lab LAN (or later behind a token).
@@ -55,7 +55,8 @@ Base URL (lab VM): `http://<host>:8080`. Same origin serves the React Admin UI.
 | WebSocket | `GET /api/v1/ws/stream` — Live samples; optional `?tag_id=` / `?tag_ids=` filter |
 | Auth | Optional `LEVEL2_API_TOKEN` — when set, mutating `/api/v1/*` + WS require Bearer / `X-API-Token` / `?token=` |
 | CORS | **No** dedicated CORS middleware. Browser cross-origin calls from another origin will fail unless same-origin or a reverse proxy adds headers. Non-browser clients (curl, Python `requests`, C# `HttpClient`) are unaffected. |
-| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.2** (full surface); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
+| OpenAPI / Swagger | **Canonical:** [`api/openapi.yaml`](../api/openapi.yaml) **v1.2.1** (full surface); `GET /api/v1/openapi.yaml`; UI at **`/docs`**. Narrative tables: [deploy/platform/README.md](../deploy/platform/README.md#api). |
+| Capacity | `drop_oldest` may spool while trimming (`ErrCapacityBusy`) — [db-capacity-policy.md](db-capacity-policy.md) |
 | WS origin | `CheckOrigin: true` (accept all) — fine for lab; revisit with auth. |
 
 Full operator table: [deploy/platform/README.md](../deploy/platform/README.md#api). Highlights: [README.md](../README.md#api-highlights).
@@ -138,9 +139,7 @@ Use for binding UIs and multi-tag dashboards. Prefer this over N parallel GETs f
 GET /api/v1/ws/stream
 ```
 
-Best for HMIs / scripts that need continuous updates without hammering REST.
-
-**Future (optional):** query `?tag_id=a&tag_id=b` or a first client message `{"subscribe":["a","b"]}` to reduce fan-out — not required for lab MVP.
+Best for HMIs / scripts that need continuous updates without hammering REST. Prefer `?tag_id=` / `?tag_ids=` or a first `{"subscribe":[…]}` message when you only need a subset (see §2.2).
 
 ### 3.4. History
 
@@ -355,7 +354,7 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 
 - [x] Describe gateway role, current read/WS/discovery surface, auth/CORS/OpenAPI reality.
 - [x] Cross-link write design, README, platform API table.
-- [ ] Keep endpoint table in `deploy/platform/README.md` as the living inventory until OpenAPI exists.
+- [x] OpenAPI is the living machine-readable inventory (`api/openapi.yaml` + `/docs`); platform README remains the operator table.
 
 ### Phase 1 — usable as a lab integration API (docs + current code)
 
@@ -363,11 +362,11 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 2. Ship PLC write MVP per [opc-write-mode.md](opc-write-mode.md); external clients use the same PUT.
 3. Note in diagnostics / status when writes are disabled vs failing OPC.
 
-### Phase 2 — stabilize & describe
+### Phase 2 — stabilize & describe (largely delivered)
 
-1. JSON error envelope on write (and gradually on hot read paths).
-2. Optional WS tag filter.
-3. Keep OpenAPI in sync with every endpoint change (already canonical).
+1. JSON error envelope on write (and gradually on hot read paths) — partial; many errors still plain text.
+2. WS tag filter — **done** (`?tag_id=` / `?tag_ids=` / subscribe message).
+3. Keep OpenAPI in sync with every endpoint change (canonical **v1.2.1**).
 4. Light rate limit or max body size for write batch if needed.
 
 ### Phase 3 — productization
@@ -397,8 +396,7 @@ Reads are cheap relative to OPC; still avoid tight loops on `GET .../value` when
 
 ## 13. Open questions
 
-1. **WS subscribe filter** worth doing before OpenAPI, or filter client-side only for lab?
-2. **Should config-mutating routes** get auth earlier than read-only value GET?
-3. **Batch live GET** (`GET /api/v1/tags/values?id=a&id=b`) vs always using full `GET /api/v1/tags`?
-4. **CORS:** add explicit allowlist for a remote browser HMI, or require same-host / proxy?
-5. **Idempotency-Key** for writes — needed for command pulses, or setpoint-only is enough?
+1. **Should config-mutating routes** get auth earlier than read-only value GET? (Today: all mutating + WS when token set.)
+2. **Batch live GET** (`GET /api/v1/tags/values?id=a&id=b`) vs always using full `GET /api/v1/tags`?
+3. **CORS:** add explicit allowlist for a remote browser HMI, or require same-host / proxy?
+4. **Idempotency-Key** for writes — needed for command pulses, or setpoint-only is enough?

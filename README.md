@@ -193,7 +193,9 @@ Legacy connectivity smoke (Telegraf + Grafana): [deploy/smoke/README.md](deploy/
 | Diagnostics / DB | logs, reset, capacity, capacity-policy, wipe-samples |
 | Status / sim | `GET /api/v1/status/summary`, `GET|PUT /api/v1/tag-simulation` |
 
-**OpenAPI / Swagger:** [`api/openapi.yaml`](api/openapi.yaml) **v1.2** is served at `GET /api/v1/openapi.yaml` and browsable at **`/docs`** (full collector surface: integration + admin). Route table also in [deploy/platform/README.md](deploy/platform/README.md#api).
+**OpenAPI / Swagger:** [`api/openapi.yaml`](api/openapi.yaml) **v1.2.1** is served at `GET /api/v1/openapi.yaml` and browsable at **`/docs`** (full collector surface: integration + admin). Route table also in [deploy/platform/README.md](deploy/platform/README.md#api).
+
+**Math / control models** are a **separate GitHub project** — they use only this HTTP/WS API (`LEVEL2_API_URL`); see [docs/l2-model-integration.md](docs/l2-model-integration.md). No model skeleton lives in this repo.
 
 Design docs: [opc-write-mode.md](docs/opc-write-mode.md) · [l2-model-integration.md](docs/l2-model-integration.md) · [opc-subscription-mode.md](docs/opc-subscription-mode.md) · [opc-datatype-sync.md](docs/opc-datatype-sync.md) · [external-client-api.md](docs/external-client-api.md) · [db-capacity-policy.md](docs/db-capacity-policy.md) · [tag-simulation.md](docs/tag-simulation.md).
 
